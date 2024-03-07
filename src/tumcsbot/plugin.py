@@ -30,10 +30,10 @@ from typing import Any, Callable, Final, Iterable, Type, cast, final
 from tumcsbot.client import Client, SharedClient
 from tumcsbot.lib import LOGGING_FORMAT, Response, StrEnum
 from tumcsbot.command_parser import CommandParser
-from tumcsbot.db import TableBase
+from tumcsbot.db import DB, TableBase
 from sqlalchemy import Column, String
 
-class Plugin(TableBase):
+class PluginTable(TableBase):
     __tablename__ = 'Plugins'
 
     name = Column(String, primary_key=True)
@@ -430,9 +430,11 @@ class PluginCommandMixin(_Plugin):
     # The command dictionary. Maps command names to their description and syntax.
     _tumcs_bot_commands: dict[str, tuple[str, str]] = {}
 
-    def update_plugin_usage(self) -> None:
-        # todo: this wrapper is obsolete 
-        self._init_db()
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        with DB.session() as session:
+            session.add(PluginTable(name=self.plugin_name(), syntax=self.syntax, description=self.description))
+            session.commit()
 
     @property
     def syntax(self) -> str:

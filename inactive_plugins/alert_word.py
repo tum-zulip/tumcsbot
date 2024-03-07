@@ -76,9 +76,9 @@ class AlertWord(PluginCommandMixin, PluginProcess):
 
         return bindings
     
-    @command
+    @command(name="list")
     @privilege(Privilege.ADMIN)
-    def list(self, message: dict[str, Any], args: CommandParser.Args, _: CommandParser.Opts) -> Response | Iterable[Response]:
+    def _list(self, message: dict[str, Any], args: CommandParser.Args, _: CommandParser.Opts) -> Response | Iterable[Response]:
         result_sql: list[tuple[Any, ...]]
         result_sql = self._db.execute(self._list_sql)
         response: str = "Alert word or phrase | Emoji\n---- | ----"

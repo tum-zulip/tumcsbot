@@ -289,9 +289,9 @@ class Group(PluginCommandMixin, PluginProcess):
             )
         return self._change_streams(message, args.group_id, "remove_streams", args.streams)
     
-    @command
+    @command(name="list")
     @privilege(Privilege.ADMIN)
-    def list(self, message: dict[str, Any], _: CommandParser.Args, _: CommandParser.Opts) -> Response | Iterable[Response]:
+    def _list(self, message: dict[str, Any], _: CommandParser.Args, __: CommandParser.Opts) -> Response | Iterable[Response]:
         return self._list(message)
     
     @command
@@ -341,7 +341,7 @@ class Group(PluginCommandMixin, PluginProcess):
     
     @command
     @privilege(Privilege.ADMIN)
-    def fix_all(self, message: dict[str, Any], _: CommandParser.Args, _: CommandParser.Opts) -> Response | Iterable[Response]:
+    def fix_all(self, message: dict[str, Any], _: CommandParser.Args, __: CommandParser.Opts) -> Response | Iterable[Response]:
         return self._fix_all(message)
 
     def handle_reaction_event(

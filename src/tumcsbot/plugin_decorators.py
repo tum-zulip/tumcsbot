@@ -98,8 +98,18 @@ def privilege(privilege: Privilege):
 
 
 class command:
-    def __init__(self, fn):
+    def __init__(self, fn = None, name = None):
         self.fn = fn
+        self.name = name
+        
+        if name is None and fn is not None:
+            self.name = fn.__name__
+
+    def __call__(self, fn):
+        self.fn = fn
+        if self.name is None:
+            self.name = fn.__name__
+        return self
     
     @property
     def description(self):
@@ -162,9 +172,6 @@ class command:
             for arg in self.meta["args"] if arg.optional
         }
     
-    @property
-    def name(self):
-        return self.fn.__name__
     
     def __set_name__(self, owner, name):
 

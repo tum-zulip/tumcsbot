@@ -6,9 +6,9 @@
 from inspect import cleandoc
 from typing import Any, Iterable
 
-from tumcsbot.lib import DB, Response, get_classes_from_path
-from tumcsbot.plugin import PluginCommandMixin, _Plugin, PluginThread
-
+from tumcsbot.lib import Response, get_classes_from_path
+from tumcsbot.plugin import PluginCommandMixin, _Plugin, PluginThread, PluginTable
+from tumcsbot.db import DB
 
 class Help(PluginCommandMixin, PluginThread):
     """Provide a help command plugin."""
@@ -70,13 +70,12 @@ class Help(PluginCommandMixin, PluginThread):
 
         Return a list of tuples (command name, syntax, description).
         """
-        db: DB = DB()
-        result_sql: list[tuple[Any, ...]] = db.execute(self._get_usage_all_sql)
-        db.close()
+        with DB.session() as session:
+            plugins = session.query(PluginTable).all()
         result: list[tuple[str, str, str]] = [
-            (name, self._format_syntax(syntax), self._format_description(description))
-            for name, syntax, description in result_sql
-            if syntax is not None and description is not None
+            (p.name, self._format_syntax(p.syntax), self._format_description(p.description))
+            for p in plugins
+            if p.syntax is not None and p.description is not None
         ]
         # Sort by name.
         return sorted(result, key=lambda tuple: tuple[0])
