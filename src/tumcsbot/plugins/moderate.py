@@ -240,14 +240,14 @@ class Moderate(PluginCommandMixin, PluginThread):
             "list",
             optionals={"user": Regex.match_user_argument},
             opts={"a": None, "all": None, "v": None, "verbose": None},
-            description=cleandoc(
-                """
-                list moderation configuration for a users.
-                - `user` : the user for which the config should be displayed. Defaults to the sender of the command
-                - `-a, --all` : option to display configuration for all users
-                - `-v, --verbose` : additionaly show the actions taken for each reaction
-                """
-            ),
+            # todo: description=cleandoc(
+            # todo:     """
+            # todo:     list moderation configuration for a users.
+            # todo:     - `user` : the user for which the config should be displayed. Defaults to the sender of the command
+            # todo:     - `-a, --all` : option to display configuration for all users
+            # todo:     - `-v, --verbose` : additionaly show the actions taken for each reaction
+            # todo:     """
+            # todo: ),
         )
 
         actions_str = "\n" + "\n".join([f"  - `{a}`" for a in self._actions]) + "\n"
@@ -269,21 +269,21 @@ class Moderate(PluginCommandMixin, PluginThread):
                 "message": str,
                 "description": str,
             },
-            description=cleandoc(
-                """
-                Add an moderation configuration for a user.
-                - `reaction` : the reaction that should trigger an action
-                - `action` : the action that should be triggered. Supported actions are:
-                """
-            )
-            + actions_str
-            + cleandoc(
-                """
-                - `user` : the user this configuration should be addded. Defaults to the sender of the command
-                - `message` : the message an action should use. The message may use special variables that are replaced depending on the context. Supported variables for message content:
-                """
-            )
-            + supported_variables,
+            # todo: description=cleandoc(
+            # todo:     """
+            # todo:     Add an moderation configuration for a user.
+            # todo:     - `reaction` : the reaction that should trigger an action
+            # todo:     - `action` : the action that should be triggered. Supported actions are:
+            # todo:     """
+            # todo: )
+            # todo: + actions_str
+            # todo: + cleandoc(
+            # todo:     """
+            # todo:     - `user` : the user this configuration should be addded. Defaults to the sender of the command
+            # todo:     - `message` : the message an action should use. The message may use special variables that are replaced depending on the context. Supported variables for message content:
+            # todo:     """
+            # todo: )
+            # todo: + supported_variables,
         )
 
         self.command_parser.add_subcommand(
@@ -293,28 +293,28 @@ class Moderate(PluginCommandMixin, PluginThread):
                 "reaction": Regex.match_reaction_argument,
                 "action": Moderate.parse_action_or_number,
             },
-            description=cleandoc(
-                """
-                
-                Remove reactions from a configuration
-                - `user` : the user the reaction should be removed from. Defaults to the sender of the command
-                - `reaction` : the reaction that should be affected. Defaults to all reactions
-                - `action` : the action that should be removed. May be the action keyword or the number of the action-element (starting with 1)
-                """
-            ),
+            # todo: description=cleandoc(
+            # todo:     """
+            # todo:     
+            # todo:     Remove reactions from a configuration
+            # todo:     - `user` : the user the reaction should be removed from. Defaults to the sender of the command
+            # todo:     - `reaction` : the reaction that should be affected. Defaults to all reactions
+            # todo:     - `action` : the action that should be removed. May be the action keyword or the number of the action-element (starting with 1)
+            # todo:     """
+            # todo: ),
         )
 
         self.command_parser.add_subcommand(
             "authorize",
             args={"group": str},
             greedy={"streams": str},
-            description=cleandoc(
-                """
-                Authorize a group to allow moderation in streams
-                - `group` : the group that should be granted moderation rights
-                - `streams` : the streams that users in `<group>` should be able to moderate
-                """
-            ),
+            # todo: description=cleandoc(
+            # todo:     """
+            # todo:     Authorize a group to allow moderation in streams
+            # todo:     - `group` : the group that should be granted moderation rights
+            # todo:     - `streams` : the streams that users in `<group>` should be able to moderate
+            # todo:     """
+            # todo: ),
         )
 
         self.command_parser.add_subcommand(
@@ -323,35 +323,33 @@ class Moderate(PluginCommandMixin, PluginThread):
                 "group": Regex.match_group_argument,
                 "stream": Regex.match_stream_argument,
             },
-            description=cleandoc(
-                """
-                Remove authorization
-                - `group` : the group that should be revoked. If `stream` is not specified, permissions for all streams are revoked for this group
-                - `stream` : the stream that should be revoked. If `group` is not specified, permissions of all groups are revoked for this stream
-                """
-            ),
+            # todo: description=cleandoc(
+            # todo:     """
+            # todo:     Remove authorization
+            # todo:     - `group` : the group that should be revoked. If `stream` is not specified, permissions for all streams are revoked for this group
+            # todo:     - `stream` : the stream that should be revoked. If `group` is not specified, permissions of all groups are revoked for this stream
+            # todo:     """
+            # todo: ),
         )
 
         defaults_str = ", ".join(set([e for e, _, _, desc in self._default_config]))
         self.command_parser.add_subcommand(
             "defaults",
             greedy={"users": Regex.match_user_argument},
-            description=cleandoc(
-                """
-                Set the actions for [
-                """
-            )
-            + defaults_str
-            + cleandoc(
-                """] to their defaults
-                - `users` : the users that should get their default reactions set
-                """
-            ),
+            # todo: description=cleandoc(
+            # todo:     """
+            # todo:     Set the actions for [
+            # todo:     """
+            # todo: )
+            # todo: + defaults_str
+            # todo: + cleandoc(
+            # todo:     """] to their defaults
+            # todo:     - `users` : the users that should get their default reactions set
+            # todo:     """
+            # todo: ),
         )
         # pylint: enable=line-too-long
 
-        self.syntax = self.command_parser.generate_syntax()
-        self.description = self.command_parser.generate_description()
         self.update_plugin_usage()
 
     def handle_message(self, message: dict[str, Any]) -> Response | Iterable[Response]:

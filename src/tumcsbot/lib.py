@@ -39,7 +39,7 @@ T = TypeVar("T")
 
 LOGGING_FORMAT: Final[
     str
-] = "%(asctime)s %(processName)s %(threadName)s %(module)s %(funcName)s: %(message)s"
+] = "%(asctime)s %(processName)s %(threadName)-30s %(module)-15s %(funcName)-15s: %(message)s"
 
 
 class StrEnum(str, Enum):
@@ -334,7 +334,6 @@ class CommandParser:
                 dict[str, Callable[[str], Any]],
                 dict[str, Callable[[str], Any]],
                 dict[str, Callable[[str], Any]],
-                str | None,
             ],
         ] = {}
 
@@ -345,7 +344,6 @@ class CommandParser:
         args: dict[str, Callable[[str], Any]] = {},
         optionals: dict[str, Callable[[str], Any]] = {},
         greedy: dict[str, Callable[[str], Any]] = {},
-        description: str | None = None,
     ) -> bool:
         """Add a subcommand to the parser.
 
@@ -383,14 +381,13 @@ class CommandParser:
                    as dict mapping the argument name to the function that should be used
                    to get the argument value from the command string.
                    (default: {})
-        description todo:
         If the given arguments would lead to a broken state of the
         parser, an IllegalCommandParserState exception is thrown.
         """
         if not name:
             raise self.IllegalCommandParserState()
 
-        self.commands[name] = (opts, args, optionals, greedy, description)
+        self.commands[name] = (opts, args, optionals, greedy)
         return True
 
     @staticmethod
@@ -440,7 +437,7 @@ class CommandParser:
         if subcommand not in self.commands:
             return None
 
-        opts, positional, optional, greedy, description = self.commands[subcommand]
+        opts, positional, optional, greedy = self.commands[subcommand]
 
         optiones_first = []
         arguments_last = []
@@ -476,49 +473,6 @@ class CommandParser:
         if len(remainder) > 0:
             return None
         return (subcommand, self.Opts(**options), self.Args(**matched_args))
-
-    def generate_syntax(self) -> str:
-        subcommands_str = [
-            CommandParser._format_subcommand(name, args)
-            for name, args in self.commands.items()
-        ]
-        return "Available commands:\n" + "\n\tor ".join(subcommands_str)
-
-    def generate_description(self) -> str:
-        return "\n".join(
-            [
-                f"## `{name}`\n{desc}"
-                for name, (_, _, _, _, desc) in self.commands.items()
-            ]
-        )
-
-    @staticmethod
-    def _format_subcommand(
-        name: str,
-        arguments: tuple[
-            dict[str, Callable[[Any], Any] | None],
-            dict[str, Callable[[str], Any]],
-            dict[str, Callable[[str], Any]],
-            dict[str, Callable[[str], Any]],
-            str | None,
-        ],
-    ) -> str:
-        options, positional, optional, greedy, _ = arguments
-
-        optarg: Callable[[str], str] = (
-            lambda x: " arg" if x in options and options[x] is not None else ""
-        )
-        optstr: Callable[[str], str] = lambda x: "-" if len(x) == 1 else "--"
-
-        options_strs = [f"[{optstr(o)}{o}{optarg(o)}]" for o in options]
-        optional_strs = [f"[{o}]" for o in optional]
-        arg_strs = [f"<{p}>" for p in positional]
-        greedy_strs = [f"[{g}...]" for g in greedy]
-
-        args_str = " ".join(options_strs + optional_strs + arg_strs + greedy_strs)
-        if len(args_str) > 0:
-            return f"{name} {args_str}"
-        return f"{name}"
 
     @staticmethod
     def _convert_argument(

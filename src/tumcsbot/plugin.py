@@ -27,7 +27,7 @@ from threading import Thread
 from typing import Any, Callable, Final, Iterable, Type, cast, final
 
 from tumcsbot.client import Client, SharedClient
-from tumcsbot.lib import DB, LOGGING_FORMAT, Response, StrEnum
+from tumcsbot.lib import DB, LOGGING_FORMAT, CommandParser, Response, StrEnum
 
 
 @final
@@ -240,7 +240,9 @@ class _Plugin(ABC):
         """
         if event.type == EventType.ZULIP:
             if not self.is_responsible(event):
+                self.logger.debug("not responsible for event %s", id(event))
                 return
+            logging.debug(f"handling event {id(event)}")
             responses: Response | Iterable[Response] = self.handle_zulip_event(event)
             self.client.send_responses(responses)
         elif event.type == EventType.RELOAD:
@@ -295,8 +297,6 @@ class _Plugin(ABC):
 
             if event.type == EventType._EMPTY:
                 break
-
-            self.logger.debug("received event %s", event)
             try:
                 self.handle_event(event)
             except Exception as e:
@@ -418,14 +418,15 @@ class PluginCommandMixin(_Plugin):
     It provides additional feature for command handling plugins.
     """
 
-    # The usage syntax.
-    syntax: str = str(None)
-    # The verbose description.
-    description: str = str(None)
     # The events this command would like to receive, defaults to
     # messages.
     zulip_events = _Plugin.zulip_events + ["message"]
     events = _Plugin.events + [EventType.GET_USAGE]
+
+    # The command parser.
+    _tumcs_bot_command_parser: Final[CommandParser] = CommandParser()
+    # The command dictionary. Maps command names to their description and syntax.
+    _tumcs_bot_commands: dict[str, tuple[str, str]] = {}
 
     @final
     def _init_db(self) -> None:
@@ -434,7 +435,19 @@ class PluginCommandMixin(_Plugin):
         db.close()
 
     def update_plugin_usage(self) -> None:
+        # todo: this wrapper is obsolete 
         self._init_db()
+
+    @property
+    def syntax(self) -> str:
+        """Get the syntax of the command."""
+        return "Available commands:\n" + "\n\tor ".join([self.plugin_name() + " " + syntax for _, syntax in self._tumcs_bot_commands.values()])
+    
+    @property
+    def description(self) -> str:
+        """Get the description of the command."""
+        return "\n".join([f"## {name}\n{desc}" for name, (desc, _) in self._tumcs_bot_commands.items()])
+
 
     @final
     def get_usage(self) -> tuple[str, str, str]:
@@ -453,14 +466,37 @@ class PluginCommandMixin(_Plugin):
         automatically.
         """
         return (self.plugin_name(), self.syntax, self.description)
-
-    @abstractmethod
+    
+    # todo: @final
     def handle_message(self, message: dict[str, Any]) -> Response | Iterable[Response]:
         """Process message.
 
         Process the given message and return a Response or an Iterable
         consisting of Response objects.
         """
+        result: tuple[str, CommandParser.Opts, CommandParser.Args] | None
+        command_parser: CommandParser = self.__class__._tumcs_bot_command_parser
+        # Get command and parameters.
+        result = command_parser.parse(message["command"])
+
+        self.logger.debug(result)
+        
+        if result is None:
+            return Response.command_not_found(message)
+        command, opts, args = result
+    
+        if command in command_parser.commands:
+            func: Callable[
+                [dict[str, Any], CommandParser.Args, CommandParser.Opts],
+                Response | Iterable[Response],
+            ] = getattr(self, command)
+            self.logger.debug(f"executing subcommand: {command}")
+            self.logger.debug(f"args: {args}")
+            self.logger.debug(f"opts: {opts}")
+            return func(message, args, opts)
+        else:
+            self.logger.debug(f"command not found: {command}")
+            return Response.command_not_found(message)
 
     def handle_zulip_event(self, event: Event) -> Response | Iterable[Response]:
         """Defaults to assume event to be a message event.

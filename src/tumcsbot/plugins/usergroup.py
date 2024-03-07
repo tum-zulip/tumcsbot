@@ -49,24 +49,24 @@ class Usergroup(PluginCommandMixin, PluginThread):
             "list",
             optionals={"user": Regex.match_user_argument},
             opts={"a": None, "all": None},
-            description=cleandoc(
-                """
-                list user groups
-                - `user` : the user for which the groups should be listed
-                - `-a, --all` : option to display all user groups with all users
-                """
-            ),
+            # todo: description=cleandoc(
+            # todo:     """
+            # todo:     list user groups
+            # todo:     - `user` : the user for which the groups should be listed
+            # todo:     - `-a, --all` : option to display all user groups with all users
+            # todo:     """
+            # todo: ),
         )
         self.command_parser.add_subcommand(
             "creat",
             args={"name": str, "description": str},
-            description=cleandoc(
-                """
-                create an empty user group
-                - `name` : the name of the user group
-                - `description` : the description for the user group (required for portability with builtin zulip usergroups)
-                """
-            ),
+            # todo: description=cleandoc(
+            # todo:     """
+            # todo:     create an empty user group
+            # todo:     - `name` : the name of the user group
+            # todo:     - `description` : the description for the user group (required for portability with builtin zulip usergroups)
+            # todo:     """
+            # todo: ),
         )
         self.command_parser.add_subcommand(
             "remove",
@@ -74,13 +74,13 @@ class Usergroup(PluginCommandMixin, PluginThread):
                 "user": Regex.match_user_argument,
                 "group": Regex.match_group_argument,
             },
-            description=cleandoc(
-                """
-                remove user from groups
-                - `user` : the user that should get removed. If no group is not specified, the user gets removed from all groups
-                - `group` : the group the user should get removed from. If no user is not specified, all users gets removed from this groups
-                """
-            ),
+            # todo: description=cleandoc(
+            # todo:     """
+            # todo:     remove user from groups
+            # todo:     - `user` : the user that should get removed. If no group is not specified, the user gets removed from all groups
+            # todo:     - `group` : the group the user should get removed from. If no user is not specified, all users gets removed from this groups
+            # todo:     """
+            # todo: ),
         )
         self.command_parser.add_subcommand(
             "add",
@@ -88,17 +88,15 @@ class Usergroup(PluginCommandMixin, PluginThread):
                 "groups": Regex.match_group_argument,
                 "users": Regex.match_user_argument,
             },
-            description=cleandoc(
-                """
-                add users to groups
-                - `user` : the user that should get added to groups
-                - `group` : the groups the users should get added to
-                """
-            ),
+            # todo: description=cleandoc(
+            # todo:     """
+            # todo:     add users to groups
+            # todo:     - `user` : the user that should get added to groups
+            # todo:     - `group` : the groups the users should get added to
+            # todo:     """
+            # todo: ),
         )
-
-        self.syntax = self.command_parser.generate_syntax()
-        self.description = self.command_parser.generate_description()
+        
         self.update_plugin_usage()
 
     def handle_message(self, message: dict[str, Any]) -> Response | Iterable[Response]:

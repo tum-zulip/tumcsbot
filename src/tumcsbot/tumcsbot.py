@@ -254,7 +254,7 @@ class TumCSBot:
 
         while True:
             event: Event = self.event_queue.get()
-            logging.debug("received event %s", str(event))
+            logging.debug("received event (%s) %s", id(event), str(event))
 
             if self.stopped or event.type == EventType._EMPTY:
                 if event.type == EventType._EMPTY and event.sender == "restart":

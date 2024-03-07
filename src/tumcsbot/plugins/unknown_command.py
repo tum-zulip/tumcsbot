@@ -3,11 +3,13 @@
 # See LICENSE file for copyright and license details.
 # TUM CS Bot - https://github.com/ro-i/tumcsbot
 
-from typing import Final, Iterable, cast
+from inspect import cleandoc
+from typing import Any, Final, Iterable, cast
 
 from tumcsbot.lib import DB, Response, get_classes_from_path
 from tumcsbot.plugin import Event, PluginThread, _Plugin
 
+from openai import OpenAI
 
 class UnknownCommand(PluginThread):
     """Handle unknown commands."""
@@ -28,7 +30,38 @@ class UnknownCommand(PluginThread):
         )
 
     def handle_zulip_event(self, event: Event) -> Response | Iterable[Response]:
-        return Response.build_reaction(event.data["message"], "question")
+        message = event.data["message"]
+
+        request: dict[str, Any] = {
+            "anchor": "newest",
+            "num_before": 5,
+            "num_after": 0,
+            "narrow": [
+                {"operator": "dm", "operand": message["sender_email"]},
+            ],
+        }
+
+        result = self.client.get_messages(request)
+
+        client = OpenAI(base_url="http://10.10.10.12:1234/v1", api_key="not-needed")
+        completion = client.chat.completions.create(
+            model="local-model", # this field is currently unused
+            messages=[
+              {"role": "system", "content": cleandoc(
+                  f"""
+                    You are TUMCSBot, a helpful bot for managing the zulip chat at TUM.
+                    You may use the smilies :), :D, :P, :O, :|, :/, :S, :* and :(.
+                    You are chatting with the user {message['sender_full_name']}.
+                  """
+                  )
+                },
+            ] + [
+              {"role": "user" if message['sender_full_name'] != "TUMCSBot" else "system", "content": message["content"]}
+              for message in result["messages"]
+            ],
+            temperature=0.7,
+        )
+        return Response.build_reaction(event.data["message"], "question"), Response.build_message(event.data["message"], completion.choices[0].message.content)
 
     def is_responsible(self, event: Event) -> bool:
         return event.data["type"] == "message" and (
