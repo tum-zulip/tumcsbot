@@ -5,6 +5,7 @@
 
 """Wrapper around Zulip's Client class."""
 
+from enum import Enum
 import functools
 import logging
 import re
@@ -24,8 +25,7 @@ class PublicStreams(TableBase):
 
     StreamName = Column(String, primary_key=True)
     Subscribed = Column(Boolean, nullable=False, default=False)
-
-
+    
 def synchronized(lock: RLock) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
     def _synchronized(func: Callable[..., Any]) -> Callable[..., Any]:
         @functools.wraps(func)
@@ -77,6 +77,11 @@ class Client(ZulipClient):
         self.ping: str = f"@**{self.get_profile()['full_name']}**"
         self.ping_len: int = len(self.ping)
         self.register_params: dict[str, Any] = {}
+        self._db: DB = DB()
+        self._db.checkout_table(
+            "PublicStreams",
+            "(StreamName text primary key, Subscribed integer not null)",
+        )
 
     def call_endpoint(
         self,
@@ -679,7 +684,7 @@ class SharedClient:
         # thread-safety since we're already guaranteeing that.
         # todo: check_same_thread=False
         self._client._db = DB()
-
+    
     @property
     def base_url(self) -> str:
         return self._client.base_url

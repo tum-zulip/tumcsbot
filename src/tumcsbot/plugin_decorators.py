@@ -9,11 +9,7 @@ from tumcsbot.command_parser import CommandParser
 from tumcsbot.lib import Response
 from tumcsbot.plugin import PluginCommandMixin
 
-
-class Privilege(Enum):
-    ADMIN = 1
-    MODERATOR = 2
-    USER = 3
+from tumcsbot.client import Privilege
 
 @dataclass
 class ArgConfig:
@@ -55,8 +51,10 @@ def arg(name: str, type: Callable[[Any], Any], description: str | None = None, p
         def wrapper(self, message: dict[str, Any], args: CommandParser.Args, opts: CommandParser.Opts) -> Response | Iterable[Response]:
             if privilege is not None:  # and todo: check if option is present
                 # todo: check privilege
-                 if not self.client.user_is_privileged(message["sender_id"], allow_moderator= privilege == Privilege.MODERATOR):
-                     return Response.privilege_err_command(message, f"{self.plugin_name()} {func.__name__}")
+                # if not self.client.user_is_privileged(message["sender_id"], allow_moderator= privilege == Privilege.MODERATOR):
+                #     return Response.privilege_err_command(message, f"{self.plugin_name()} {func.__name__}")
+                if not self.client.user_has_privilege(privilege):
+                    return Response.privilege_err_command(message, f"{self.plugin_name()} {func.__name__}")
             return func(self, message, args, opts)
         return wrapper
     return decorator
@@ -75,9 +73,11 @@ def opt(opt: str, long_opt: str | None = None, type: Callable[[Any], Any] | None
            #     pass
             if privilege is not None:
                 # todo: check privilege
-                 if not self.client.user_is_privileged(message["sender_id"], allow_moderator= privilege == Privilege.MODERATOR):
-                     return Response.privilege_err_command(message, f"{self.plugin_name()} {func.__name__}")
-                 pass
+                # if not self.client.user_is_privileged(message["sender_id"], allow_moderator= privilege == Privilege.MODERATOR):
+                #     return Response.privilege_err_command(message, f"{self.plugin_name()} {func.__name__}")
+                if not self.client.user_has_privilege(privilege):
+                    return Response.privilege_err_command(message, f"{self.plugin_name()} {func.__name__}")
+                pass
             return func(self, message, args, opts)
         return wrapper
     return decorator
@@ -90,8 +90,10 @@ def privilege(privilege: Privilege):
         @wraps(func)
         def wrapper(self, message: dict[str, Any], args: CommandParser.Args, opts: CommandParser.Opts) -> Response | Iterable[Response]:
             if privilege is not None:
-                 if not self.client.user_is_privileged(message["sender_id"], allow_moderator= privilege == Privilege.MODERATOR):
-                     return Response.privilege_err_command(message, f"{self.plugin_name()} {func.__name__}")
+                # if not self.client.user_is_privileged(message["sender_id"], allow_moderator= privilege == Privilege.MODERATOR):
+                #     return Response.privilege_err_command(message, f"{self.plugin_name()} {func.__name__}")
+                if not self.client.user_has_privilege(privilege):
+                    return Response.privilege_err_command(message, f"{self.plugin_name()} {func.__name__}")
             return func(self, message, args, opts)
         return wrapper
     return decorator
