@@ -424,7 +424,7 @@ class PluginCommandMixin(_Plugin):
     events = _Plugin.events + [EventType.GET_USAGE]
 
     # The command parser.
-    _tumcs_bot_command_parser: Final[CommandParser] = CommandParser()
+    _tumcs_bot_command_parser: Final[CommandParser]
     # The command dictionary. Maps command names to their description and syntax.
     _tumcs_bot_commands: dict[str, tuple[str, str]] = {}
 
