@@ -12,9 +12,10 @@ change the alert words and specify the emojis to use for the reactions.
 
 from typing import Any, Iterable, Callable
 from inspect import cleandoc
-import json
 
-from tumcsbot.lib import CommandParser, DB, Response, Regex
+from tumcsbot.lib import Response
+from tumcsbot.command_parser import CommandParser
+from tumcsbot.db import DB
 from tumcsbot.plugin import PluginCommandMixin, PluginThread
 
 

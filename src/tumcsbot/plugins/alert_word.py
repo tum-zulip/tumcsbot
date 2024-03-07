@@ -14,10 +14,19 @@ from random import randint
 import re
 from inspect import cleandoc
 from typing import Any, Iterable
+from sqlalchemy import Column, String
 
-from tumcsbot.lib import CommandParser, DB, Regex, Response
+from tumcsbot.lib import Regex, Response
+from tumcsbot.command_parser import CommandParser
+from tumcsbot.db import DB, TableBase
 from tumcsbot.plugin import Event, PluginCommandMixin, PluginProcess
+from tumcsbot.plugin_decorators import *
 
+class Alert(TableBase):
+    __tablename__ = 'Alerts'
+
+    Phrase = Column(String, primary_key=True)
+    Emoji = Column(String, nullable=False)
 
 class AlertWord(PluginCommandMixin, PluginProcess):
     syntax = cleandoc(
@@ -45,21 +54,6 @@ class AlertWord(PluginCommandMixin, PluginProcess):
     _update_sql: str = "replace into Alerts values (?,?)"
 
     def _init_plugin(self) -> None:
-        # Get own database connection.
-        self._db: DB = DB()
-        # Check for database table.
-        self._db.checkout_table(
-            table="Alerts", schema="(Phrase text primary key, Emoji text not null)"
-        )
-
-        # Initialize the plugin's command part.
-        self.command_parser: CommandParser = CommandParser()
-        self.command_parser.add_subcommand(
-            "add", args={"alert_phrase": str, "emoji": Regex.get_emoji_name}
-        )
-        self.command_parser.add_subcommand("remove", args={"alert_phrase": str})
-        self.command_parser.add_subcommand("list")
-
         # Initialize the plugin's daemon part.
         # Get pattern and the alert_phrase - emoji bindings.
         self._bindings: list[tuple[re.Pattern[str], str]] = self._get_bindings()
@@ -81,36 +75,33 @@ class AlertWord(PluginCommandMixin, PluginProcess):
             bindings.append((pattern, emoji))
 
         return bindings
-
-    def handle_message(self, message: dict[str, Any]) -> Response | Iterable[Response]:
-        result: tuple[str, CommandParser.Opts, CommandParser.Args] | None
+    
+    @command
+    @privilege(Privilege.ADMIN)
+    def list(self, message: dict[str, Any], args: CommandParser.Args, _: CommandParser.Opts) -> Response | Iterable[Response]:
         result_sql: list[tuple[Any, ...]]
-
-        if not self.client.user_is_privileged(message["sender_id"]):
-            return Response.privilege_err(message)
-
-        # Get command and parameters.
-        result = self.command_parser.parse(message["command"])
-        if result is None:
-            return Response.command_not_found(message)
-        command, _, args = result
-
-        if command == "list":
-            result_sql = self._db.execute(self._list_sql)
-            response: str = "Alert word or phrase | Emoji\n---- | ----"
-            for phrase, emoji in result_sql:
-                response += f"\n`{phrase}` | {emoji} :{emoji}:"
-            return Response.build_message(message, response)
-
-        # Use lowercase -> no need for case insensitivity.
+        result_sql = self._db.execute(self._list_sql)
+        response: str = "Alert word or phrase | Emoji\n---- | ----"
+        for phrase, emoji in result_sql:
+            response += f"\n`{phrase}` | {emoji} :{emoji}:"
+        return Response.build_message(message, response)
+    
+    @command
+    @privilege(Privilege.ADMIN)
+    @arg("alert_phrase", str, description="The alert phrase regex to add.")
+    @arg("emoji", Regex.get_emoji_name, description="The emoji to use for the reaction.")
+    def add(self, message: dict[str, Any], args: CommandParser.Args, _: CommandParser.Opts) -> Response | Iterable[Response]:
         alert_phrase: str = args.alert_phrase.lower()
+        self._db.execute(self._update_sql, alert_phrase, args.emoji, commit=True)
+        return Response.ok(message)
 
-        if command == "add":
-            # Add binding to database or update it.
-            self._db.execute(self._update_sql, alert_phrase, args.emoji, commit=True)
-        elif command == "remove":
-            self._db.execute(self._remove_sql, alert_phrase, commit=True)
 
+    @command
+    @privilege(Privilege.ADMIN)
+    @arg("alert_phrase", str, description="The alert phrase regex to remove.")
+    def remove(self, message: dict[str, Any], args: CommandParser.Args, _: CommandParser.Opts) -> Response | Iterable[Response]:
+        alert_phrase: str = args.alert_phrase.lower()
+        self._db.execute(self._remove_sql, alert_phrase, commit=True)
         return Response.ok(message)
 
     def handle_zulip_event(self, event: Event) -> Response | Iterable[Response]:

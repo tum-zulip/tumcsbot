@@ -16,6 +16,7 @@ PluginProcess   Base class for plugins that live in a separate process.
 PluginCommandMixin   Mixin class tailored for interactive commands.
 """
 
+from contextlib import contextmanager
 from ctypes import c_bool
 import json
 import logging
@@ -27,8 +28,17 @@ from threading import Thread
 from typing import Any, Callable, Final, Iterable, Type, cast, final
 
 from tumcsbot.client import Client, SharedClient
-from tumcsbot.lib import DB, LOGGING_FORMAT, CommandParser, Response, StrEnum
+from tumcsbot.lib import LOGGING_FORMAT, Response, StrEnum
+from tumcsbot.command_parser import CommandParser
+from tumcsbot.db import TableBase
+from sqlalchemy import Column, String
 
+class Plugin(TableBase):
+    __tablename__ = 'Plugins'
+
+    name = Column(String, primary_key=True)
+    syntax = Column(String)
+    description = Column(String)
 
 @final
 class EventType(StrEnum):
@@ -174,14 +184,6 @@ class _Plugin(ABC):
         self.logger.setLevel(plugin_context.logging_level)
         # Set the running flag.
         self.running = multiprocessing.Value(c_bool, False)
-
-        # Initialize database entry for this plugin.
-        self._init_db()
-
-    def _init_db(self) -> None:
-        db: DB = DB()
-        db.execute(self._update_plugin_sql, self.plugin_name(), None, None, commit=True)
-        db.close()
 
     def _init_plugin(self) -> None:
         """Custom plugin initialization code.
@@ -427,12 +429,6 @@ class PluginCommandMixin(_Plugin):
     _tumcs_bot_command_parser: Final[CommandParser]
     # The command dictionary. Maps command names to their description and syntax.
     _tumcs_bot_commands: dict[str, tuple[str, str]] = {}
-
-    @final
-    def _init_db(self) -> None:
-        db: DB = DB()
-        db.execute(self._update_plugin_sql, *self.get_usage(), commit=True)
-        db.close()
 
     def update_plugin_usage(self) -> None:
         # todo: this wrapper is obsolete 

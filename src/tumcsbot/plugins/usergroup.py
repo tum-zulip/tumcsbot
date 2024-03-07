@@ -10,123 +10,55 @@ Provide also an interactive command so administrators are able to
 change the alert words and specify the emojis to use for the reactions.
 """
 
-from typing import Any, Iterable, Callable
-from inspect import cleandoc
+from typing import Any, Iterable
+from sqlalchemy import Column, Integer, String, ForeignKey
+from sqlalchemy.orm import relationship
 
-from tumcsbot.lib import CommandParser, DB, Response, Regex
+from tumcsbot.lib import Response
+from tumcsbot.command_parser import CommandParser
+from tumcsbot.db import DB, TableBase
 from tumcsbot.plugin import PluginCommandMixin, PluginThread
+from tumcsbot.plugin_decorators import *
+
+class UserGroup(TableBase):
+    __tablename__ = 'UserGroups'
+
+    GroupId = Column(Integer, primary_key=True, autoincrement=True)
+    UGroup = Column(String, unique=True)
+    description = Column(String)
+
+    # This will allow accessing the members from the UserGroup object
+    members = relationship("UserGroupMember", back_populates="group")
+
+class UserGroupMember(TableBase):
+    __tablename__ = 'UserGroupMembers'
+
+    GroupId = Column(Integer, ForeignKey('UserGroups.GroupId', ondelete='CASCADE'), primary_key=True)
+    UserId = Column(Integer, primary_key=True)
+
+    # This establishes the relationship between UserGroupMember and UserGroup
+    group = relationship("UserGroup", back_populates="members")
 
 
 class Usergroup(PluginCommandMixin, PluginThread):
-    _remove_group_sql: str = "delete from UserGroups where UGroup = ?"
-    _remove_user_from_group_sql: str = (
-        "delete from UserGroups where UGroup = ? and UserId = ?"
-    )
-    _list_sql: str = "select * from UserGroups"
-    _list_user_sql: str = "select UGroup from UserGroups where UserId = ?"
-    _insert_sql: str = "insert or ignore into UserGroups (UGroup, UserId) values (?, ?)"
-    _delete_sql: str = "delete from UserGroups where "
-
-    _create_group_sql: str = "insert or ignore into UserGroups (UGroup) values (?)"
-    _get_group_id_sql: str = "select GroupId from UserGroups where UGroup = ?"
-    # _get_groups_for_
 
     def _init_plugin(self) -> None:
         # Get own database connection.
         self._db: DB = DB()
         # Check for database table.
-        self._db.checkout_table(
-            "UserGroups",
-            "(GroupId integer primary key autoincrement, UGroup text unique)",
-        )
-        self._db.checkout_table(
-            "UserGroupMembers",
-            "(GroupId integer not null, UserId integer not null, primary key (GroupId, UserId))",
-        )
 
-        self.command_parser: CommandParser = CommandParser()
-        self.command_parser.add_subcommand(
-            "list",
-            optionals={"user": Regex.match_user_argument},
-            opts={"a": None, "all": None},
-            # todo: description=cleandoc(
-            # todo:     """
-            # todo:     list user groups
-            # todo:     - `user` : the user for which the groups should be listed
-            # todo:     - `-a, --all` : option to display all user groups with all users
-            # todo:     """
-            # todo: ),
-        )
-        self.command_parser.add_subcommand(
-            "creat",
-            args={"name": str, "description": str},
-            # todo: description=cleandoc(
-            # todo:     """
-            # todo:     create an empty user group
-            # todo:     - `name` : the name of the user group
-            # todo:     - `description` : the description for the user group (required for portability with builtin zulip usergroups)
-            # todo:     """
-            # todo: ),
-        )
-        self.command_parser.add_subcommand(
-            "remove",
-            optionals={
-                "user": Regex.match_user_argument,
-                "group": Regex.match_group_argument,
-            },
-            # todo: description=cleandoc(
-            # todo:     """
-            # todo:     remove user from groups
-            # todo:     - `user` : the user that should get removed. If no group is not specified, the user gets removed from all groups
-            # todo:     - `group` : the group the user should get removed from. If no user is not specified, all users gets removed from this groups
-            # todo:     """
-            # todo: ),
-        )
-        self.command_parser.add_subcommand(
-            "add",
-            greedy={
-                "groups": Regex.match_group_argument,
-                "users": Regex.match_user_argument,
-            },
-            # todo: description=cleandoc(
-            # todo:     """
-            # todo:     add users to groups
-            # todo:     - `user` : the user that should get added to groups
-            # todo:     - `group` : the groups the users should get added to
-            # todo:     """
-            # todo: ),
-        )
-        
-        self.update_plugin_usage()
-
-    def handle_message(self, message: dict[str, Any]) -> Response | Iterable[Response]:
-        result: tuple[str, CommandParser.Opts, CommandParser.Args] | None
-
-        # Get command and parameters.
-        result = self.command_parser.parse(message["command"])
-        self.logger.debug(result)
-        if result is None:
-            return Response.command_not_found(message)
-        command, opts, args = result
-
-        if command in self.command_parser.commands:
-            func: Callable[
-                [dict[str, Any], CommandParser.Args, CommandParser.Opts],
-                Response | Iterable[Response],
-            ] = getattr(self, "_" + command)
-            self.logger.debug(f"executing subcommand: {command}")
-            self.logger.debug(f"args: {args}")
-            self.logger.debug(f"opts: {opts}")
-            return func(message, args, opts)
-        else:
-            return Response.command_not_found(message)
-
-    def _list(
+    @command
+    @arg("user", str, "The user for which the groups should be listed", optional=True)
+    @opt("a", long_opt="all", description="Display all user groups with all users", privilege=Privilege.ADMIN)
+    def info(
         self,
         message: dict[str, Any],
         args: CommandParser.Args,
         opts: CommandParser.Opts,
     ) -> Response | Iterable[Response]:
+        """
+        List user groups
+        """
         user_id: int | None
         uid: int
 
@@ -151,7 +83,10 @@ class Usergroup(PluginCommandMixin, PluginThread):
             if not self.client.user_is_privileged(message["sender_id"]):
                 return Response.privilege_err(message)
 
-            groups = self.get_groups()
+            groups: list[UserGroup]
+            with self.session() as session:
+                groups = Usergroup.get_groups(session=session)
+            
             result_dict: dict[str, list[str]] = {}
             for group in groups:
                 group_name = group["name"]
@@ -197,11 +132,16 @@ class Usergroup(PluginCommandMixin, PluginThread):
                 msg_type="private",
             )
 
-    def _add(
+    @command
+    @privilege(Privilege.ADMIN)
+    @arg("users", str, "The users that should get added to groups", greedy=True)
+    @arg("groups", str, "The groups the users should get added to", greedy=True)
+    def add(
         self, message: dict[str, Any], args: CommandParser.Args, _: CommandParser.Opts
     ) -> Response | Iterable[Response]:
-        if not self.client.user_is_privileged(message["sender_id"]):
-            return Response.privilege_err(message)
+        """
+        Add users to groups.
+        """
 
         failures: dict[str, list[str]] = {}
         success: dict[str, list[str]] = {}
@@ -260,12 +200,16 @@ class Usergroup(PluginCommandMixin, PluginThread):
         responses.append(Response.ok(message))
         return responses
 
-    def _creat(
+    @command
+    @privilege(Privilege.ADMIN)
+    @arg("name", str, "The name of the user group")
+    @arg("description", str, "The description of the user group (required for portability with builtin zulip usergroups)")
+    def creat(
         self, message: dict[str, Any], args: CommandParser.Args, _: CommandParser.Opts
     ) -> Response | Iterable[Response]:
-        if not self.client.user_is_privileged(message["sender_id"]):
-            return Response.privilege_err(message)
-
+        """
+        Create an empty user group
+        """
         success = self.create_group(args.name, args.description)
 
         if not success:
@@ -277,9 +221,15 @@ class Usergroup(PluginCommandMixin, PluginThread):
 
         return Response.ok(message)
 
-    def _remove(
+    @command
+    @arg("user", str, "The user that should get removed from groups. If no group is not specified, the user gets removed from all groups.", optional=True)
+    @arg("group", str, "The group the user should get removed from. If no user is not specified, all users gets removed from this groups.", optional=True)
+    def remove(
         self, message: dict[str, Any], args: CommandParser.Args, _: CommandParser.Opts
     ) -> Response | Iterable[Response]:
+        """
+        remove user(s) from group(s)
+        """
         user_id = None
 
         if args.user is not None:
@@ -370,138 +320,89 @@ class Usergroup(PluginCommandMixin, PluginThread):
         return responses
 
     # TODO: replacement for zulip usergroups. Rreplace as soon as api allows bot requests for usergroups
-    def get_groups(self) -> list[dict[str, Any]]:
-        res_groups = self._db.execute("select * from UserGroups")
-        if res_groups is None:
-            return []
-
-        groups: list[dict[str, Any]] = []
-        for group_id, group_name in res_groups:
-            memers_res = self._db.execute(
-                "select UserId from UserGroupMembers where GroupId = ?",
-                group_id,
-            )
-            members: list[int] = []
-            if memers_res is not None:
-                members = [t[0] for t in memers_res]
-            groups.append({"id": group_id, "name": group_name, "members": members})
-
-        return groups
-
-    def create_group(self, name: str, _: str) -> bool:
-        self._db.execute(
-            "insert or ignore into UserGroups (UGroup) values (?)",
-            name,
-            commit=True,
-        )
+    
+    @staticmethod
+    def get_groups(session): # todo: -> list[UserGroup]:
+        return session.query(UserGroup).all()
+    
+    @staticmethod
+    def create_group(session, name: str, description: str) -> bool:
+        group = UserGroup(UGroup=name, Description=description)
+        session.add(group)
+        try:
+            session.commit()
+        except:
+            session.rollback()  # Assuming uniqueness violation or similar
+            return False # todo: replace with exception
         return True
-
-    def delete_group(self, identifier: int | str) -> bool:
-        gid = self.group_id_by_identifier(identifier)
+    
+    @staticmethod
+    def delete_group(session, identifier: int | str) -> bool:
+        gid = Usergroup.group_id_by_identifier(session, identifier)
         if gid is None:
             return False
-        self._db.execute(
-            "delete from UserGroups where GroupId = ?",
-            gid,
-            commit=True,
-        )
-        self._db.execute(
-            "delete from UserGroupMembers where GroupId = ?",
-            gid,
-            commit=True,
-        )
+        session.query(UserGroup).filter(UserGroup.GroupId == gid).delete()
+        session.commit()
         return True
-
+    
+    @staticmethod
     def remove_user_from_group(
-        self, user_identifier: int | str, group_identifier: int | str
+        session, user_identifier: int | str, group_identifier: int | str
     ) -> bool:
-        uid = self.user_id_by_identifier(user_identifier)
-        gid = self.group_id_by_identifier(group_identifier)
+        uid = Usergroup.user_id_by_identifier(session, user_identifier)
+        gid = Usergroup.group_id_by_identifier(session, group_identifier)
         if uid is None or gid is None:
             return False
-        self._db.execute(
-            "delete from UserGroupMembers where GroupId = ? and UserId = ?",
-            gid,
-            uid,
-            commit=True,
-        )
+        session.query(UserGroupMember).filter(UserGroupMember.GroupId == gid, UserGroupMember.UserId == uid).delete()
+        session.commit()
         return True
 
+    @staticmethod
     def add_user_to_group(
-        self, user_identifier: int | str, group_identifier: int | str
+        session, user_identifier: int | str, group_identifier: int | str
     ) -> bool:
-        uid = self.user_id_by_identifier(user_identifier)
-        gid = self.group_id_by_identifier(group_identifier)
+        uid = Usergroup.user_id_by_identifier(session, user_identifier)
+        gid = Usergroup.group_id_by_identifier(session, group_identifier)
         if uid is None or gid is None:
             return False
-        self._db.execute(
-            "insert or ignore into UserGroupMembers values (?, ?)",
-            gid,
-            uid,
-            commit=True,
-        )
+        session.add(UserGroupMember(GroupId=gid, UserId=uid))
+        session.commit()
         return True
 
-    def get_groups_for_user(self, user_identifier: int | str) -> list[int]:
-        uid = self.user_id_by_identifier(user_identifier)
-        res = self._db.execute(
-            "select g.GroupId from UserGroups g, UserGroupMembers m where m.GroupId = g.GroupId and m.UserId = ?",
-            uid,
-        )
-        if not res or len(res) == 0:
-            return []
-        return [i[0] for i in res]
+    @staticmethod
+    def get_groups_for_user(session, user_identifier: int | str) -> list[UserGroup]:
+        uid = Usergroup.user_id_by_identifier(user_identifier)
+        return session.query(UserGroup).join(UserGroupMember).filter(UserGroupMember.GroupId == UserGroup.GroupId).filter(UserGroupMember.UserId == uid).all()
 
-    def get_group_id_by_name(self, group_name: str) -> int | None:
-        res = self._db.execute(
-            "select GroupId from UserGroups where UGroup = ? LIMIT 1", group_name
-        )
-        if not res or len(res) == 0:
+    @staticmethod
+    def get_group_id_by_name(session, group_name: str) -> int | None:
+        group = session.query(UserGroup).filter(UserGroup.UGroup == group_name).first()
+        if group:
+            return group.GroupId
+        else:
             return None
-        i: int = res[0][0]
-        return i
-
-    def group_id_by_identifier(self, identifier: int | str) -> int | None:
-        print(type(identifier))
-        print(isinstance(identifier, int))
-        if isinstance(identifier, int):
-            print(int(identifier))
+    
+    @staticmethod
+    def group_id_by_identifier(session, identifier: int | str) -> int | None:
         if isinstance(identifier, int):
             return int(identifier)
 
-        res = self._db.execute(
-            "select GroupId from UserGroups where UGroup = ? LIMIT 1", identifier
-        )
-        if not res or len(res) == 0:
-            return None
-        i: int = res[0][0]
-        return i
+        return Usergroup.get_group_id_by_name(session, str(identifier))
 
-    def get_group_by_identifier(self, identifier: int | str) -> dict[str, Any] | None:
-        gid = self.group_id_by_identifier(identifier)
+    @staticmethod
+    def get_group_by_identifier(session, identifier: int | str) -> UserGroup | None:
+        gid = Usergroup.group_id_by_identifier(session, identifier)
         if gid is None:
             return None
 
-        res_name = self._db.execute(
-            "select UGroup from UserGroups where GroupId = ? LIMIT 1", gid
-        )
-        res_members = self._db.execute(
-            "select UserId from UserGroupMembers where GroupId = ?", gid
-        )
-        if res_members is None or res_name is None or len(res_name) == 0:
-            return None
-        g: dict[str, Any] = {
-            "id": gid,
-            "name": res_name[0][0],
-            "members": [t[0] for t in res_members],
-        }
-        return g
+        return session.query(UserGroup).filter(UserGroup.GroupId == gid).first()
 
-    def get_group_members(self, identifier: int | str) -> list[int]:
-        g = self.get_group_by_identifier(identifier)
+    @staticmethod
+    def get_group_members(session, identifier: int | str) -> list[int]:
+        g = Usergroup.get_group_by_identifier(session, identifier)
         if g is None:
             return []
-        members: list[int] = g["members"]
+        members: list[int] = g.members
         return members
 
     def user_id_by_identifier(self, identifier: int | str) -> int | None:

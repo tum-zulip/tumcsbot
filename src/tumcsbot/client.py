@@ -12,10 +12,18 @@ from threading import RLock
 import time
 from collections.abc import Iterable as IterableClass
 from typing import cast, Any, Callable, IO, Iterable, Sequence
+from sqlalchemy import Column, Boolean, String
 
 from zulip import Client as ZulipClient
 
 from tumcsbot.lib import stream_names_equal, DB, Response, MessageType, Regex
+from tumcsbot.db import TableBase
+
+class PublicStreams(TableBase):
+    __tablename__ = "PublicStreams"
+
+    StreamName = Column(String, primary_key=True)
+    Subscribed = Column(Boolean, nullable=False, default=False)
 
 
 def synchronized(lock: RLock) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
@@ -69,11 +77,6 @@ class Client(ZulipClient):
         self.ping: str = f"@**{self.get_profile()['full_name']}**"
         self.ping_len: int = len(self.ping)
         self.register_params: dict[str, Any] = {}
-        self._db: DB = DB()
-        self._db.checkout_table(
-            "PublicStreams",
-            "(StreamName text primary key, Subscribed integer not null)",
-        )
 
     def call_endpoint(
         self,
@@ -156,6 +159,7 @@ class Client(ZulipClient):
                 map(
                     lambda t: cast(str, t[0]),
                     self._db.execute("select StreamName from PublicStreams"),
+                    # todo: fix this
                 )
             )
         except Exception as e:
@@ -673,7 +677,8 @@ class SharedClient:
         self._client: Client = Client(*args, **kwargs)
         # Replace the db connection of the client so it doesn't check for
         # thread-safety since we're already guaranteeing that.
-        self._client._db = DB(check_same_thread=False)
+        # todo: check_same_thread=False
+        self._client._db = DB()
 
     @property
     def base_url(self) -> str:

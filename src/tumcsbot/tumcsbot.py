@@ -19,6 +19,7 @@ from threading import Thread, current_thread
 from typing import Any, Callable, Iterable, Type, cast
 
 from tumcsbot import lib
+from tumcsbot.db import DB
 from tumcsbot.client import Client, SharedClient
 from tumcsbot.plugin import (
     Event,
@@ -56,7 +57,6 @@ class _RootClient(Client):
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         """Enhance the constructor of the parent class."""
         super().__init__(*args, **kwargs)
-        self._init_db()
 
     def _init_db(self) -> None:
         """Initialize some tables of the database."""
@@ -154,13 +154,9 @@ class TumCSBot:
         )
 
         # Init database handler.
-        lib.DB.path = db_path
+        DB.set_path(db_path)
         # Ensure presence of Plugins table.
-        db: lib.DB = lib.DB()
-        db.checkout_table(
-            "Plugins", "(name text primary key, syntax text, description text)"
-        )
-        db.close()
+        DB.create_tables()
 
         # Init own Zulip client which also inits the global DB tables for all
         # Zulip client objects.

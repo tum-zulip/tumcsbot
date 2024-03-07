@@ -7,9 +7,10 @@ from time import sleep
 import random
 from typing import Any, Iterable
 
-from tumcsbot.lib import CommandParser, Response
+from tumcsbot.lib import Response
 from tumcsbot.plugin import PluginCommandMixin, PluginThread
 from tumcsbot.plugin_decorators import command, arg, opt, privilege, Privilege
+from tumcsbot.command_parser import CommandParser
 
 
 class Echo(PluginCommandMixin, PluginThread):

@@ -14,9 +14,11 @@ receive events for all public streams.
 """
 
 from typing import Iterable
+from sqlalchemy import Column, Boolean, String
 
-from tumcsbot.lib import DB, Response
+from tumcsbot.lib import Response
 from tumcsbot.plugin import Event, PluginThread
+from tumcsbot.db import DB, TableBase
 
 
 class AutoSubscriber(PluginThread):
@@ -28,15 +30,11 @@ class AutoSubscriber(PluginThread):
 
     def _init_plugin(self) -> None:
         self._db: DB = DB()
-        self._db.checkout_table(
-            "PublicStreams",
-            "(StreamName text primary key, Subscribed integer not null)",
-        )
         # Ensure that we are subscribed to all existing streams.
-        for stream_name, subscribed in self._db.execute(self._select_sql):
-            if subscribed == 1:
-                continue
-            self._handle_stream(stream_name, False)
+        # todo: for stream_name, subscribed in self._db.execute(self._select_sql):
+        # todo:     if subscribed == 1:
+        # todo:         continue
+        # todo:     self._handle_stream(stream_name, False)
 
     def is_responsible(self, event: Event) -> bool:
         return super().is_responsible(event) and (

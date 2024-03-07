@@ -6,9 +6,9 @@
 from inspect import cleandoc
 from typing import Any, Iterable
 
-from tumcsbot.lib import CommandParser, Conf, Response, is_bot_owner
+from tumcsbot.lib import Conf, Response, is_bot_owner
 from tumcsbot.plugin import PluginCommandMixin, PluginThread
-
+from tumcsbot.command_parser import CommandParser
 
 class ConfPlugin(PluginCommandMixin, PluginThread):
     syntax = cleandoc(

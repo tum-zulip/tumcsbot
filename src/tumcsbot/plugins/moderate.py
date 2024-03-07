@@ -13,7 +13,9 @@ change the alert words and specify the emojis to use for the reactions.
 from inspect import cleandoc
 from typing import Any, Iterable, Callable
 
-from tumcsbot.lib import CommandParser, DB, Response, Regex
+from tumcsbot.lib import Response, Regex
+from tumcsbot.command_parser import CommandParser
+from tumcsbot.db import DB
 from tumcsbot.plugin import PluginCommandMixin, PluginThread
 from tumcsbot.plugins.moderation_reaction_handler import ModerationReactionHandler
 
@@ -225,14 +227,14 @@ class Moderate(PluginCommandMixin, PluginThread):
             "GroupAuthorization",
             "(GroupId integer not null, StreamId integer not null, primary key(GroupId, StreamId))",
         )
-        self._db.checkout_table(
-            "UserGroups",
-            "(GroupId integer primary key, UGroup text unique)",
-        )
-        self._db.checkout_table(
-            "UserGroupMembers",
-            "(GroupId integer not null, UserId integer not null, primary key (GroupId, UserId))",
-        )
+        # self._db.checkout_table(
+        #     "UserGroups",
+        #     "(GroupId integer primary key, UGroup text unique)",
+        # )
+        # self._db.checkout_table(
+        #     "UserGroupMembers",
+        #     "(GroupId integer not null, UserId integer not null, primary key (GroupId, UserId))",
+        # )
 
         # pylint: disable=line-too-long
         self.command_parser: CommandParser = CommandParser()

@@ -5,7 +5,7 @@ from enum import Enum
 from dataclasses import dataclass
 from inspect import cleandoc
 
-from tumcsbot.lib import CommandParser
+from tumcsbot.command_parser import CommandParser
 from tumcsbot.lib import Response
 from tumcsbot.plugin import PluginCommandMixin
 

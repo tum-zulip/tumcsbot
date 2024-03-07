@@ -8,10 +8,47 @@ from inspect import cleandoc
 import re
 from sqlite3 import IntegrityError
 from typing import cast, Any, Callable, Iterable
+from sqlalchemy import Column, String, Integer, ForeignKey, PrimaryKeyConstraint, UniqueConstraint
+from sqlalchemy.orm import relationship
 
-from tumcsbot.lib import stream_name_match, CommandParser, DB, Regex, Response
+from tumcsbot.lib import stream_name_match, Regex, Response
 from tumcsbot.plugin import Event, PluginCommandMixin, PluginProcess
+from tumcsbot.command_parser import CommandParser
+from tumcsbot.db import DB, TableBase
+from tumcsbot.plugin_decorators import *
 
+class Group(TableBase):
+    __tablename__ = 'Groups'
+
+    Id = Column(String, primary_key=True)
+    Emoji = Column(String, nullable=False, unique=True)
+    Streams = Column(String, nullable=False)
+
+class GroupUser(TableBase):
+    __tablename__ = 'GroupUsers'
+
+    UserId = Column(Integer, nullable=False)
+    GroupId = Column(String, ForeignKey('Groups.Id', ondelete='CASCADE'), nullable=False)
+    
+    __table_args__ = (PrimaryKeyConstraint('UserId', 'GroupId'),)
+
+class GroupClaim(TableBase):
+    __tablename__ = 'GroupClaims'
+
+    MessageId = Column(Integer, nullable=False)
+    GroupId = Column(String, ForeignKey('Groups.Id', ondelete='CASCADE'), nullable=False)
+    
+    # Define primary key constraint
+    __table_args__ = (PrimaryKeyConstraint('MessageId', 'GroupId'),)
+
+class GroupClaimAll(TableBase):
+    # todo: why is this necessary?
+    __tablename__ = 'GroupClaimsAll'
+
+    MessageId = Column(Integer, primary_key=True)
+
+    # Define the constraint to ensure MessageId is unique across all GroupClaims tables
+    UniqueConstraint('MessageId', name='uq_group_claims_all_message_id')
 
 class Group(PluginCommandMixin, PluginProcess):
     zulip_events = ["message", "reaction", "stream"]
@@ -151,28 +188,6 @@ class Group(PluginCommandMixin, PluginProcess):
     def _init_plugin(self) -> None:
         # Get own database connection.
         self._db: DB = DB()
-        # Check for database tables.
-        self._db.checkout_table(
-            table="Groups",
-            schema="(Id text primary key, Emoji text not null unique, Streams text not null)",
-        )
-        self._db.checkout_table(
-            table="GroupUsers",
-            schema=(
-                "(UserId integer not null, GroupId text, "
-                "foreign key(GroupId) references Groups(ID) on delete cascade, "
-                "primary key(UserId, GroupID))"
-            ),
-        )
-        self._db.checkout_table(
-            table="GroupClaims",
-            schema=(
-                "(MessageId integer not null, GroupId text, "
-                "foreign key(GroupId) references Groups(ID) on delete cascade, "
-                "primary key(MessageId, GroupId))"
-            ),
-        )
-        self._db.checkout_table("GroupClaimsAll", "(MessageId integer primary key)")
 
         # Init command parsing.
         self.command_parser = CommandParser()
@@ -218,65 +233,116 @@ class Group(PluginCommandMixin, PluginProcess):
             return self.handle_stream_event(event.data)
         return self.handle_message(event.data["message"])
 
-    def handle_message(self, message: dict[str, Any]) -> Response | Iterable[Response]:
-        result: tuple[str, CommandParser.Opts, CommandParser.Args] | None
-
-        # Get command and parameters.
-        result = self.command_parser.parse(message["command"])
-        if result is None:
-            return Response.command_not_found(message)
-        command, opts, args = result
-
-        if command == "subscribe":
-            return self._subscribe(message["sender_id"], args.group_id, message)
-        if command == "unsubscribe":
-            if opts.s and opts.w:
-                return Response.build_message(
-                    message,
-                    "The `-s` and `-w` flags are mutually exclusive, see `help group`.",
-                )
-            with_streams: bool = opts.s or not opts.w
-            return self._unsubscribe(
-                message["sender_id"], args.group_id, message, with_streams
+    @command
+    @privilege(Privilege.ADMIN)
+    @arg("group_id", str, description="The group id to subscribe to.")
+    def subscribe(self, message: dict[str, Any], args: CommandParser.Args, _: CommandParser.Opts) -> Response | Iterable[Response]:
+        return self._subscribe(message["sender_id"], args.group_id, message)
+    
+    @command
+    @arg("group_id", str, description="The group id to unsubscribe from.")
+    @opt("s", description="Unsubscribe from all streams of this group.")
+    @opt("w", description="Keep the streams of this group you are currently subscribed to.")
+    def unsubscribe(self, message: dict[str, Any], args: CommandParser.Args, opts: CommandParser.Opts) -> Response | Iterable[Response]:
+        if opts.s and opts.w:
+            return Response.build_message(
+                message,
+                "The `-s` and `-w` flags are mutually exclusive, see `help group`.",
             )
+        with_streams: bool = opts.s or not opts.w
+        return self._unsubscribe(
+            message["sender_id"], args.group_id, message, with_streams
+        )
+    
+    @command
+    @privilege(Privilege.ADMIN)
+    @arg("group_id", str, description="The group id to add.")
+    @arg("emoji", Regex.get_emoji_name, description="The emoji to use for the reaction.")
+    def add(self, message: dict[str, Any], args: CommandParser.Args, _: CommandParser.Opts) -> Response | Iterable[Response]:
+        return self._add(message, args.group_id, args.emoji)
+    
+    @command
+    @privilege(Privilege.ADMIN)
+    @arg("group_id", str, description="The group id to remove.")
+    def remove(self, message: dict[str, Any], args: CommandParser.Args, _: CommandParser.Opts) -> Response | Iterable[Response]:
+        return self._remove(message, args.group_id)
+    
+    @command
+    @privilege(Privilege.ADMIN)
+    @arg("group_id", str, description="The group id to add streams to.")
+    @arg("streams", str, description="The stream patterns to add.", greedy=True)
+    def add_streams(self, message: dict[str, Any], args: CommandParser.Args, _: CommandParser.Opts) -> Response | Iterable[Response]:
+        if len(args.streams) == 0:
+            return Response.build_message(
+                message, f"Error: At least one argument is required for `streams`."
+            )
+        return self._change_streams(message, args.group_id, "add_streams", args.streams)
+    
+    @command
+    @privilege(Privilege.ADMIN)
+    @arg("group_id", str, description="The group id to remove streams from.")
+    @arg("streams", str, description="The stream patterns to remove.", greedy=True)
+    def remove_streams(self, message: dict[str, Any], args: CommandParser.Args, _: CommandParser.Opts) -> Response | Iterable[Response]:
+        if len(args.streams) == 0:
+            return Response.build_message(
+                message, f"Error: At least one argument is required for `streams`."
+            )
+        return self._change_streams(message, args.group_id, "remove_streams", args.streams)
+    
+    @command
+    @privilege(Privilege.ADMIN)
+    def list(self, message: dict[str, Any], _: CommandParser.Args, _: CommandParser.Opts) -> Response | Iterable[Response]:
+        return self._list(message)
+    
+    @command
+    @privilege(Privilege.ADMIN)
+    @arg("group_id", str, description="The group id to claim.")
+    def claim(self, message: dict[str, Any], args: CommandParser.Args, _: CommandParser.Opts) -> Response | Iterable[Response]:
+        if message["type"] != "stream":
+            return Response.build_message(message, "Claim only stream messages.")
+        return self._claim(message, args.group_id, None)
+    
+    @command
+    @privilege(Privilege.ADMIN)
+    @arg("group_id", str, description="The group id to claim.")
+    @arg("message_id", int, description="The message id to claim.")
+    def claim_message(self, message: dict[str, Any], args: CommandParser.Args, _: CommandParser.Opts) -> Response | Iterable[Response]:
+        return self._claim(message, args.group_id, args.message_id)
+    
+    @command
+    @privilege(Privilege.ADMIN)
+    @arg("group_id", str, description="The group id to unclaim.")
+    @arg("message_id", int, description="The message id to unclaim.")
+    def unclaim(self, message: dict[str, Any], args: CommandParser.Args, _: CommandParser.Opts) -> Response | Iterable[Response]:
+        return self._unclaim(message, args.group_id, args.message_id)
+    
+    @command
+    @privilege(Privilege.ADMIN)
+    @opt("u", description="Update all announcement messages.")
+    def announce(self, message: dict[str, Any], _: CommandParser.Args, opts: CommandParser.Opts) -> Response | Iterable[Response]:
+        if opts.u:
+            return self._update_announcement_messages(message)
+        if message["type"] != "stream":
+            return Response.build_message(message, "Claim only stream messages.")
+        return self._announce(message)
+    
+    @command
+    @privilege(Privilege.ADMIN)
+    @arg("message_id", int, description="The message id to unannounce.")
+    def unannounce(self, message: dict[str, Any], args: CommandParser.Args, _: CommandParser.Opts) -> Response | Iterable[Response]:
+        return self._unannounce(message, args.message_id)
+    
 
-        if not self.client.user_is_privileged(message["sender_id"]):
-            return Response.privilege_err(message)
-
-        if command == "list":
-            return self._list(message)
-        if command == "announce":
-            if opts.u:
-                return self._update_announcement_messages(message)
-            if message["type"] != "stream":
-                return Response.build_message(message, "Claim only stream messages.")
-            return self._announce(message)
-        if command == "unannounce":
-            return self._unannounce(message, args.message_id)
-        if command == "claim":
-            if message["type"] != "stream":
-                return Response.build_message(message, "Claim only stream messages.")
-            return self._claim(message, args.group_id, message["id"])
-        if command == "claim_message":
-            return self._claim(message, args.group_id, args.message_id)
-        if command == "unclaim":
-            return self._unclaim(message, args.group_id, args.message_id)
-        if command == "add":
-            return self._add(message, args.group_id, args.emoji)
-        if command == "remove":
-            return self._remove(message, args.group_id)
-        if command in ["add_streams", "remove_streams"]:
-            if len(args.streams) == 0:
-                return Response.build_message(
-                    message, f"Error: At least one argument is required for `streams`."
-                )
-            return self._change_streams(message, args.group_id, command, args.streams)
-        if command == "fix":
-            return self._fix(message, args.group_id)
-        if command == "fix_all":
-            return self._fix_all(message)
-
-        return Response.command_not_found(message)
+    @command
+    @privilege(Privilege.ADMIN)
+    @arg("group_id", str, description="The group id to fix.")
+    def fix(self, message: dict[str, Any], args: CommandParser.Args, _: CommandParser.Opts) -> Response | Iterable[Response]:
+        return self._fix(message, args.group_id)
+    
+    @command
+    @privilege(Privilege.ADMIN)
+    def fix_all(self, message: dict[str, Any], _: CommandParser.Args, _: CommandParser.Opts) -> Response | Iterable[Response]:
+        return self._fix_all(message)
 
     def handle_reaction_event(
         self, event: dict[str, Any]

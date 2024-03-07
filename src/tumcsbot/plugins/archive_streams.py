@@ -8,12 +8,11 @@ from shlex import quote
 from typing import Any, Iterable
 
 from tumcsbot.lib import (
-    split,
-    validate_and_return_regex,
-    CommandParser,
     Regex,
     Response,
 )
+from tumcsbot.command_parser import CommandParser
+from tumcsbot.db import DB
 from tumcsbot.plugin import PluginCommandMixin, PluginThread
 
 

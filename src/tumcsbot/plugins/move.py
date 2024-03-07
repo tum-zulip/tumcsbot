@@ -6,7 +6,8 @@
 from inspect import cleandoc
 from typing import Any, Iterable
 
-from tumcsbot.lib import CommandParser, Regex, Response
+from tumcsbot.command_parser import CommandParser
+from tumcsbot.lib import Regex, Response
 from tumcsbot.plugin import PluginCommandMixin, PluginThread
 
 
