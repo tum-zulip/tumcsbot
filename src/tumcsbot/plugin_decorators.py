@@ -9,7 +9,10 @@ from tumcsbot.command_parser import CommandParser
 from tumcsbot.lib import Response
 from tumcsbot.plugin import PluginCommandMixin
 
-from tumcsbot.client import Privilege
+class Privilege(Enum):
+    ADMIN = 1
+    MODERATOR = 2
+    USER = 3
 
 @dataclass
 class ArgConfig:
@@ -51,10 +54,8 @@ def arg(name: str, type: Callable[[Any], Any], description: str | None = None, p
         def wrapper(self, message: dict[str, Any], args: CommandParser.Args, opts: CommandParser.Opts) -> Response | Iterable[Response]:
             if privilege is not None:  # and todo: check if option is present
                 # todo: check privilege
-                # if not self.client.user_is_privileged(message["sender_id"], allow_moderator= privilege == Privilege.MODERATOR):
-                #     return Response.privilege_err_command(message, f"{self.plugin_name()} {func.__name__}")
-                if not self.client.user_has_privilege(privilege):
-                    return Response.privilege_err_command(message, f"{self.plugin_name()} {func.__name__}")
+                 if not self.client.user_is_privileged(message["sender_id"], allow_moderator= privilege == Privilege.MODERATOR):
+                     return Response.privilege_err_command(message, f"{self.plugin_name()} {func.__name__}")
             return func(self, message, args, opts)
         return wrapper
     return decorator
@@ -73,11 +74,9 @@ def opt(opt: str, long_opt: str | None = None, type: Callable[[Any], Any] | None
            #     pass
             if privilege is not None:
                 # todo: check privilege
-                # if not self.client.user_is_privileged(message["sender_id"], allow_moderator= privilege == Privilege.MODERATOR):
-                #     return Response.privilege_err_command(message, f"{self.plugin_name()} {func.__name__}")
-                if not self.client.user_has_privilege(privilege):
-                    return Response.privilege_err_command(message, f"{self.plugin_name()} {func.__name__}")
-                pass
+                 if not self.client.user_is_privileged(message["sender_id"], allow_moderator= privilege == Privilege.MODERATOR):
+                     return Response.privilege_err_command(message, f"{self.plugin_name()} {func.__name__}")
+                 pass
             return func(self, message, args, opts)
         return wrapper
     return decorator
@@ -90,9 +89,7 @@ def privilege(privilege: Privilege):
         @wraps(func)
         def wrapper(self, message: dict[str, Any], args: CommandParser.Args, opts: CommandParser.Opts) -> Response | Iterable[Response]:
             if privilege is not None:
-                # if not self.client.user_is_privileged(message["sender_id"], allow_moderator= privilege == Privilege.MODERATOR):
-                #     return Response.privilege_err_command(message, f"{self.plugin_name()} {func.__name__}")
-                if not self.client.user_has_privilege(privilege):
+                if not self.client.user_is_privileged(message["sender_id"], allow_moderator= privilege == Privilege.MODERATOR):
                     return Response.privilege_err_command(message, f"{self.plugin_name()} {func.__name__}")
             return func(self, message, args, opts)
         return wrapper
@@ -100,18 +97,8 @@ def privilege(privilege: Privilege):
 
 
 class command:
-    def __init__(self, fn = None, name = None):
+    def __init__(self, fn):
         self.fn = fn
-        self.name = name
-
-        if name is None and fn is not None:
-            self.name = fn.__name__
-
-    def __call__(self, fn):
-        self.fn = fn
-        if self.name is None:
-            self.name = fn.__name__
-        return self
     
     @property
     def description(self):
@@ -174,6 +161,9 @@ class command:
             for arg in self.meta["args"] if arg.optional
         }
     
+    @property
+    def name(self):
+        return self.fn.__name__
     
     def __set_name__(self, owner, name):
 
@@ -182,12 +172,11 @@ class command:
         
         if not hasattr(owner, "_tumcs_bot_command_parser"):
             owner._tumcs_bot_command_parser = CommandParser()
-            owner._tumcs_bot_commands = {}
-        
         command_parser = owner._tumcs_bot_command_parser
-        commands = owner._tumcs_bot_commands
 
         command_parser.add_subcommand(self.name, args=self.args, opts=self.opts, optionals=self.optional_args, greedy=self.greedy)
+
+        commands = owner._tumcs_bot_commands
         commands[self.name] = (self.description, self.syntax)
 
         # replace ourself with the original method
@@ -196,7 +185,6 @@ class command:
         def wrapper(self, message: dict[str, Any], args: CommandParser.Args, opts: CommandParser.Opts) -> Response | Iterable[Response]:
             self.logger.debug("%s is calling `%s %s` with args %s and opts %s", message["sender_full_name"], self.plugin_name(), outer_self.name, args, opts)
             return outer_self.fn(self, message, args, opts)
-        
         # todo: idk if this is right
         wrapper._tumcsbot_meta = self.meta
         wrapper._tumcsbot_syntax = self.syntax
