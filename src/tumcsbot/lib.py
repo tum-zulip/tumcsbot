@@ -727,7 +727,7 @@ class Response:
     privilege_err_msg_command: str = cleandoc(
         """
         Hi {}!
-        You don't have sufficient privileges to execute the command {}.
+        You don't have sufficient privileges to execute the command `{}`.
         """
     )
 
