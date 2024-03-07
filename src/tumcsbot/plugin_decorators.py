@@ -38,6 +38,7 @@ class OptConfig:
 def get_meta(func):
     if not hasattr(func, "__tumsbot_plugin_meta__"):
         func.__tumsbot_plugin_meta__ = {
+            "name": "",
             "args": [],
             "opts": [],
             "privilege": Privilege.USER,
@@ -56,7 +57,8 @@ def arg(name: str, type: Callable[[Any], Any], description: str | None = None, p
         def wrapper(self, message: dict[str, Any], args: CommandParser.Args, opts: CommandParser.Opts) -> Response | Iterable[Response]:
             if privilege is not None:  # and todo: check if option is present
                 # todo: check privilege
-                pass
+                if not self.client.user_is_privileged(message["sender_id"], allow_moderator= privilege == Privilege.MODERATOR):
+                    return Response.privilege_err_command(message, f"{self.plugin_name()} {meta["name"]}")
             return func(self, message, args, opts)
         return wrapper
     return decorator
@@ -70,8 +72,13 @@ def opt(opt: str, long_opt: str | None = None, type: Callable[[Any], Any] | None
         meta["opts"].append(OptConfig(opt, long_opt, type, description, privilege))
         @wraps(func)
         def wrapper(self, message: dict[str, Any], args: CommandParser.Args, opts: CommandParser.Opts) -> Response | Iterable[Response]:
-            if privilege is not None:  # and todo: check if option is present
+             # and todo: check if option is present
+           # if meta["opts"] == []:
+           #     pass
+            if privilege is not None:
                 # todo: check privilege
+                if not self.client.user_is_privileged(message["sender_id"], allow_moderator= privilege == Privilege.MODERATOR):
+                    return Response.privilege_err_command(message, f"{self.plugin_name()} {meta["name"]}")
                 pass
             return func(self, message, args, opts)
         return wrapper
@@ -86,7 +93,7 @@ def privilege(privilege: Privilege):
         def wrapper(self, message: dict[str, Any], args: CommandParser.Args, opts: CommandParser.Opts) -> Response | Iterable[Response]:
             if privilege is not None:
                 if not self.client.user_is_privileged(message["sender_id"], allow_moderator= privilege == Privilege.MODERATOR):
-                    return Response.privilege_err(message)
+                    return Response.privilege_err_command(message, f"{self.plugin_name()} {meta["name"]}")
             return func(self, message, args, opts)
         return wrapper
     return decorator
@@ -172,10 +179,16 @@ class command:
         commands = owner._tumcs_bot_commands
         commands[self.name] = (self.description, self.syntax)
 
+        self.meta["name"] = self.name
+
         # replace ourself with the original method
         outer_self = self   
         @wraps(self.fn)
         def wrapper(self, message: dict[str, Any], args: CommandParser.Args, opts: CommandParser.Opts) -> Response | Iterable[Response]:
             self.logger.debug("%s is calling `%s %s` with args %s and opts %s", message["sender_full_name"], self.plugin_name(), outer_self.name, args, opts)
             return outer_self.fn(self, message, args, opts)
+        # todo: idk if this is right
+        wrapper._tumcsbot_meta = self.meta
+        wrapper._tumcsbot_syntax = self.syntax
+        wrapper._tumcsbot_description = self.description
         setattr(owner, name, wrapper)

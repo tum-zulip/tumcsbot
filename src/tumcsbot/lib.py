@@ -723,6 +723,14 @@ class Response:
         You don't have sufficient privileges to execute this command.
         """
     )
+
+    privilege_err_msg_command: str = cleandoc(
+        """
+        Hi {}!
+        You don't have sufficient privileges to execute the command {}.
+        """
+    )
+
     command_not_found_msg: str = cleandoc(
         """
         Hi {}!
@@ -878,7 +886,18 @@ class Response:
         return cls.build_message(
             message, cls.privilege_err_msg.format(message["sender_full_name"])
         )
+    
+    @classmethod
+    def privilege_err_command(cls, message: dict[str, Any], command:str) -> "Response":
+        """The user has not sufficient rights.
 
+        Tell the user that they have not sufficient privileges for a
+        specified command.
+        """
+        return cls.build_message(
+            message, cls.privilege_err_msg_command.format(message["sender_full_name"],command)
+        )
+    
     @classmethod
     def command_not_found(cls, message: dict[str, Any]) -> "Response":
         """Tell the user that his command could not be found."""

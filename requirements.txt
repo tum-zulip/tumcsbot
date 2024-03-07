@@ -4,3 +4,4 @@ pytest
 regex
 types-regex
 zulip
+openai
