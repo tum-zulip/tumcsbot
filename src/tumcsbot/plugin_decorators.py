@@ -101,7 +101,7 @@ class command:
     def __init__(self, fn = None, name = None):
         self.fn = fn
         self.name = name
-        
+
         if name is None and fn is not None:
             self.name = fn.__name__
 
@@ -180,11 +180,12 @@ class command:
         
         if not hasattr(owner, "_tumcs_bot_command_parser"):
             owner._tumcs_bot_command_parser = CommandParser()
+            owner._tumcs_bot_commands = {}
+        
         command_parser = owner._tumcs_bot_command_parser
+        commands = owner._tumcs_bot_commands
 
         command_parser.add_subcommand(self.name, args=self.args, opts=self.opts, optionals=self.optional_args, greedy=self.greedy)
-
-        commands = owner._tumcs_bot_commands
         commands[self.name] = (self.description, self.syntax)
 
         # replace ourself with the original method
@@ -193,6 +194,7 @@ class command:
         def wrapper(self, message: dict[str, Any], args: CommandParser.Args, opts: CommandParser.Opts) -> Response | Iterable[Response]:
             self.logger.debug("%s is calling `%s %s` with args %s and opts %s", message["sender_full_name"], self.plugin_name(), outer_self.name, args, opts)
             return outer_self.fn(self, message, args, opts)
+        
         # todo: idk if this is right
         wrapper._tumcsbot_meta = self.meta
         wrapper._tumcsbot_syntax = self.syntax

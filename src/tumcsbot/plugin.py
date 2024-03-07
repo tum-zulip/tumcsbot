@@ -433,7 +433,7 @@ class PluginCommandMixin(_Plugin):
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
         with DB.session() as session:
-            session.add(PluginTable(name=self.plugin_name(), syntax=self.syntax, description=self.description))
+            session.merge(PluginTable(name=self.plugin_name(), syntax=self.syntax, description=self.description))
             session.commit()
 
     @property
