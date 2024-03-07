@@ -107,6 +107,7 @@ class command:
     def __call__(self, fn) -> Any:
         self.fn = fn
         self.fn.__name__ = self.name
+        return self
 
     
     @property
