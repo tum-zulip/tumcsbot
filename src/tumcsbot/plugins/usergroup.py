@@ -47,10 +47,10 @@ class Usergroup(PluginCommandMixin, PluginThread):
         self._db: DB = DB()
         # Check for database table.
 
-    @command
+    @command(name="list")
     @arg("user", str, "The user for which the groups should be listed", optional=True)
     @opt("a", long_opt="all", description="Display all user groups with all users", privilege=Privilege.ADMIN)
-    def info(
+    def _list(
         self,
         message: dict[str, Any],
         args: CommandParser.Args,
@@ -79,12 +79,9 @@ class Usergroup(PluginCommandMixin, PluginThread):
 
             args.user = f"@_**{user_result['user']['full_name']}|{user_result['user']['user_id']}**"
 
-        if opts.a or opts.all:
-            if not self.client.user_is_privileged(message["sender_id"]):
-                return Response.privilege_err(message)
-
+        if opts.a:
             groups: list[UserGroup]
-            with self.session() as session:
+            with DB.session() as session:
                 groups = Usergroup.get_groups(session=session)
             
             result_dict: dict[str, list[str]] = {}
@@ -117,15 +114,16 @@ class Usergroup(PluginCommandMixin, PluginThread):
                 message["sender_id"]
             ):
                 return Response.privilege_err(message)
+            
+            with DB.session() as session:
+                groups = Usergroup.get_groups_for_user(session=session, user_identifier=uid)
 
-            group_list = [g for g in self.get_groups() if uid in g["members"]]
-
-            if len(group_list) == 0:
+            if len(groups) == 0:
                 return Response.build_message(
                     message, f"{args.user} is not in any user group", msg_type="private"
                 )
 
-            msg = ", ".join(f"`{g['name']}`" for g in group_list)
+            msg = ", ".join(f"`{g.UGroup}`" for g in groups)
             return Response.build_message(
                 message,
                 f"{args.user} is in the following user groups: {msg}",
@@ -371,7 +369,7 @@ class Usergroup(PluginCommandMixin, PluginThread):
 
     @staticmethod
     def get_groups_for_user(session, user_identifier: int | str) -> list[UserGroup]:
-        uid = Usergroup.user_id_by_identifier(user_identifier)
+        uid = Usergroup.user_id_by_identifier(session, user_identifier)
         return session.query(UserGroup).join(UserGroupMember).filter(UserGroupMember.GroupId == UserGroup.GroupId).filter(UserGroupMember.UserId == uid).all()
 
     @staticmethod

@@ -78,10 +78,6 @@ class Client(ZulipClient):
         self.ping_len: int = len(self.ping)
         self.register_params: dict[str, Any] = {}
         self._db: DB = DB()
-        self._db.checkout_table(
-            "PublicStreams",
-            "(StreamName text primary key, Subscribed integer not null)",
-        )
 
     def call_endpoint(
         self,

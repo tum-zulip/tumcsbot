@@ -1,6 +1,8 @@
 from typing import Any, Callable
 from argparse import Namespace
 
+from tumcsbot.lib import Regex
+
 class CommandParser:
     """A simple shell-like command line parser.
 

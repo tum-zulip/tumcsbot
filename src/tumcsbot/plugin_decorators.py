@@ -97,8 +97,17 @@ def privilege(privilege: Privilege):
 
 
 class command:
-    def __init__(self, fn):
+    def __init__(self, fn = None, name = None):
         self.fn = fn
+        self.name = name
+
+        if name is None:
+            self.name = fn.__name__
+
+    def __call__(self, fn) -> Any:
+        self.fn = fn
+        self.fn.__name__ = self.name
+
     
     @property
     def description(self):
@@ -161,10 +170,6 @@ class command:
             for arg in self.meta["args"] if arg.optional
         }
     
-    @property
-    def name(self):
-        return self.fn.__name__
-    
     def __set_name__(self, owner, name):
 
         if not issubclass(owner, PluginCommandMixin):
@@ -172,15 +177,16 @@ class command:
         
         if not hasattr(owner, "_tumcs_bot_command_parser"):
             owner._tumcs_bot_command_parser = CommandParser()
+            owner._tumcs_bot_commands = {}
+        
         command_parser = owner._tumcs_bot_command_parser
+        commands = owner._tumcs_bot_commands
 
         command_parser.add_subcommand(self.name, args=self.args, opts=self.opts, optionals=self.optional_args, greedy=self.greedy)
-
-        commands = owner._tumcs_bot_commands
         commands[self.name] = (self.description, self.syntax)
 
         # replace ourself with the original method
-        outer_self = self   
+        outer_self = self
         @wraps(self.fn)
         def wrapper(self, message: dict[str, Any], args: CommandParser.Args, opts: CommandParser.Opts) -> Response | Iterable[Response]:
             self.logger.debug("%s is calling `%s %s` with args %s and opts %s", message["sender_full_name"], self.plugin_name(), outer_self.name, args, opts)
@@ -189,4 +195,4 @@ class command:
         wrapper._tumcsbot_meta = self.meta
         wrapper._tumcsbot_syntax = self.syntax
         wrapper._tumcsbot_description = self.description
-        setattr(owner, name, wrapper)
+        setattr(owner, self.name, wrapper)

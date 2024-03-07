@@ -1,7 +1,5 @@
 from os.path import isabs
 from contextlib import contextmanager
-from typing import Any
-
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
@@ -17,6 +15,9 @@ class DB:
     @staticmethod
     def create_tables() -> None:
         """Create all tables."""
+        from tumcsbot.lib import get_classes_from_path
+        for plugin_class in get_classes_from_path("tumcsbot.plugins", TableBase):
+            plugin_class.metadata.create_all(DB.engine)
         TableBase.metadata.create_all(DB.engine)
 
     @staticmethod

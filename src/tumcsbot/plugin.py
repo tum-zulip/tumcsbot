@@ -428,7 +428,7 @@ class PluginCommandMixin(_Plugin):
     # The command parser.
     _tumcs_bot_command_parser: Final[CommandParser]
     # The command dictionary. Maps command names to their description and syntax.
-    _tumcs_bot_commands: dict[str, tuple[str, str]] = {}
+    _tumcs_bot_commands: dict[str, tuple[str, str]]
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
