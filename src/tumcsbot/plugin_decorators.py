@@ -38,7 +38,6 @@ class OptConfig:
 def get_meta(func):
     if not hasattr(func, "__tumsbot_plugin_meta__"):
         func.__tumsbot_plugin_meta__ = {
-            "name": "",
             "args": [],
             "opts": [],
             "privilege": Privilege.USER,
@@ -58,7 +57,7 @@ def arg(name: str, type: Callable[[Any], Any], description: str | None = None, p
             if privilege is not None:  # and todo: check if option is present
                 # todo: check privilege
                 if not self.client.user_is_privileged(message["sender_id"], allow_moderator= privilege == Privilege.MODERATOR):
-                    return Response.privilege_err_command(message, f"{self.plugin_name()} {meta["name"]}")
+                    return Response.privilege_err_command(message, f"{self.plugin_name()} {func.__name__}")
             return func(self, message, args, opts)
         return wrapper
     return decorator
@@ -78,7 +77,7 @@ def opt(opt: str, long_opt: str | None = None, type: Callable[[Any], Any] | None
             if privilege is not None:
                 # todo: check privilege
                 if not self.client.user_is_privileged(message["sender_id"], allow_moderator= privilege == Privilege.MODERATOR):
-                    return Response.privilege_err_command(message, f"{self.plugin_name()} {meta["name"]}")
+                    return Response.privilege_err_command(message, f"{self.plugin_name()} {func.__name__}")
                 pass
             return func(self, message, args, opts)
         return wrapper
@@ -93,7 +92,7 @@ def privilege(privilege: Privilege):
         def wrapper(self, message: dict[str, Any], args: CommandParser.Args, opts: CommandParser.Opts) -> Response | Iterable[Response]:
             if privilege is not None:
                 if not self.client.user_is_privileged(message["sender_id"], allow_moderator= privilege == Privilege.MODERATOR):
-                    return Response.privilege_err_command(message, f"{self.plugin_name()} {meta["name"]}")
+                    return Response.privilege_err_command(message, f"{self.plugin_name()} {func.__name__}")
             return func(self, message, args, opts)
         return wrapper
     return decorator
@@ -178,8 +177,6 @@ class command:
 
         commands = owner._tumcs_bot_commands
         commands[self.name] = (self.description, self.syntax)
-
-        self.meta["name"] = self.name
 
         # replace ourself with the original method
         outer_self = self   
