@@ -38,8 +38,9 @@ class PluginTable(TableBase):
     __tablename__ = 'Plugins'
 
     name = Column(String, primary_key=True)
-    syntax = Column(String)
-    description = Column(String)
+    syntax = Column(String, nullable=True)
+    description = Column(String, nullable=True)
+    config = Column(String, nullable=True)
 
 @final
 class EventType(StrEnum):
@@ -431,7 +432,7 @@ class ArgConfig:
 
     @property
     def syntax(self) -> str:
-        lbr, rbr = '[', ']' if self.optional else '<', '>'
+        lbr, rbr = ('[', ']') if self.optional else ('<', '>')
         greedy = "..." if self.greedy else ""
         return lbr + self.name + greedy + rbr
     
@@ -467,6 +468,7 @@ class CommandConfig:
     args: list[ArgConfig] = field(default_factory=list)
     opts: list[OptConfig] = field(default_factory=list)
     privilege: Privilege = Privilege.USER
+    description: str | None = None
 
     @property
     def syntax(self) -> str:
@@ -498,19 +500,14 @@ class PluginCommandMixin(_Plugin):
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
-        with DB.session() as session:
-            session.merge(PluginTable(name=self.plugin_name(), syntax=json.dumps([asdict(c) for c in self._tumcs_bot_commands], default=str), description=self.description))
-            session.commit()
 
-    @property
-    def syntax(self) -> str:
-        """Get the syntax of the command."""
-        return "Available commands:\n" + "\n\tor ".join([self.plugin_name() + " " + c.syntax for c in self._tumcs_bot_commands])
-    
-    @property
-    def description(self) -> str:
-        """Get the description of the command."""
-        return "\n".join([f"## {c.name}\nTODO:" for c in self._tumcs_bot_commands])
+        syntax = getattr(self, "syntax", None)
+        description = self.__doc__
+        description = getattr(self, "description", description)
+
+        with DB.session() as session:
+            session.merge(PluginTable(name=self.plugin_name(), syntax=syntax, description=description, config=json.dumps([asdict(c) for c in self._tumcs_bot_commands], default=str)))
+            session.commit()
 
 
     @final

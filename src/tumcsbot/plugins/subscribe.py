@@ -12,49 +12,47 @@ from tumcsbot.plugin import PluginCommandMixin, PluginThread
 from tumcsbot.plugin_decorators import *
 
 class Subscribe(PluginCommandMixin, PluginThread):
-    description = cleandoc(
-        """
-        - `streams`
-        Subscribe all subscribers of the given streams to the \
-        destination stream.
-        - `users`
-        Subscribe all users with the specified names to the \
-        destination stream.
-        - `user_emails`
-        Subscribe all users with the specified email addresses to the \
-        destination stream. Note thet the email addresses need to match \
-        the `delivery_email` field. Check if you and me are having \
-        access to it. (In the Organization Settings of your Zulip \
-        Server, the value of `Who can access user email addresses` needs \
-        to be at least `Admins only`.)
-        - `all_users`
-        Subscribe all users to the destination stream.
+    """
+    - `streams`
+    Subscribe all subscribers of the given streams to the \
+    destination stream.
+    - `users`
+    Subscribe all users with the specified names to the \
+    destination stream.
+    - `user_emails`
+    Subscribe all users with the specified email addresses to the \
+    destination stream. Note thet the email addresses need to match \
+    the `delivery_email` field. Check if you and me are having \
+    access to it. (In the Organization Settings of your Zulip \
+    Server, the value of `Who can access user email addresses` needs \
+    to be at least `Admins only`.)
+    - `all_users`
+    Subscribe all users to the destination stream.
 
-        [administrator/moderator rights needed]
+    [administrator/moderator rights needed]
 
-        If the destination stream does not exist yet, it will be \
-        automatically created (with an empty description).
-        The stream names may be of the form `<stream_name>` or \
-        `#**<stream_name>**` (autocompleted stream name).
-        The user names may be of the form `<user_name>`, \
-        `@**<user_name>**`, `@_**<user_name>**`, \
-        `@**<user_name>|<user_id>**`, `@_**<user_name>|<user_id>**` \
-        (autocompleted user names, possibly with the user id (an int)).
+    If the destination stream does not exist yet, it will be \
+    automatically created (with an empty description).
+    The stream names may be of the form `<stream_name>` or \
+    `#**<stream_name>**` (autocompleted stream name).
+    The user names may be of the form `<user_name>`, \
+    `@**<user_name>**`, `@_**<user_name>**`, \
+    `@**<user_name>|<user_id>**`, `@_**<user_name>|<user_id>**` \
+    (autocompleted user names, possibly with the user id (an int)).
 
-        **Stream or user names containing whitespace need to be quoted.**
-        Note that the bot must have the permissions to invite users to \
-        the destination stream. Also note that there may exist multiple \
-        users with the same name and **all** of them will be subscribed \
-        if you do not provide a user id for an ambiguous user name. If \
-        you use Zulip's autocomplete feature for user names, the user \
-        id is automatically added if neccessary.
+    **Stream or user names containing whitespace need to be quoted.**
+    Note that the bot must have the permissions to invite users to \
+    the destination stream. Also note that there may exist multiple \
+    users with the same name and **all** of them will be subscribed \
+    if you do not provide a user id for an ambiguous user name. If \
+    you use Zulip's autocomplete feature for user names, the user \
+    id is automatically added if neccessary.
 
-        ````text
-        subscribe streams "destination stream" "#**test stream**" mystream
-        subscribe user_emails "destination stream" "foo@bar.com" "user42@zulip.org"
-        ````
-        """
-    )
+    ````text
+    subscribe streams "destination stream" "#**test stream**" mystream
+    subscribe user_emails "destination stream" "foo@bar.com" "user42@zulip.org"
+    ````
+    """
 
     @command
     @privilege(Privilege.ADMIN)

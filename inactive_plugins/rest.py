@@ -55,9 +55,6 @@ class Rest(PluginCommandMixin, PluginThread):
                 [dict[str, Any], CommandParser.Args, CommandParser.Opts],
                 Response | Iterable[Response],
             ] = getattr(self, "_" + command)
-            self.logger.debug(f"executing subcommand: {command}")
-            self.logger.debug(f"args: {args}")
-            self.logger.debug(f"opts: {opts}")
             return func(message, args, opts)
         else:
             return Response.command_not_found(message)

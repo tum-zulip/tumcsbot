@@ -8,7 +8,43 @@ from inspect import cleandoc
 from tumcsbot.command_parser import CommandParser
 from tumcsbot.lib import Response
 from tumcsbot.plugin import ArgConfig, CommandConfig, OptConfig, PluginCommandMixin, Privilege
-    
+
+@dataclass
+class DMResponse:
+    """
+    Responds with a direct message to the sender.
+    """
+    message: str
+
+@dataclass
+class InlineResponse:
+    """
+    Responds with an inline message to the sender.
+    """
+    message: str
+
+@dataclass
+class ReactionResponse:
+    """
+    Reacts with an emote message to the sender.
+    """
+    emote: str
+
+@dataclass
+class PartialSuccess:
+    """
+    Indicates that the command was successful for a specific element dentoed by info.
+    Can be used multiple times with yield.
+    """
+    info: str
+
+@dataclass
+class PartialError:
+    """
+    Indicates that the command was not successful for a specific element dentoed by info.
+    Can be used multiple times with yield.
+    """
+    info: str
 
 
 def get_meta(func) -> CommandConfig:
@@ -145,7 +181,7 @@ class command:
         return (
             cleandoc(self.fn.__doc__)
             if self.fn.__doc__
-            else "No description available."
+            else None
         )
 
     @property
@@ -211,6 +247,8 @@ class command:
             owner._tumcs_bot_command_parser = CommandParser()
         
         self.meta.name = self.name
+        self.meta.description = self.description
+        
         owner._tumcs_bot_commands.append(self.meta)
         command_parser = owner._tumcs_bot_command_parser
 
@@ -240,12 +278,52 @@ class command:
                 args,
                 opts,
             )
-            return outer_self.fn(self, message, args, opts)
+            responses = []
+            successful = []
+            errors = []
+            try:
+                for response in outer_self.fn(self, message, args, opts):
+                    if isinstance(response, DMResponse):
+                        responses.append(Response.build_message(
+                            content=response.message,
+                            msg_type="private",
+                            to=message["sender_email"],
+                        ))
+                    elif isinstance(response, InlineResponse):
+                        responses.append(Response.build_message(
+                            message,
+                            content=response.message,
+                        ))
+                    elif isinstance(response, ReactionResponse):
+                        responses.append(Response.build_reaction(
+                            message,
+                            emoji=response.emote,
+                        ))
+                    elif isinstance(response, PartialSuccess):
+                        successful.append(response.info)
+                    elif isinstance(response, PartialError):
+                        errors.append(response.info)
+                    else:
+                        responses.append(response)
+            except StopIteration:
+                pass
+
+            if len(errors) > 0:
+                responses.append(Response.build_message(
+                    message,
+                    "Error: " + ", ".join(errors) + "\nSuccess: " + ", ".join(successful),
+                ))
+            elif len(responses) == 0 and len(successful) > 0:
+                responses.append(Response.ok(message))
+            elif len(responses) == 0:
+                responses.append(Response.build_message(
+                    message,
+                    "Looks like there's nothing for me to do.", # todo this is wrong
+                ))
+            return responses
 
         # todo: idk if this is right
         wrapper._tumcsbot_meta = self.meta
-        wrapper._tumcsbot_syntax = self.syntax
-        wrapper._tumcsbot_description = self.description
         setattr(owner, self.name, wrapper)
 
 
