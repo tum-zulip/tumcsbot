@@ -8,6 +8,7 @@ from typing import Any, Iterable
 
 from tumcsbot.lib import split, Response
 from tumcsbot.plugin import PluginCommandMixin, PluginThread
+from tumcsbot.plugin_decorators import *
 
 
 class CreateStreams(PluginCommandMixin, PluginThread):
@@ -47,6 +48,32 @@ class CreateStreams(PluginCommandMixin, PluginThread):
             return Response.error(message)
 
         for stream, desc in stream_tuples:
+            if not stream:
+                failed.append("one empty stream name")
+                continue
+            result: dict[str, Any] = self.client.add_subscriptions(
+                streams=[{"name": stream, "description": desc}]
+            )
+            if result["result"] != "success":
+                failed.append(f"stream: {stream}, description: {desc}")
+
+        if not failed:
+            return Response.ok(message)
+
+        response: str = "Failed to create the following streams:\n" + "\n".join(failed)
+
+        return Response.build_message(message, response, msg_type="private")
+    
+    @command
+    @privilege(Privilege.ADMIN)
+    @arg("stream_tuples", type=lambda t: split(t, sep=",", exact_split=2, discard_empty=False),description="List of (stream,description)-tuples",greedy=True)
+    def create(self, message: dict[str, Any], args: CommandParser.Args, opts: CommandParser.Opts) -> Response | Iterable[Response]:
+        failed: list[str] = []
+
+        if arg.stream_tuples is None or None in args.stream_tuples:
+            return Response.error(message)
+
+        for stream, desc in args.stream_tuples:
             if not stream:
                 failed.append("one empty stream name")
                 continue

@@ -299,6 +299,7 @@ class Regex:
         else:
             raise ValueError()
 
+
 class ConfigTable(TableBase):
     __tablename__ = "Conf"
 
@@ -352,6 +353,12 @@ class Response:
         """
         Hi {}!
         You don't have sufficient privileges to execute the command `{}`.
+        """
+    )
+    excp_general: str = cleandoc(
+        """
+        Hi {}!
+        {}
         """
     )
 
@@ -512,14 +519,14 @@ class Response:
         )
     
     @classmethod
-    def privilege_err_command(cls, message: dict[str, Any], command:str) -> "Response":
+    def privilege_excpetion(cls, message: dict[str, Any], desc:str) -> "Response":
         """The user has not sufficient rights.
 
         Tell the user that they have not sufficient privileges for a
         specified command.
         """
         return cls.build_message(
-            message, cls.privilege_err_msg_command.format(message["sender_full_name"],command)
+            message, cls.excp_general.format(message["sender_full_name"],desc)
         )
     
     @classmethod
