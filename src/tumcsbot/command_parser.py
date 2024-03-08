@@ -1,6 +1,8 @@
 from typing import Any, Callable
 from argparse import Namespace
 
+import regex
+
 from tumcsbot.lib import Regex
 
 class CommandParser:
@@ -103,7 +105,7 @@ class CommandParser:
             return s[1:-1].strip()
         return s
 
-    def parse(self, command: str | None) -> tuple[str, Opts, Args] | None:
+    def parse(self, command: str | None) -> tuple[str, Opts, Args]:
         """Parse the given command string.
 
         Return the parsed subcommand together with its options and
@@ -111,16 +113,19 @@ class CommandParser:
         """
         result_opts: tuple[dict[str, Any], list[str]] | None
 
-        if not command or not self.commands:
-            return None
-
+        if not command:
+            raise CommandParser.IllegalCommandParserState("No command given")
+        
+        if not self.commands:
+            raise CommandParser.IllegalCommandParserState("No subcommands specified that can be parsed.")
+        
         # Split on tokens.
 
         matches_opt: regex.regex.Match[str] | None = Regex._ARGUMENT_PATTERN.match(
             command
         )
         if not matches_opt:
-            return None
+            raise CommandParser.IllegalCommandParserState(f"`{command}` is not a valid pattern")
 
         matches: regex.regex.Match[str] = matches_opt
         try:
@@ -133,13 +138,17 @@ class CommandParser:
                 if e
             ]
         except Exception as e:
-            return None
+            raise CommandParser.IllegalCommandParserState(f"`{command}` is not a valid pattern") from e
+        
         if not tokens or len(tokens) == 0:
-            return None
+            raise CommandParser.IllegalCommandParserState(f"`{command}` is not a valid pattern")
+        
         # Get the fitting subcommand.
         subcommand: str = tokens[0]
         if subcommand not in self.commands:
-            return None
+            raise CommandParser.IllegalCommandParserState(
+                f"Subcommand `{subcommand}` not found."
+            )
 
         opts, positional, optional, greedy = self.commands[subcommand]
 
@@ -161,21 +170,17 @@ class CommandParser:
 
         result_opts = self._parse_opts(opts, optiones_first + arguments_last)
 
-        if result_opts is None:
-            return None
-
         options = result_opts[0]
         match_result = CommandParser._match_arguments(
             positional, optional, greedy, result_opts[1]
         )
 
-        if match_result is None:
-            return None
-
         matched_args, remainder = match_result
 
         if len(remainder) > 0:
-            return None
+            raise CommandParser.IllegalCommandParserState(
+                f"Too many arguments for subcommand `{subcommand}`. Remaining: {remainder}."
+            )
         return (subcommand, self.Opts(**options), self.Args(**matched_args))
 
     @staticmethod
@@ -214,7 +219,7 @@ class CommandParser:
         optional: dict[str, Any],
         greedy: dict[str, Any],
         args: list[str],
-    ) -> tuple[dict[str, Any], list[str]] | None:
+    ) -> tuple[dict[str, Any], list[str]]:
         solution: dict[str, Any] = {}
         for key in optional:
             solution.update({key: None})
@@ -236,7 +241,9 @@ class CommandParser:
 
         for key in positional:
             if key not in solution:
-                return None
+                raise CommandParser.IllegalCommandParserState(
+                    f"Positional argument `{key}` not found."
+                )
 
         return solution, list(remainder.values())
 
@@ -244,7 +251,7 @@ class CommandParser:
         self,
         opts: dict[str, Callable[[Any], Any] | None],
         tokens: list[str],
-    ) -> tuple[dict[str, Any], list[str]] | None:
+    ) -> tuple[dict[str, Any], list[str]]:
         """Parse options from tokens.
 
         Return the parsed options together with their converted
@@ -277,7 +284,9 @@ class CommandParser:
 
             if not opt in opts:
                 # Invalid option.
-                return None
+                raise CommandParser.IllegalCommandParserState(
+                    f"Invalid option `{opt}` for subcommand."
+                )
             try:
                 converter: Callable[[Any], Any] | None = opts[opt]
                 if converter is not None:
@@ -291,8 +300,10 @@ class CommandParser:
 
                 else:
                     result[opt] = True
-            except:
-                return None
+            except Exception as e:
+                raise CommandParser.IllegalCommandParserState(
+                    f"Could not parse option `{opt}` for subcommand."
+                ) from e 
 
         # Skip last option if there have been only options.
         if token and token[0] == "-":

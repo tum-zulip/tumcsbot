@@ -39,8 +39,8 @@ class DB:
     @contextmanager
     @staticmethod
     def session():
-        Session = sessionmaker(bind=DB.engine)
-        session = Session()
+        SessionLocal = sessionmaker(bind=DB.engine)
+        session = SessionLocal()
 
         try:
             yield session

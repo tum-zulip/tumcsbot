@@ -36,6 +36,7 @@ from tumcsbot.command_parser import CommandParser
 from tumcsbot.db import DB, TableBase
 from sqlalchemy import Column, String
 
+
 class PluginTable(TableBase):
     __tablename__ = 'Plugins'
 
@@ -416,6 +417,77 @@ class PluginProcess(_Plugin):
         )
 
 
+class ZulipUserNotFound(Exception):
+    pass
+
+class ZulipUser:
+    # todo: are there probles with threads?
+    _client: Client | None = None
+
+    @classmethod
+    def set_client(cls, client: Client) -> None:
+        cls._client = client
+
+    def __init__(self, identifier: str | str) -> None:
+        self._id: int | None = None
+        self._name: str | None = None
+
+        if isinstance(identifier, int):
+            self._id = identifier
+            return
+        
+        if isinstance(identifier, str):
+            uname = Regex.get_user_name(identifier)
+            if uname is None:
+                raise ZulipUserNotFound(f"Invalid user identifier `{identifier}`, use the same format as in the Zulip UI. (`@**<username>**`)")
+            self._name: str | int = uname
+    
+    def __eq__(self, other: Any) -> bool:
+        if not isinstance(other, ZulipUser):
+            return False
+        return self.id == other.id
+    
+    @property
+    def client(self) -> Client:
+        if ZulipUser._client is None:
+            raise ValueError("Client not set for ZulipUser.")
+        return ZulipUser._client
+
+    @property
+    def id(self) -> int:
+        if self._id is not None:
+            return self._id
+        
+        result = self.client.get_user_id_by_name(self.mention)
+        if result is None:
+            raise ZulipUserNotFound(f"User @_**{self.name}** could be not found.")
+        self._id = result
+        return result
+    
+    @property
+    def name(self) -> str:
+        if self._name is not None:
+            return self._name
+        
+        result = self.client.get_user_by_id(self._id)
+        if result['result'] != 'success':
+            raise ZulipUserNotFound(f"User with id {self._id} could be not found.")
+        self._name = result['user']['full_name']
+        return self._name 
+    
+    @property
+    def mention(self) -> str:
+        return f"@**{self.name}**"
+    
+    @property
+    def mention_silent(self) -> str:
+        return f"@_**{self.name}**"
+    
+    @property
+    def priviliged(self) -> bool:
+        return self.client.user_is_privileged(self.id)
+
+
 class Privilege(Enum):
     USER = 1
     MODERATOR = 2
@@ -627,7 +699,12 @@ class PluginCommandMixin(_Plugin):
         result: tuple[str, CommandParser.Opts, CommandParser.Args] | None
         command_parser: CommandParser = self.__class__._tumcs_bot_command_parser
         # Get command and parameters.
-        result = command_parser.parse(message["command"])
+
+        try:
+            result = command_parser.parse(message["command"])
+        except CommandParser.IllegalCommandParserState as e:
+            self.logger.exception(e)
+            return Response.build_message(message, str(e))
 
         self.logger.debug(result)
         
@@ -637,13 +714,15 @@ class PluginCommandMixin(_Plugin):
     
         if command in command_parser.commands:
             func: Callable[
-                [dict[str, Any], CommandParser.Args, CommandParser.Opts],
+                [ZulipUser, Any, CommandParser.Args, CommandParser.Opts, dict[str, Any]],
                 Response | Iterable[Response],
             ] = getattr(self, command)
             self.logger.debug(f"executing subcommand: {command}")
             self.logger.debug(f"args: {args}")
             self.logger.debug(f"opts: {opts}")
-            return func(message, args, opts)
+            with DB.session() as session:
+                result = func(ZulipUser(message['sender_id']), session, args, opts, message)
+            return result
         else:
             self.logger.debug(f"command not found: {command}")
             return Response.command_not_found(message)

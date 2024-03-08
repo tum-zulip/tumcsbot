@@ -1,13 +1,10 @@
 from functools import wraps
-import logging
-from typing import Callable, Any, Iterable
-from enum import Enum
-from dataclasses import dataclass, field
+from typing import Callable, Any, Iterable, Iterator
+from dataclasses import dataclass
 from inspect import cleandoc
-from tumcsbot.client import Client
 
 from tumcsbot.command_parser import CommandParser
-from tumcsbot.lib import Regex, Response
+from tumcsbot.lib import Response
 from tumcsbot.plugin import (
     ArgConfig,
     CommandConfig,
@@ -15,25 +12,13 @@ from tumcsbot.plugin import (
     OptConfig,
     PluginCommandMixin,
     Privilege,
+    ZulipUser,
+    ZulipUserNotFound,
 )
 
-class ZulipUserNotFound(Exception):
+
+class DMError(Exception):
     pass
-
-class ZulipUser:
-    pass
-
-    def __init__(self, identifier: str) -> None:
-        uname = Regex.get_user_name(identifier)
-        if uname is None:
-            raise ZulipUserNotFound(f"Invalid user identifier `{identifier}`, use the same format as in the Zulip UI. (`@**<username>**`)")
-        self.name: str | int = uname
-
-    def id(self, client: Client) -> int:
-        result = client.get_user_id_by_name(f"@**{self.name}**")
-        if result is None:
-            raise ZulipUserNotFound(f"User @_**{self.name}** could be not found.")
-        return result
 
 
 @dataclass
@@ -44,13 +29,16 @@ class DMResponse:
 
     message: str
 
+
 @dataclass
 class DMMessage:
     """
     Responds with a direct message to the sender.
     """
+
     to: ZulipUser
     message: str
+
 
 @dataclass
 class InlineResponse:
@@ -59,7 +47,6 @@ class InlineResponse:
     """
 
     message: str
-
 
 
 @dataclass
@@ -117,9 +104,11 @@ def arg(
         @wraps(func)
         def wrapper(
             self,
-            message: dict[str, Any],
+            sender: ZulipUser,
+            session,
             args: CommandParser.Args,
             opts: CommandParser.Opts,
+            message: dict[str, Any],
         ) -> Response | Iterable[Response]:
             if privilege is not None:  # and todo: check if option is present
                 # todo: check privilege
@@ -127,16 +116,18 @@ def arg(
                     message["sender_id"],
                     allow_moderator=privilege == Privilege.MODERATOR,
                 ):
-                   raise UserNotPrivilegedException(message, privilege,f"{self.plugin_name()} {func.__name__}")
+                    raise UserNotPrivilegedException(
+                        message, privilege, f"{self.plugin_name()} {func.__name__}"
+                    )
 
             if greedy and not optional:
-                if len(args[name]) == 0:
+                if len(getattr(args, name, [])) == 0:
                     # todo: better error message
                     return Response.build_message(
                         message,
                         f"Error: At least one argument is required for `{name}`.",
                     )
-            return func(self, message, args, opts)
+            return func(self, sender, session, args, opts, message)
 
         return wrapper
 
@@ -157,9 +148,11 @@ def opt(
         @wraps(func)
         def wrapper(
             self,
-            message: dict[str, Any],
+            sender: ZulipUser,
+            session,
             args: CommandParser.Args,
             opts: CommandParser.Opts,
+            message: dict[str, Any],
         ) -> Response | Iterable[Response]:
             if privilege is not None:
                 # todo: check privilege
@@ -167,9 +160,11 @@ def opt(
                     message["sender_id"],
                     allow_moderator=privilege == Privilege.MODERATOR,
                 ):
-                    raise UserNotPrivilegedException(message, privilege,f"{self.plugin_name()} {func.__name__}")
+                    raise UserNotPrivilegedException(
+                        message, privilege, f"{self.plugin_name()} {func.__name__}"
+                    )
                 pass
-            return func(self, message, args, opts)
+            return func(self, sender, session, args, opts, message)
 
         return wrapper
 
@@ -184,17 +179,18 @@ def privilege(privilege: Privilege):
         @wraps(func)
         def wrapper(
             self,
-            message: dict[str, Any],
+            sender: ZulipUser,
+            session,
             args: CommandParser.Args,
             opts: CommandParser.Opts,
+            message: dict[str, Any],
         ) -> Response | Iterable[Response]:
             if privilege is not None:
-                if not self.client.user_is_privileged(
-                    message["sender_id"],
-                    allow_moderator=privilege == Privilege.MODERATOR,
-                ):
-                    raise UserNotPrivilegedException(message, privilege,f"{self.plugin_name()} {func.__name__}")
-            return func(self, message, args, opts)
+                if not sender.priviliged:
+                    raise UserNotPrivilegedException(
+                        message, privilege, f"{self.plugin_name()} {func.__name__}"
+                    )
+            return func(self, sender, session, args, opts, message)
 
         return wrapper
 
@@ -213,6 +209,18 @@ class command:
         self.fn = fn
         self.fn.__name__ = self.name
         return self
+
+    @staticmethod
+    def as_iterator(fn):
+        @wraps(fn)
+        def wrapper(*args, **kwargs):
+            result = fn(*args, **kwargs)
+            if isinstance(result, Iterator):
+                return result
+
+            return iter([result])
+
+        return wrapper
 
     @property
     def description(self):
@@ -241,6 +249,7 @@ class command:
 
     @property
     def args(self):
+        # build up in reverse ad decorators are applied in reverse
         return {
             arg.name: arg.type
             for arg in self.meta.args
@@ -249,7 +258,8 @@ class command:
 
     @property
     def opts(self):
-        opts = {opt.opt: opt.type for opt in self.meta.opts}
+        # build up in reverse ad decorators are applied in reverse
+        opts = {opt.opt: opt.type for opt in self.meta.opts[::-1]}
 
         opts.update(
             {
@@ -263,13 +273,15 @@ class command:
 
     @property
     def greedy(self):
-        return {arg.name: arg.type for arg in self.meta.args if arg.greedy}
+        # build up in reverse ad decorators are applied in reverse
+        return {arg.name: arg.type for arg in self.meta.args[::-1] if arg.greedy}
 
     @property
     def optional_args(self):
-        return {arg.name: arg.type for arg in self.meta.args if arg.optional}
+        # build up in reverse ad decorators are applied in reverse
+        return {arg.name: arg.type for arg in self.meta.args[::-1] if arg.optional}
 
-    def __set_name__(self, owner, name):
+    def __set_name__(self, owner, _):
 
         if not issubclass(owner, PluginCommandMixin):
             raise TypeError(
@@ -300,10 +312,13 @@ class command:
         @wraps(self.fn)
         def wrapper(
             self,
-            message: dict[str, Any],
+            sender: ZulipUser,
+            session,
             args: CommandParser.Args,
             opts: CommandParser.Opts,
+            message: dict[str, Any],
         ) -> Response | Iterable[Response]:
+            ZulipUser.set_client(self.client)
             self.logger.debug(
                 "%s is calling `%s %s` with args %s and opts %s",
                 message["sender_full_name"],
@@ -315,14 +330,15 @@ class command:
             responses = []
             successful = []
             errors = []
+            fn = command.as_iterator(outer_self.fn)
             try:
-                for response in outer_self.fn(self, message, args, opts):
+                for response in fn(self, sender, session, args, opts, message):
+                    self.logger.debug("Collected Response: %s", response)
                     if isinstance(response, DMResponse):
                         responses.append(
                             Response.build_message(
+                                message,
                                 content=response.message,
-                                msg_type="private",
-                                to=message["sender_email"],
                             )
                         )
                     elif isinstance(response, InlineResponse):
@@ -357,15 +373,17 @@ class command:
             except StopIteration:
                 pass
             except UserNotPrivilegedException as upe:
-                 return Response.privilege_excpetion(
-                        upe.message, upe.description
-                    )
+                return Response.privilege_excpetion(upe.message, upe.description)
             except ZulipUserNotFound as e:
                 return Response.build_message(
                     message,
                     f"Error: {e}",
                 )
-
+            except DMError as e:
+                return Response.build_message(
+                    message,
+                    str(e),
+                )
 
             if len(errors) > 0:
                 responses.append(
@@ -394,7 +412,7 @@ class command:
 
 
 class UserNotPrivilegedException(Exception):
-    def __init__(self, msg, required_privilege:Privilege, command_name:str) -> None:
+    def __init__(self, msg, required_privilege: Privilege, command_name: str) -> None:
         text = cleandoc(
             """
              You don't have sufficient privileges to execute the command `{}`.
@@ -409,7 +427,7 @@ class UserNotPrivilegedException(Exception):
     @property
     def message(self):
         return self._message
-    
+
     @property
     def description(self):
         return self._description
