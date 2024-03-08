@@ -16,8 +16,9 @@ PluginProcess   Base class for plugins that live in a separate process.
 PluginCommandMixin   Mixin class tailored for interactive commands.
 """
 
-from contextlib import contextmanager
 from ctypes import c_bool
+from dataclasses import asdict, dataclass, field
+from enum import Enum
 import json
 import logging
 import multiprocessing
@@ -412,6 +413,71 @@ class PluginProcess(_Plugin):
         )
 
 
+class Privilege(Enum):
+    ADMIN = 1
+    MODERATOR = 2
+    USER = 3
+
+
+@dataclass
+class ArgConfig:
+    name: str
+    type: Callable[[Any], Any]
+    description: str | None = None
+    privilege: Privilege | None = None
+    greedy: bool = False
+    optional: bool = False
+
+
+    @property
+    def syntax(self) -> str:
+        lbr, rbr = '[', ']' if self.optional else '<', '>'
+        greedy = "..." if self.greedy else ""
+        return lbr + self.name + greedy + rbr
+    
+    # todo: @property
+    # todo: def description(self) -> tuple[str, str]:
+    # todo:     desc = self.description if self.description else "No description available."
+    # todo:     return self.name, desc 
+
+
+@dataclass
+class OptConfig:
+    opt: str
+    long_opt: str | None = None
+    type: Callable[[Any], Any] | None = None
+    description: str | None = None
+    privilege: Privilege | None = None
+
+    @property
+    def syntax(self):
+        return '[-' + self.opt + ']'
+    
+    # todo: @property
+    # todo: def description(self) -> tuple[str, str]:
+    # todo:     desc = self.description if self.description else "No description available."
+    # todo:     opt = self.opt if self.long_opt is None else f"{self.opt}, {self.long_opt}"
+    # todo:     # todo: argument for opt
+    # todo:     return opt, desc
+    
+
+@dataclass
+class CommandConfig:
+    name: str | None = None
+    args: list[ArgConfig] = field(default_factory=list)
+    opts: list[OptConfig] = field(default_factory=list)
+    privilege: Privilege = Privilege.USER
+
+    @property
+    def syntax(self) -> str:
+        if self.name is None:
+            raise ValueError("Name of command is not set.")
+        
+        args = [arg.syntax for arg in self.args]
+        opts = [opt.syntax for opt in self.opts]
+        return self.name + " ".join(opts + args)
+
+
 class PluginCommandMixin(_Plugin):
     """Base class tailored for interactive commands.
 
@@ -428,12 +494,12 @@ class PluginCommandMixin(_Plugin):
     # The command parser.
     _tumcs_bot_command_parser: Final[CommandParser]
     # The command dictionary. Maps command names to their description and syntax.
-    _tumcs_bot_commands: dict[str, tuple[str, str]]
+    _tumcs_bot_commands: list[CommandConfig]
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
         with DB.session() as session:
-            session.merge(PluginTable(name=self.plugin_name(), syntax=self.syntax, description=self.description))
+            session.merge(PluginTable(name=self.plugin_name(), syntax=json.dumps([asdict(c) for c in self._tumcs_bot_commands]), description=self.description))
             session.commit()
 
     @property
