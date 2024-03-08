@@ -99,9 +99,7 @@ def arg(
                     message["sender_id"],
                     allow_moderator=privilege == Privilege.MODERATOR,
                 ):
-                    return Response.privilege_err_command(
-                        message, f"{self.plugin_name()} {func.__name__}"
-                    )
+                   raise UserNotPrivilegedException(message, privilege,f"{self.plugin_name()} {func.__name__}")
 
             if greedy and not optional:
                 if len(args[name]) == 0:
@@ -141,9 +139,7 @@ def opt(
                     message["sender_id"],
                     allow_moderator=privilege == Privilege.MODERATOR,
                 ):
-                    return Response.privilege_err_command(
-                        message, f"{self.plugin_name()} {func.__name__}"
-                    )
+                    raise UserNotPrivilegedException(message, privilege,f"{self.plugin_name()} {func.__name__}")
                 pass
             return func(self, message, args, opts)
 
@@ -169,9 +165,7 @@ def privilege(privilege: Privilege):
                     message["sender_id"],
                     allow_moderator=privilege == Privilege.MODERATOR,
                 ):
-                    return Response.privilege_err_command(
-                        message, f"{self.plugin_name()} {func.__name__}"
-                    )
+                    raise UserNotPrivilegedException(message, privilege,f"{self.plugin_name()} {func.__name__}")
             return func(self, message, args, opts)
 
         return wrapper
@@ -325,6 +319,11 @@ class command:
                         responses.append(response)
             except StopIteration:
                 pass
+            except UserNotPrivilegedException as upe:
+                 return Response.privilege_excpetion(
+                        upe.message, upe.description
+                    )
+
 
             if len(errors) > 0:
                 responses.append(
@@ -353,37 +352,22 @@ class command:
 
 
 class UserNotPrivilegedException(Exception):
-    def __init__(
-        self,
-        user_privilege: Privilege,
-        required_privilege: Privilege,
-        msg="user is not privileged for this command",
-    ) -> None:
-        self._user_privilege = user_privilege
-        self._required_privilege = required_privilege
+    def __init__(self, msg, required_privilege:Privilege, command_name:str) -> None:
+        text = cleandoc(
+            """
+             You don't have sufficient privileges to execute the command `{}`.
+             This command requires at least {} rights.
+ 
+            """
+        )
+        self._description = text.format(command_name, required_privilege)
         self._message = msg
-        super().__init__(msg)
+        super().__init__(self._description)
 
-
-class UserNotPrivilegedException(Exception):
-    def __init__(
-        self,
-        user_privilege: Privilege,
-        required_privilege: Privilege,
-        msg="user is not privileged for this command",
-    ) -> None:
-        self._user_privilege = user_privilege
-        self._required_privilege = required_privilege
-        self._message = msg
-        super().__init__(msg)
-
-
-class UserNotPrivilegedException(Exception):
-    def __init__(
-        self,
-        required_privilege: Privilege,
-        msg="user is not privileged for this command",
-    ) -> None:
-        self._required_privilege = required_privilege
-        self._message = msg
-        super().__init__(msg)
+    @property
+    def message(self):
+        return self._message
+    
+    @property
+    def description(self):
+        return self._description
