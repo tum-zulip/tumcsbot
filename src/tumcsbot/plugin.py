@@ -492,25 +492,25 @@ class PluginCommandMixin(_Plugin):
     events = _Plugin.events + [EventType.GET_USAGE]
 
     # The command parser.
-    _tumcs_bot_command_parser: Final[CommandParser]
+    _tumcs_bot_command_parser: CommandParser = CommandParser()
     # The command dictionary. Maps command names to their description and syntax.
-    _tumcs_bot_commands: list[CommandConfig]
+    _tumcs_bot_commands: list[CommandConfig] = []
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
         with DB.session() as session:
-            session.merge(PluginTable(name=self.plugin_name(), syntax=json.dumps([asdict(c) for c in self._tumcs_bot_commands]), description=self.description))
+            session.merge(PluginTable(name=self.plugin_name(), syntax=json.dumps([asdict(c) for c in self._tumcs_bot_commands], default=str), description=self.description))
             session.commit()
 
     @property
     def syntax(self) -> str:
         """Get the syntax of the command."""
-        return "Available commands:\n" + "\n\tor ".join([self.plugin_name() + " " + syntax for _, syntax in self._tumcs_bot_commands.values()])
+        return "Available commands:\n" + "\n\tor ".join([self.plugin_name() + " " + c.syntax for c in self._tumcs_bot_commands])
     
     @property
     def description(self) -> str:
         """Get the description of the command."""
-        return "\n".join([f"## {name}\n{desc}" for name, (desc, _) in self._tumcs_bot_commands.items()])
+        return "\n".join([f"## {c.name}\nTODO:" for c in self._tumcs_bot_commands])
 
 
     @final

@@ -205,11 +205,12 @@ class command:
             raise TypeError(
                 f"Command decorator can only be used on PluginCommandMixin subclasses. {owner} is not a subclass of PluginCommandMixin."
             )
-
-        if not hasattr(owner, "_tumcs_bot_command_parser"):
-            owner._tumcs_bot_command_parser = CommandParser()
+        
+        if len(owner._tumcs_bot_commands) == 0:
             owner._tumcs_bot_commands = []
-
+            owner._tumcs_bot_command_parser = CommandParser()
+        
+        self.meta.name = self.name
         owner._tumcs_bot_commands.append(self.meta)
         command_parser = owner._tumcs_bot_command_parser
 
