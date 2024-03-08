@@ -7,28 +7,41 @@ from inspect import cleandoc
 
 from tumcsbot.command_parser import CommandParser
 from tumcsbot.lib import Response
-from tumcsbot.plugin import ArgConfig, CommandConfig, OptConfig, PluginCommandMixin, Privilege
+from tumcsbot.plugin import (
+    ArgConfig,
+    CommandConfig,
+    OptConfig,
+    PluginCommandMixin,
+    Privilege,
+)
+
 
 @dataclass
 class DMResponse:
     """
     Responds with a direct message to the sender.
     """
+
     message: str
+
 
 @dataclass
 class InlineResponse:
     """
     Responds with an inline message to the sender.
     """
+
     message: str
+
 
 @dataclass
 class ReactionResponse:
     """
     Reacts with an emote message to the sender.
     """
+
     emote: str
+
 
 @dataclass
 class PartialSuccess:
@@ -36,7 +49,9 @@ class PartialSuccess:
     Indicates that the command was successful for a specific element dentoed by info.
     Can be used multiple times with yield.
     """
+
     info: str
+
 
 @dataclass
 class PartialError:
@@ -44,6 +59,7 @@ class PartialError:
     Indicates that the command was not successful for a specific element dentoed by info.
     Can be used multiple times with yield.
     """
+
     info: str
 
 
@@ -86,7 +102,7 @@ def arg(
                     return Response.privilege_err_command(
                         message, f"{self.plugin_name()} {func.__name__}"
                     )
-            
+
             if greedy and not optional:
                 if len(args[name]) == 0:
                     # todo: better error message
@@ -178,11 +194,7 @@ class command:
 
     @property
     def description(self):
-        return (
-            cleandoc(self.fn.__doc__)
-            if self.fn.__doc__
-            else None
-        )
+        return cleandoc(self.fn.__doc__) if self.fn.__doc__ else None
 
     @property
     def syntax(self):
@@ -241,14 +253,14 @@ class command:
             raise TypeError(
                 f"Command decorator can only be used on PluginCommandMixin subclasses. {owner} is not a subclass of PluginCommandMixin."
             )
-        
+
         if len(owner._tumcs_bot_commands) == 0:
             owner._tumcs_bot_commands = []
             owner._tumcs_bot_command_parser = CommandParser()
-        
+
         self.meta.name = self.name
         self.meta.description = self.description
-        
+
         owner._tumcs_bot_commands.append(self.meta)
         command_parser = owner._tumcs_bot_command_parser
 
@@ -284,21 +296,27 @@ class command:
             try:
                 for response in outer_self.fn(self, message, args, opts):
                     if isinstance(response, DMResponse):
-                        responses.append(Response.build_message(
-                            content=response.message,
-                            msg_type="private",
-                            to=message["sender_email"],
-                        ))
+                        responses.append(
+                            Response.build_message(
+                                content=response.message,
+                                msg_type="private",
+                                to=message["sender_email"],
+                            )
+                        )
                     elif isinstance(response, InlineResponse):
-                        responses.append(Response.build_message(
-                            message,
-                            content=response.message,
-                        ))
+                        responses.append(
+                            Response.build_message(
+                                message,
+                                content=response.message,
+                            )
+                        )
                     elif isinstance(response, ReactionResponse):
-                        responses.append(Response.build_reaction(
-                            message,
-                            emoji=response.emote,
-                        ))
+                        responses.append(
+                            Response.build_reaction(
+                                message,
+                                emoji=response.emote,
+                            )
+                        )
                     elif isinstance(response, PartialSuccess):
                         successful.append(response.info)
                     elif isinstance(response, PartialError):
@@ -309,17 +327,24 @@ class command:
                 pass
 
             if len(errors) > 0:
-                responses.append(Response.build_message(
-                    message,
-                    "Error: " + ", ".join(errors) + "\nSuccess: " + ", ".join(successful),
-                ))
+                responses.append(
+                    Response.build_message(
+                        message,
+                        "Error: "
+                        + ", ".join(errors)
+                        + "\nSuccess: "
+                        + ", ".join(successful),
+                    )
+                )
             elif len(responses) == 0 and len(successful) > 0:
                 responses.append(Response.ok(message))
             elif len(responses) == 0:
-                responses.append(Response.build_message(
-                    message,
-                    "Looks like there's nothing for me to do.", # todo this is wrong
-                ))
+                responses.append(
+                    Response.build_message(
+                        message,
+                        "Looks like there's nothing for me to do.",  # todo this is wrong
+                    )
+                )
             return responses
 
         # todo: idk if this is right
@@ -328,22 +353,37 @@ class command:
 
 
 class UserNotPrivilegedException(Exception):
-    def __init__(self, user_privilege:Privilege, required_privilege:Privilege,msg="user is not privileged for this command") -> None:
+    def __init__(
+        self,
+        user_privilege: Privilege,
+        required_privilege: Privilege,
+        msg="user is not privileged for this command",
+    ) -> None:
         self._user_privilege = user_privilege
         self._required_privilege = required_privilege
         self._message = msg
         super().__init__(msg)
-    
+
+
 class UserNotPrivilegedException(Exception):
-    def __init__(self, user_privilege:Privilege, required_privilege:Privilege,msg="user is not privileged for this command") -> None:
+    def __init__(
+        self,
+        user_privilege: Privilege,
+        required_privilege: Privilege,
+        msg="user is not privileged for this command",
+    ) -> None:
         self._user_privilege = user_privilege
         self._required_privilege = required_privilege
         self._message = msg
         super().__init__(msg)
-    
+
+
 class UserNotPrivilegedException(Exception):
-    def __init__(self, required_privilege:Privilege,msg="user is not privileged for this command") -> None:
+    def __init__(
+        self,
+        required_privilege: Privilege,
+        msg="user is not privileged for this command",
+    ) -> None:
         self._required_privilege = required_privilege
         self._message = msg
         super().__init__(msg)
-    
