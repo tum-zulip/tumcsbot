@@ -247,3 +247,25 @@ class command:
         wrapper._tumcsbot_syntax = self.syntax
         wrapper._tumcsbot_description = self.description
         setattr(owner, self.name, wrapper)
+
+
+class UserNotPrivilegedException(Exception):
+    def __init__(self, user_privilege:Privilege, required_privilege:Privilege,msg="user is not privileged for this command") -> None:
+        self._user_privilege = user_privilege
+        self._required_privilege = required_privilege
+        self._message = msg
+        super().__init__(msg)
+    
+class UserNotPrivilegedException(Exception):
+    def __init__(self, user_privilege:Privilege, required_privilege:Privilege,msg="user is not privileged for this command") -> None:
+        self._user_privilege = user_privilege
+        self._required_privilege = required_privilege
+        self._message = msg
+        super().__init__(msg)
+    
+class UserNotPrivilegedException(Exception):
+    def __init__(self, required_privilege:Privilege,msg="user is not privileged for this command") -> None:
+        self._required_privilege = required_privilege
+        self._message = msg
+        super().__init__(msg)
+    
