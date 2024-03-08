@@ -4,9 +4,10 @@ from typing import Callable, Any, Iterable
 from enum import Enum
 from dataclasses import dataclass, field
 from inspect import cleandoc
+from tumcsbot.client import Client
 
 from tumcsbot.command_parser import CommandParser
-from tumcsbot.lib import Response
+from tumcsbot.lib import Regex, Response
 from tumcsbot.plugin import (
     ArgConfig,
     CommandConfig,
@@ -14,6 +15,24 @@ from tumcsbot.plugin import (
     PluginCommandMixin,
     Privilege,
 )
+
+class ZulipUserNotFound(Exception):
+    pass
+
+class ZulipUser:
+    pass
+
+    def __init__(self, identifier: str) -> None:
+        uname = Regex.get_user_name(identifier)
+        if uname is None:
+            raise ZulipUserNotFound(f"Invalid user identifier `{identifier}`, use the same format as in the Zulip UI. (`@**<username>**`)")
+        self.name: str | int = uname
+
+    def id(self, client: Client) -> int:
+        result = client.get_user_id_by_name(f"@**{self.name}**")
+        if result is None:
+            raise ZulipUserNotFound(f"User @_**{self.name}** could be not found.")
+        return result
 
 
 @dataclass
@@ -24,6 +43,13 @@ class DMResponse:
 
     message: str
 
+@dataclass
+class DMMessage:
+    """
+    Responds with a direct message to the sender.
+    """
+    to: ZulipUser
+    message: str
 
 @dataclass
 class InlineResponse:
@@ -32,6 +58,7 @@ class InlineResponse:
     """
 
     message: str
+
 
 
 @dataclass
@@ -311,6 +338,15 @@ class command:
                                 emoji=response.emote,
                             )
                         )
+                    elif isinstance(response, DMMessage):
+                        responses.append(
+                            Response.build_message(
+                                None,
+                                content=response.message,
+                                msg_type="private",
+                                to=[response.to.id(self.client)],
+                            )
+                        )
                     elif isinstance(response, PartialSuccess):
                         successful.append(response.info)
                     elif isinstance(response, PartialError):
@@ -323,6 +359,11 @@ class command:
                  return Response.privilege_excpetion(
                         upe.message, upe.description
                     )
+            except ZulipUserNotFound as e:
+                return Response.build_message(
+                    message,
+                    f"Error: {e}",
+                )
 
 
             if len(errors) > 0:

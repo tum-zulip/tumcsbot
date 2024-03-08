@@ -21,6 +21,7 @@ class Echo(PluginCommandMixin, PluginThread):
     @command
     @privilege(Privilege.ADMIN)
     @arg("text", str, "The message text")
+    @arg("user", ZulipUser, "The user to echo the message to")
     @opt("n", long_opt="number", type=int, description="The number of times to echo the message")
     def uppercase(self, message: dict[str, Any], args: CommandParser.Args, opts: CommandParser.Opts) -> Response | Iterable[Response]:
         """
@@ -31,6 +32,8 @@ class Echo(PluginCommandMixin, PluginThread):
             yield PartialSuccess("Echoed message.")
             yield PartialError("Echo failed.")
             yield ReactionResponse("+1")
+            yield DMMessage(args.user, args.text.upper())
+
     
     @command
     @arg("text", str, "The message text")

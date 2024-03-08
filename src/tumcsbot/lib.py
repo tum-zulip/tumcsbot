@@ -299,7 +299,6 @@ class Regex:
         else:
             raise ValueError()
 
-
 class ConfigTable(TableBase):
     __tablename__ = "Conf"
 
