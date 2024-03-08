@@ -13,24 +13,8 @@ from tumcsbot.plugin_decorators import *
 
 class Subscribe(PluginCommandMixin, PluginThread):
     """
-    - `streams`
-    Subscribe all subscribers of the given streams to the \
-    destination stream.
-    - `users`
-    Subscribe all users with the specified names to the \
-    destination stream.
-    - `user_emails`
-    Subscribe all users with the specified email addresses to the \
-    destination stream. Note thet the email addresses need to match \
-    the `delivery_email` field. Check if you and me are having \
-    access to it. (In the Organization Settings of your Zulip \
-    Server, the value of `Who can access user email addresses` needs \
-    to be at least `Admins only`.)
-    - `all_users`
-    Subscribe all users to the destination stream.
-
-    [administrator/moderator rights needed]
-
+    Subscribe all subscribers of the given streams or users to the destination stream.
+    ---
     If the destination stream does not exist yet, it will be \
     automatically created (with an empty description).
     The stream names may be of the form `<stream_name>` or \
@@ -59,6 +43,9 @@ class Subscribe(PluginCommandMixin, PluginThread):
     @arg("dest_stream", Regex.get_stream_name, description="The destination stream name.")
     @arg("streams", Regex.get_stream_name, description="The stream names.", greedy=True)
     def streams(self, message: dict[str, Any], args: CommandParser.Args, opts: CommandParser.Opts) -> Response | Iterable[Response]:
+        """
+        Subscribe all subscribers of the given streams to the destination stream.
+        """
         failed: list[str] = []
 
         for stream in args.streams:
@@ -79,6 +66,9 @@ class Subscribe(PluginCommandMixin, PluginThread):
     @arg("dest_stream", Regex.get_stream_name, description="The destination stream name.")
     @arg("users", lambda string: Regex.get_user_name(string, get_user_id=True), description="The user names.", greedy=True)
     def users(self, message: dict[str, Any], args: CommandParser.Args, opts: CommandParser.Opts) -> Response | Iterable[Response]:
+        """
+        Subscribe all users with the specified names to the destination stream.
+        """
         # First, get all the ids of the users whose ids we do not already know.
         user_ids: list[int] | None = self.client.get_user_ids_from_display_names(
             map(
@@ -110,6 +100,12 @@ class Subscribe(PluginCommandMixin, PluginThread):
     @arg("dest_stream", Regex.get_stream_name, description="The destination stream name.")
     @arg("user_emails", str, description="The user email addresses.", greedy=True)
     def user_emails(self, message: dict[str, Any], args: CommandParser.Args, opts: CommandParser.Opts) -> Response | Iterable[Response]:
+        """
+        Subscribe all users with the specified email addresses to the destination stream. \
+        Note thet the email addresses need to match the `delivery_email` field. \
+        Check if you and me are having access to it. \
+        (In the Organization Settings of your Zulip Server, the value of `Who can access user email addresses` needs to be at least `Admins only`.)
+        """
         user_ids: list[int] | None = self.client.get_user_ids_from_emails(args.user_emails)
         if user_ids is None:
             return Response.build_message(message, "error: could not get the user ids.")
@@ -125,6 +121,9 @@ class Subscribe(PluginCommandMixin, PluginThread):
     @privilege(Privilege.ADMIN)
     @arg("dest_stream", Regex.get_stream_name, description="The destination stream name.")
     def all_users(self, message: dict[str, Any], args: CommandParser.Args, opts: CommandParser.Opts) -> Response | Iterable[Response]:
+        """
+        Subscribe all users to the destination stream.
+        """
         return self.subscribe_all_users(message, args.dest_stream)
 
 

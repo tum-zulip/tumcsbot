@@ -20,20 +20,19 @@ class Messages(TableBase):
     MsgText = Column(String, nullable=False)
 
 class Msg(PluginCommandMixin, PluginThread):
+    """
+    Store a message for later use, send or delete a stored message \
+    or list all stored messages. The text must be quoted but may
+    contain line breaks.
+    The identifiers are handled case insensitively.
+    [administrator/moderator rights needed]
+    """
+
     syntax = cleandoc(
         """
         msg add <identifier> <text>
           or msg send|remove <identifier>
           or msg list
-        """
-    )
-    description = cleandoc(
-        """
-        Store a message for later use, send or delete a stored message \
-        or list all stored messages. The text must be quoted but may
-        contain line breaks.
-        The identifiers are handled case insensitively.
-        [administrator/moderator rights needed]
         """
     )
 

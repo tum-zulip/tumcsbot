@@ -41,11 +41,10 @@ class UserGroupMember(TableBase):
 
 
 class Usergroup(PluginCommandMixin, PluginThread):
-
-    def _init_plugin(self) -> None:
-        # Get own database connection.
-        self._db: DB = DB()
-        # Check for database table.
+    """
+    Manage user groups.
+    Alternative to Zulip user groups, as the bot does not have access to the api.
+    """
 
     @command(name="list")
     @arg("user", str, "The user for which the groups should be listed", optional=True)

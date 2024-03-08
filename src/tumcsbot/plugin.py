@@ -16,9 +16,11 @@ PluginProcess   Base class for plugins that live in a separate process.
 PluginCommandMixin   Mixin class tailored for interactive commands.
 """
 
+from __future__ import annotations
 from ctypes import c_bool
 from dataclasses import asdict, dataclass, field
 from enum import Enum
+from inspect import cleandoc
 import json
 import logging
 import multiprocessing
@@ -415,10 +417,37 @@ class PluginProcess(_Plugin):
 
 
 class Privilege(Enum):
-    ADMIN = 1
+    USER = 1
     MODERATOR = 2
-    USER = 3
+    ADMIN = 3
 
+    def __ge__(self, other: Privilege) -> bool:
+        return self.value >= other.value
+    
+    def __gt__(self, other: Privilege) -> bool:
+        return self.value > other.value
+    
+    def __le__(self, other: Privilege) -> bool:
+        return self.value <= other.value
+    
+    def __lt__(self, other: Privilege) -> bool:
+        return self.value < other.value
+    
+    def __eq__(self, other: Privilege) -> bool:
+        return self.value == other.value
+
+    @staticmethod
+    def from_str(s: str | None) -> Privilege | None:
+        if s is None:
+            return None
+        s = s.lower().split(".")[1]
+        if s == "user":
+            return Privilege.USER
+        if s == "moderator":
+            return Privilege.MODERATOR
+        if s == "admin":
+            return Privilege.ADMIN
+        raise ValueError(f"no privilege level for {s}")
 
 @dataclass
 class ArgConfig:
@@ -436,10 +465,16 @@ class ArgConfig:
         greedy = "..." if self.greedy else ""
         return lbr + self.name + greedy + rbr
     
-    # todo: @property
-    # todo: def description(self) -> tuple[str, str]:
-    # todo:     desc = self.description if self.description else "No description available."
-    # todo:     return self.name, desc 
+    @staticmethod
+    def from_dict(d: dict[str, Any]) -> "ArgConfig":
+        return ArgConfig(
+            name=d["name"],
+            type=d["type"],
+            description=d["description"],
+            privilege=Privilege.from_str(d["privilege"]),
+            greedy=d["greedy"],
+            optional=d["optional"]
+        )
 
 
 @dataclass
@@ -452,23 +487,41 @@ class OptConfig:
 
     @property
     def syntax(self):
-        return '[-' + self.opt + ']'
+        try:
+            type_name = self.type.__name__
+        except AttributeError:
+            type_name = "arg"
+        type = " <" + type_name + ">" if self.type is not None else ""
+        return '[-' + self.opt + type + ']'
     
-    # todo: @property
-    # todo: def description(self) -> tuple[str, str]:
-    # todo:     desc = self.description if self.description else "No description available."
-    # todo:     opt = self.opt if self.long_opt is None else f"{self.opt}, {self.long_opt}"
-    # todo:     # todo: argument for opt
-    # todo:     return opt, desc
-    
+    @staticmethod
+    def from_dict(d: dict[str, Any]) -> "OptConfig":
+        return OptConfig(
+            opt=d["opt"],
+            long_opt=d["long_opt"],
+            type=d["type"],
+            description=d["description"],
+            privilege=Privilege.from_str(d["privilege"])
+        )
+
 
 @dataclass
-class CommandConfig:
+class SubCommandConfig:
     name: str | None = None
     args: list[ArgConfig] = field(default_factory=list)
     opts: list[OptConfig] = field(default_factory=list)
     privilege: Privilege = Privilege.USER
     description: str | None = None
+
+    @staticmethod
+    def from_dict(d: dict[str, Any]) -> "SubCommandConfig":
+        return SubCommandConfig(
+            name=d["name"],
+            args=[ArgConfig.from_dict(arg) for arg in d["args"]],
+            opts=[OptConfig.from_dict(opt) for opt in d["opts"]],
+            privilege=Privilege.from_str(d["privilege"]),
+            description=d["description"]
+        )
 
     @property
     def syntax(self) -> str:
@@ -477,7 +530,39 @@ class CommandConfig:
         
         args = [arg.syntax for arg in self.args]
         opts = [opt.syntax for opt in self.opts]
-        return self.name + " ".join(opts + args)
+        if len(opts + args) > 0:
+            return self.name + " " + " ".join(opts + args)
+        return self.name
+    
+    @property
+    def short_help_msg(self) -> str:
+        if self.description is None:
+            return "No description available."
+        return self.description
+    
+@dataclass
+class CommandConfig:
+    name: str | None = None
+    subcommands: list[SubCommandConfig] = field(default_factory=list)
+    description: str | None = None
+
+    @staticmethod
+    def from_dict(d: dict[str, Any]) -> "CommandConfig":
+        return CommandConfig(
+            name=d["name"],
+            subcommands=[SubCommandConfig.from_dict(sub) for sub in d["subcommands"]],
+            description=d["description"]
+        )
+
+    @property
+    def syntax(self) -> str:
+        return "\n or ".join([self.name + " " + sub.syntax for sub in self.subcommands])
+    
+    @property
+    def short_help_msg(self) -> str:
+        if self.description is None:
+            return "No description available."
+        return self.description
 
 
 class PluginCommandMixin(_Plugin):
@@ -496,17 +581,21 @@ class PluginCommandMixin(_Plugin):
     # The command parser.
     _tumcs_bot_command_parser: CommandParser = CommandParser()
     # The command dictionary. Maps command names to their description and syntax.
-    _tumcs_bot_commands: list[CommandConfig] = []
+    _tumcs_bot_commands: CommandConfig = CommandConfig()
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
 
         syntax = getattr(self, "syntax", None)
-        description = self.__doc__
+        description = cleandoc(self.__doc__) if self.__doc__ else None
         description = getattr(self, "description", description)
 
+        self._tumcs_bot_commands.name = self.plugin_name()
+        self._tumcs_bot_commands.description = description
+
         with DB.session() as session:
-            session.merge(PluginTable(name=self.plugin_name(), syntax=syntax, description=description, config=json.dumps([asdict(c) for c in self._tumcs_bot_commands], default=str)))
+            # todo: handle custom syntax
+            session.merge(PluginTable(name=self.plugin_name(), syntax=syntax, description=description, config=json.dumps(asdict(self._tumcs_bot_commands), default=str)))
             session.commit()
 
 

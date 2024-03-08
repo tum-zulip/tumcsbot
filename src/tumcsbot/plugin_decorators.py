@@ -11,6 +11,7 @@ from tumcsbot.lib import Regex, Response
 from tumcsbot.plugin import (
     ArgConfig,
     CommandConfig,
+    SubCommandConfig,
     OptConfig,
     PluginCommandMixin,
     Privilege,
@@ -90,9 +91,9 @@ class PartialError:
     info: str
 
 
-def get_meta(func) -> CommandConfig:
+def get_meta(func) -> SubCommandConfig:
     if not hasattr(func, "__tumsbot_plugin_meta__"):
-        func.__tumsbot_plugin_meta__ = CommandConfig()
+        func.__tumsbot_plugin_meta__ = SubCommandConfig()
     return func.__tumsbot_plugin_meta__
 
 
@@ -275,14 +276,14 @@ class command:
                 f"Command decorator can only be used on PluginCommandMixin subclasses. {owner} is not a subclass of PluginCommandMixin."
             )
 
-        if len(owner._tumcs_bot_commands) == 0:
-            owner._tumcs_bot_commands = []
+        if len(owner._tumcs_bot_commands.subcommands) == 0:
+            owner._tumcs_bot_commands = CommandConfig()
             owner._tumcs_bot_command_parser = CommandParser()
 
         self.meta.name = self.name
         self.meta.description = self.description
 
-        owner._tumcs_bot_commands.append(self.meta)
+        owner._tumcs_bot_commands.subcommands.append(self.meta)
         command_parser = owner._tumcs_bot_command_parser
 
         command_parser.add_subcommand(

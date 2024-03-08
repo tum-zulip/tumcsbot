@@ -4,10 +4,11 @@
 # TUM CS Bot - https://github.com/ro-i/tumcsbot
 
 from inspect import cleandoc
+import json
 from typing import Any, Iterable
 
 from tumcsbot.lib import Response, get_classes_from_path
-from tumcsbot.plugin import PluginCommandMixin, _Plugin, PluginThread, PluginTable, Privilege
+from tumcsbot.plugin import ArgConfig, CommandConfig, OptConfig, SubCommandConfig, PluginCommandMixin, _Plugin, PluginThread, PluginTable, Privilege
 from tumcsbot.db import DB
 
 HELP_TEMPLATE = cleandoc(
@@ -26,6 +27,7 @@ HELP_TEMPLATE = cleandoc(
     Have a nice day! :-)
     """
 )
+PRIVILAGE_MSG = "**[administrator/moderator rights needed]**"
 
 
 class Help(PluginCommandMixin, PluginThread):
@@ -56,7 +58,7 @@ class Help(PluginCommandMixin, PluginThread):
         return "```text\n" + syntax.strip() + "\n```\n"
     
     @staticmethod
-    def _get_help_info(command: str | None = None, privilige: Privilege = Privilege.USER) -> list[tuple[str, str, str]]:
+    def _get_help_info(command: str | None = None, privilige: Privilege = Privilege.USER) -> list[CommandConfig]:
         """Get help information from each command.
 
         Return a list of tuples (command name, syntax, description).
@@ -68,38 +70,68 @@ class Help(PluginCommandMixin, PluginThread):
             else:
                 plugins = session.query(PluginTable).all()
         
-        result: list[tuple[str, str, str]] = [
-            (
-                p.name,
-                p.syntax,
-                p.description,
-                # todo: handle formatting
-            )
-            for p in plugins
+        result: CommandConfig = [
+            CommandConfig.from_dict(json.loads(p.config))
+            for p in plugins if p is not None
         ]
         # Sort by name.
-        return sorted(result, key=lambda tuple: tuple[0])
+        return sorted(result, key=lambda c: c.name)
 
     def _help_command(
         self, message: dict[str, Any], command: str
     ) -> Response | Iterable[Response]:
-        info_tuple: tuple[str, str, str] | None = None
 
         result = Help._get_help_info(command)
-        if len(result) is None:
+        if len(result) == 0:
             return Response.command_not_found(message)
-        info_tuple = result[0]
+        
+        cmd = result[0]
 
-        help_message: str = "\n".join(info_tuple[1:])
+        msg = f"# {cmd.name.capitalize()}\n"
+
+        only_mod_privileges = all([sub.privilege > Privilege.USER for sub in cmd.subcommands])
+        if only_mod_privileges:
+            msg += PRIVILAGE_MSG + "\n"
+
+        msg += "\n" + cmd.short_help_msg
+        
+        msg += f"\n```text\n{cmd.syntax}\n```\n\n"
+
+        msg += "## Subcommands:\n" if cmd.subcommands else ""
+        for sub in cmd.subcommands:
+            msg += Help._format_subcommand(cmd.name, sub)
 
         return Response.build_message(
-            message, help_message, msg_type="private", to=message["sender_email"]
+            message, content=msg, msg_type="private", to=message["sender_email"]
         )
+    
+    @staticmethod
+    def _format_option(option: OptConfig) -> str:
+        long_opt = f"/--{option.long_opt}" if option.long_opt else ""
+        privilage = " " + PRIVILAGE_MSG if option.privilege is not None and option.privilege > Privilege.USER else ""
+        return f"- `-{option.opt}{long_opt}`\t{option.description}{privilage}"
+    
+    @staticmethod
+    def _format_argument(argument: ArgConfig) -> str:
+        privilage = " " + PRIVILAGE_MSG if argument.privilege is not None and argument.privilege > Privilege.USER else ""
+        greedy = " (greedy)" if argument.greedy else ""
+        return f"- `{argument.name}`\t{argument.description}{greedy}{privilage}"
+    
+    @staticmethod
+    def _format_subcommand(cmd_name: str, subcommand: SubCommandConfig) -> str:
+        privilage = " " + PRIVILAGE_MSG + "\n" if  subcommand.privilege is not None and subcommand.privilege > Privilege.USER else ""
+        out = f"```spoiler {subcommand.name.capitalize()}\n{privilage}\n{subcommand.short_help_msg}\n````text\n{cmd_name} {subcommand.syntax}\n````\n\n"
+        for opt in subcommand.opts:
+            out += Help._format_option(opt) + "\n"
+        for arg in subcommand.args:
+            out += Help._format_argument(arg) + "\n"
+        out += "```\n"
+        return out
 
     def _help_overview(self, message: dict[str, Any]) -> Response | Iterable[Response]:
         # Get the command names.
         help_message: str = "\n".join(
-            map(lambda tuple: "- " + tuple[0], Help._get_help_info())
+            map(lambda cfg: "- " + cfg.name, Help._get_help_info())
         )
 
         return Response.build_message(
