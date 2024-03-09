@@ -39,7 +39,7 @@ class OperationStreams(PluginCommandMixin, PluginThread):
         args: CommandParser.Args,
         opts: CommandParser.Opts,
         message: dict[str, Any],
-    ) -> Response | Iterable[Response]:
+    ):
        
         sender_name = await sender.name
 
@@ -47,64 +47,44 @@ class OperationStreams(PluginCommandMixin, PluginThread):
             return DMResponse(f"Sorry {sender_name}, no streams found.")
         
         if opts.r:
-            # Get the list of streams we would delete, build a new command
-            # without regexes that would accomplish this, and ask the user
-            # whether they would like to execute it like that.
             streams = await sender.client.get_streams_from_regex(args.stream_names)
-            return Response.build_request_msg(
-                message, f"{self.plugin_name()} {' '.join(map(quote, streams))}"
-            )
         else:
-            streams = []
-            for stream in args.stream_names:
-                stream_s: str | None = Regex.get_stream_name(stream)
-                if stream_s is None:
-                    return Response.build_message(
-                        message, f"error: {stream} cannot be parsed"
-                    )
-                streams.append(stream_s)
-            return self._archive_streams(message, sender, args.stream_names)
+            streams = args.stream_names
         
+        failed: list[str] = []
+        for stream in streams:
+            result: dict[str, Any] = await sender.client.get_stream_id(stream)
+            if result["result"] != "success":
+                failed.append(stream)
+                raise PartialError()
+            stream_id: int = result["stream_id"]
 
-    async def _archive_streams(
-            self, sender:ZulipUser, message: dict[str, Any], streams: list[str]
-        ):
-            failed: list[str] = []
-
-            for stream in streams:
-                result: dict[str, Any] = await sender.client.get_stream_id(stream)
-                if result["result"] != "success":
-                    failed.append(stream)
-                    continue
-                stream_id: int = result["stream_id"]
-
-                # Check if stream is empty.
-                result = await sender.client.get_messages(
-                    {
-                        "anchor": "oldest",
-                        "num_before": 0,
-                        "num_after": 1,
-                        "narrow": [{"operator": "stream", "operand": stream_id}],
-                    }
-                )
-                if result["result"] != "success" or result["messages"]:
-                    failed.append(stream)
-                    continue
-
-                # Archive the stream: https://zulip.com/help/archive-a-stream
-                result = await sender.client.delete_stream(stream_id)
-                if result["result"] != "success":
-                    failed.append(stream)
-
-            if not failed:
-                return Response.ok(message)
-            
-            yield DMResponse(
-               f"Failed to remove the following stream(s): {failed}"
+            # Check if stream is empty.
+            result = await sender.client.get_messages(
+                {
+                    "anchor": "oldest",
+                    "num_before": 0,
+                    "num_after": 1,
+                    "narrow": [{"operator": "stream", "operand": stream_id}],
+                }
             )
+            if result["result"] != "success" or result["messages"]:
+                failed.append(stream)
+                raise PartialError()
 
+            # Archive the stream: https://zulip.com/help/archive-a-stream
+            # todo: delete_stream async?
+            result = await sender.client.delete_stream(stream_id)
+            if result["result"] != "success":
+                failed.append(stream)
+                raise PartialError()
 
-
+        if not failed:
+            return Response.ok(message)
+    
+        yield DMResponse(
+            f"Failed to remove the following stream(s): {failed}"
+        )
 
   
     @command
@@ -132,13 +112,14 @@ class OperationStreams(PluginCommandMixin, PluginThread):
 
         for stream, desc in args.stream_tuples:
             if not stream:
-                failed.append("one empty stream name")
-                continue
-            result: dict[str, Any] = self.client.add_subscriptions(
+                failed.append("empty stream name")
+                raise PartialError("empty stream name")
+            result: dict[str, Any] = sender.client.add_subscriptions(
                 streams=[{"name": stream, "description": desc}]
             )
             if result["result"] != "success":
                 failed.append(f"stream: {stream}, description: {desc}")
+                raise PartialError()
 
         if not failed:
             return Response.ok(message)
@@ -176,17 +157,19 @@ class OperationStreams(PluginCommandMixin, PluginThread):
             line: str = f"{old} -> {new}"
 
             try:
-                old_id: int = self.client.get_stream_id(old)["stream_id"]
+                old_id: int = await sender.client.get_stream_id(old)["stream_id"]
             except Exception as e:
                 self.logger.exception(e)
                 failed.append(line)
                 continue
 
-            result: dict[str, Any] = self.client.update_stream(
+            # todo: update_stream async?
+            result: dict[str, Any] = await sender.client.update_stream(
                 {"stream_id": old_id, "new_name": f"'{new}'"}
             )
             if result["result"] != "success":
                 failed.append(line)
+                raise PartialError()
 
         if not failed:
             yield Response.ok(message)
@@ -220,11 +203,20 @@ class OperationStreams(PluginCommandMixin, PluginThread):
 
             for stream in args.stream_names:
                 if not stream:
+                    failed.append("empty stream name")
                     raise PartialError("empty stream name")
-                stream_id = await sender.client.get_stream_id(stream)
+                
+                result_id: dict[str, Any] = await sender.client.get_stream_id(stream)
+                if result_id["result"] != "success":
+                   failed.append(stream)
+                   raise PartialError()
+                stream_id: int = result_id["stream_id"]
+
+                # todo: mark_stream_as_read async?
                 result = await sender.client.mark_stream_as_read(stream_id)
                 if result["result"] != "success":
                     failed.append(f"stream: {stream}")
+                    raise PartialError()
 
             if not failed:
                 return Response.ok(message)
