@@ -21,10 +21,18 @@ class OperationStreams(PluginCommandMixin, PluginThread):
 
     @command
     @privilege(Privilege.ADMIN)
-    @arg()
-    @opt()
-    @arg()
-    def archive_stream(
+    @opt(
+        "r",
+        description="select the streams according to the given regular expressions",
+        privilege=Privilege.ADMIN,
+        )
+    @arg(
+        "stream_names",
+        type=str,
+        description="Streams that should be archived", 
+        greedy=True
+        )
+    async def archive_stream(
         self,
         sender: ZulipUser,
         session,
@@ -32,7 +40,72 @@ class OperationStreams(PluginCommandMixin, PluginThread):
         opts: CommandParser.Opts,
         message: dict[str, Any],
     ) -> Response | Iterable[Response]:
-          pass
+       
+        sender_name = await sender.name
+
+        if args.stream_names is None or None in args.stream_names:
+            return DMResponse(f"Sorry {sender_name}, no streams found.")
+        
+        if opts.r:
+            # Get the list of streams we would delete, build a new command
+            # without regexes that would accomplish this, and ask the user
+            # whether they would like to execute it like that.
+            streams = await sender.client.get_streams_from_regex(args.stream_names)
+            return Response.build_request_msg(
+                message, f"{self.plugin_name()} {' '.join(map(quote, streams))}"
+            )
+        else:
+            streams = []
+            for stream in args.stream_names:
+                stream_s: str | None = Regex.get_stream_name(stream)
+                if stream_s is None:
+                    return Response.build_message(
+                        message, f"error: {stream} cannot be parsed"
+                    )
+                streams.append(stream_s)
+            return self._archive_streams(message, sender, args.stream_names)
+        
+
+    async def _archive_streams(
+            self, sender:ZulipUser, message: dict[str, Any], streams: list[str]
+        ):
+            failed: list[str] = []
+
+            for stream in streams:
+                result: dict[str, Any] = await sender.client.get_stream_id(stream)
+                if result["result"] != "success":
+                    failed.append(stream)
+                    continue
+                stream_id: int = result["stream_id"]
+
+                # Check if stream is empty.
+                result = await sender.client.get_messages(
+                    {
+                        "anchor": "oldest",
+                        "num_before": 0,
+                        "num_after": 1,
+                        "narrow": [{"operator": "stream", "operand": stream_id}],
+                    }
+                )
+                if result["result"] != "success" or result["messages"]:
+                    failed.append(stream)
+                    continue
+
+                # Archive the stream: https://zulip.com/help/archive-a-stream
+                result = await sender.client.delete_stream(stream_id)
+                if result["result"] != "success":
+                    failed.append(stream)
+
+            if not failed:
+                return Response.ok(message)
+            
+            yield DMResponse(
+               f"Failed to remove the following stream(s): {failed}"
+            )
+
+
+
+
   
     @command
     @privilege(Privilege.ADMIN)
@@ -40,19 +113,22 @@ class OperationStreams(PluginCommandMixin, PluginThread):
         "stream_tuples", 
         type=lambda t: split(t, sep=",", exact_split=2, discard_empty=False),
         description="List of (stream,description)-tuples",
-        greedy=True)
-    def create_stream(
+        greedy=True
+        )
+    async def create_stream(
         self,
         sender: ZulipUser,
         session,
         args: CommandParser.Args,
         opts: CommandParser.Opts,
         message: dict[str, Any],
-    ) -> Response | Iterable[Response]:
+    ):
         failed: list[str] = []
 
+        sender_name = await sender.name
+
         if args.stream_tuples is None or None in args.stream_tuples:
-            return Response.error(message)
+            yield DMResponse(f"Sorry {sender_name}, no streams found.")
 
         for stream, desc in args.stream_tuples:
             if not stream:
@@ -67,9 +143,9 @@ class OperationStreams(PluginCommandMixin, PluginThread):
         if not failed:
             return Response.ok(message)
 
-        response: str = "Failed to create the following streams:\n" + "\n".join(failed)
-
-        return Response.build_message(message, response, msg_type="private")
+        yield DMResponse(
+            "Failed to create the following streams:\n" + "\n".join(failed)
+        )
 
     
     @command
@@ -80,18 +156,20 @@ class OperationStreams(PluginCommandMixin, PluginThread):
         description="list of (`stream_name_old`,`stream_name_new`)-tuples", 
         greedy=True
         )
-    def rename_stream(
+    async def rename_stream(
         self,
         sender: ZulipUser,
         session,
         args: CommandParser.Args,
         opts: CommandParser.Opts,
         message: dict[str, Any],
-    ) -> Response | Iterable[Response]:
+    ):
         failed: list[str] = []
 
+        sender_name = await sender.name
+
         if args.stream_tuples is None or None in args.stream_tuples:
-            return Response.error(message)
+            yield DMResponse(f"Sorry {sender_name}, no streams found.")
 
         for old, new in args.stream_tuples:
             # Used for error messages.
@@ -116,3 +194,41 @@ class OperationStreams(PluginCommandMixin, PluginThread):
         yield DMResponse(
             "Failed to perform the following renamings:\n" + "\n".join(failed)
         )
+
+        @command
+        @privilege(Privilege.USER)
+        @arg(
+             "stream_names",
+             str,
+             description="Streams that should be marked as read", 
+             greedy=True
+        )
+        async def mark_as_read( 
+            self,
+            sender: ZulipUser,
+            session,
+            args: CommandParser.Args,
+            opts: CommandParser.Opts,
+            message: dict[str, Any],
+        ):
+            failed: list[str] = []
+
+            sender_name = await sender.name
+
+            if args.stream_names is None or None in args.stream_names:
+                yield DMResponse(f"Sorry {sender_name}, no streams found.")
+
+            for stream in args.stream_names:
+                if not stream:
+                    raise PartialError("empty stream name")
+                stream_id = await sender.client.get_stream_id(stream)
+                result = await sender.client.mark_stream_as_read(stream_id)
+                if result["result"] != "success":
+                    failed.append(f"stream: {stream}")
+
+            if not failed:
+                return Response.ok(message)
+
+            yield DMResponse(
+                "Failed to create the following streams:\n" + "\n".join(failed)
+            ) 
