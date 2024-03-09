@@ -3,11 +3,23 @@
 # See LICENSE file for copyright and license details.
 # TUM CS Bot - https://github.com/ro-i/tumcsbot
 
+import asyncio
+from functools import wraps
 import unittest
 
 from typing import Any, ClassVar
 
-from tumcsbot.client import Client as TUMCSBotClient
+from tumcsbot.client import AsyncClient as TUMCSBotClient
+
+def asSync(func):
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        result = loop.run_until_complete(func(*args, **kwargs))
+        loop.close()
+        return result
+    return wrapper
 
 
 class ClientGetUserIdsFromAttributeTest(unittest.TestCase):
@@ -24,33 +36,34 @@ class ClientGetUserIdsFromAttributeTest(unittest.TestCase):
     def setUpClass(cls) -> None:
         cls._client = cls.Client()
 
-    def test_get_user_ids_from_attribute(self) -> None:
+    @asSync
+    async def test_get_user_ids_from_attribute(self) -> None:
         self.assertEqual(
-            self._client.get_user_ids_from_attribute(
+            await self._client.get_user_ids_from_attribute(
                 "not_existing_attribute", [1, 2, 3]
             ),
             [],
         )
         self.assertEqual(
-            self._client.get_user_ids_from_attribute(
+            await self._client.get_user_ids_from_attribute(
                 "delivery_email", ["abc@zulip.org"]
             ),
             [1],
         )
         self.assertEqual(
-            self._client.get_user_ids_from_attribute(
+            await self._client.get_user_ids_from_attribute(
                 "delivery_email", ["abc@zulip.org", "ghi@zulip.org"]
             ),
             [1, 3],
         )
         self.assertEqual(
-            self._client.get_user_ids_from_attribute(
+            await self._client.get_user_ids_from_attribute(
                 "delivery_email", ["abc@zulip.org", "gHi@zulip.org"]
             ),
             [1],
         )
         self.assertEqual(
-            self._client.get_user_ids_from_attribute(
+            await self._client.get_user_ids_from_attribute(
                 "delivery_email",
                 ["abc@zulip.org", "gHi@zulip.org"],
                 case_sensitive=False,
@@ -58,40 +71,44 @@ class ClientGetUserIdsFromAttributeTest(unittest.TestCase):
             [1, 3],
         )
         self.assertEqual(
-            self._client.get_user_ids_from_attribute("user_id", [1, 3]), [1, 3]
+            await self._client.get_user_ids_from_attribute("user_id", [1, 3]), [1, 3]
         )
         self.assertEqual(
-            self._client.get_user_ids_from_attribute(
+            await self._client.get_user_ids_from_attribute(
                 "user_id", [2, 3, 4], case_sensitive=False
             ),
             [2, 3],
         )
         self.assertEqual(
-            self._client.get_user_ids_from_attribute("full_name", ["abc"]), [1, 2]
+            await self._client.get_user_ids_from_attribute("full_name", ["abc"]), [1, 2]
         )
 
-    def test_get_user_ids_from_display_names(self) -> None:
+    @asSync
+    async def test_get_user_ids_from_display_names(self) -> None:
         self.assertEqual(
-            self._client.get_user_ids_from_attribute("full_name", ["abc"]),
-            self._client.get_user_ids_from_display_names(["abc"]),
+            await self._client.get_user_ids_from_attribute("full_name", ["abc"]),
+            await self._client.get_user_ids_from_display_names(["abc"]),
         )
         self.assertEqual(
-            self._client.get_user_ids_from_attribute("full_name", ["aBc"]),
-            self._client.get_user_ids_from_display_names(["aBc"]),
+            await self._client.get_user_ids_from_attribute("full_name", ["aBc"]),
+            await self._client.get_user_ids_from_display_names(["aBc"]),
         )
 
-    def test_get_user_ids_from_emails(self) -> None:
+
+    @asSync
+    async def test_get_user_ids_from_emails(self) -> None:
         self.assertEqual(
-            self._client.get_user_ids_from_attribute(
+            await self._client.get_user_ids_from_attribute(
                 "delivery_email",
                 ["abc@zulip.org", "gHi@zulip.org"],
                 case_sensitive=False,
             ),
-            self._client.get_user_ids_from_emails(["abc@zulip.org", "gHi@zulip.org"]),
+            await self._client.get_user_ids_from_emails(["abc@zulip.org", "gHi@zulip.org"]),
         )
 
 
-def get_users() -> dict[str, Any]:
+async def get_users() -> dict[str, Any]:
+    await asyncio.sleep(0.1)
     return {
         "result": "success",
         "members": [

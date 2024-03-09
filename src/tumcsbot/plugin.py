@@ -17,33 +17,32 @@ PluginCommandMixin   Mixin class tailored for interactive commands.
 """
 
 from __future__ import annotations
-from ctypes import c_bool
+import asyncio
 from dataclasses import asdict, dataclass, field
 from enum import Enum
 from inspect import cleandoc
 import json
 import logging
-import multiprocessing
-import queue
 from abc import ABC, abstractmethod
-import signal
-from threading import Thread
-from typing import Any, Callable, Final, Iterable, Type, cast, final
+from typing import Any, Callable, Final, Iterable, Type, final
 
-from tumcsbot.client import Client, SharedClient
-from tumcsbot.lib import LOGGING_FORMAT, Response, StrEnum
+import sqlalchemy
+
+from tumcsbot.client import AsyncClient
+from tumcsbot.lib import LOGGING_FORMAT, Regex, Response, StrEnum
 from tumcsbot.command_parser import CommandParser
 from tumcsbot.db import DB, TableBase
 from sqlalchemy import Column, String
 
 
 class PluginTable(TableBase):
-    __tablename__ = 'Plugins'
+    __tablename__ = "Plugins"
 
     name = Column(String, primary_key=True)
     syntax = Column(String, nullable=True)
     description = Column(String, nullable=True)
     config = Column(String, nullable=True)
+
 
 @final
 class EventType(StrEnum):
@@ -150,7 +149,7 @@ class PluginContext:
         return self._zuliprc
 
 
-class _Plugin(ABC):
+class Plugin(ABC):
     """Abstract base class for every plugin."""
 
     # List of plugins which have to be loaded before this plugin.
@@ -160,35 +159,25 @@ class _Plugin(ABC):
     # List of Zulip events this plugin is responsible for.
     # See https://zulip.com/api/get-events.
     zulip_events: list[str] = []
-    # Update the sql entry of the plugin.
-    _update_plugin_sql: Final[str] = "replace into Plugins values (?,?,?)"
-    # Whether this plugin needs an own client instance or is ok with a thread-safe
-    # shared client instance. Defaults to False for PluginThreads and True for
-    # PluginProcesses.
-    need_exclusive_client: bool
 
-    def __init__(
-        self, plugin_context: PluginContext, client: SharedClient | None = None
-    ) -> None:
+    # todo: remove plugin_context from __init__
+    def __init__(self, plugin_context: PluginContext, client: AsyncClient) -> None:
         """Use _init_plugin for custom init code."""
 
         # Some declarations.
-        self._worker: Thread | multiprocessing.Process | None = None
-        self.queue: "queue.SimpleQueue[Event] | multiprocessing.SimpleQueue[Event] | None" = (
-            None
-        )
-
-        if self.need_exclusive_client != (client is None):
-            raise ValueError("wrong client initialization")
-        self._client: Client | SharedClient | None = client
-
         self.plugin_context: PluginContext = plugin_context
+        self.client: AsyncClient = client
+
         # Get own logger.
         self.logger: logging.Logger = self.create_logger()
-        self.logger.handlers[0].setFormatter(fmt=logging.Formatter(LOGGING_FORMAT))
+        # todo: needs fix? self.logger.handlers[0].setFormatter(fmt=logging.Formatter(LOGGING_FORMAT))
         self.logger.setLevel(plugin_context.logging_level)
+
         # Set the running flag.
-        self.running = multiprocessing.Value(c_bool, False)
+        self.running: bool = False
+
+        # call custom init code
+        self._init_plugin()
 
     def _init_plugin(self) -> None:
         """Custom plugin initialization code.
@@ -202,67 +191,27 @@ class _Plugin(ABC):
         """Do not override!"""
         return cls.__module__.rsplit(".", maxsplit=1)[-1]
 
-    @property
-    def client(self) -> Client | SharedClient:
-        """Get the client object for this plugin.
-
-        Return either the plugin's own client object or the globally
-        shared client object.
-        """
-        if self._client is None:
-            raise ValueError("client attribute is only valid in worker process")
-        return self._client
-
-    @abstractmethod
-    def clear_queue(self) -> None:
-        """Empty/clear the queues of this plugin."""
-
-    @abstractmethod
     def create_logger(self) -> logging.Logger:
         """Create a logger instance suitable for this plugin type."""
+        return logging.getLogger(self.plugin_name())
 
     @abstractmethod
-    def create_queue(
-        self,
-    ) -> "queue.SimpleQueue[Event] | multiprocessing.SimpleQueue[Event]":
-        """Create a queue instance suitable for this plugin type."""
-
-    @abstractmethod
-    def create_worker(self) -> Thread | multiprocessing.Process:
-        """Create a new instance for this plugin's thread/process."""
-
-    @abstractmethod
-    def handle_zulip_event(self, event: Event) -> Response | Iterable[Response]:
+    async def handle_zulip_event(self, event: Event) -> Response | Iterable[Response]:
         """Process a Zulip event.
 
         Process the given event and return a Response or an Iterable
         consisting of Response objects.
         """
-
-    def handle_event(self, event: Event) -> None:
+    
+    @final
+    async def handle_event(self, event: Event) -> None:
         """Process an event.
 
         Always call the default implementation of this method if you
         did not receive any custom internal event.
         """
-        if event.type == EventType.ZULIP:
-            if not self.is_responsible(event):
-                self.logger.debug("not responsible for event %s", id(event))
-                return
-            logging.debug(f"handling event {id(event)}")
-            responses: Response | Iterable[Response] = self.handle_zulip_event(event)
-            self.client.send_responses(responses)
-        elif event.type == EventType.RELOAD:
-            self.reload()
-        elif event.type == EventType.STOP:
-            pass
-
-    @final
-    def is_alive(self) -> bool:
-        """Check whether the plugin is running."""
-        if self._worker is None:
-            return False
-        return self._worker.is_alive()
+        responses: Response | Iterable[Response] = await self.handle_zulip_event(event)
+        await self.client.send_responses(responses)
 
     def is_responsible(self, event: Event) -> bool:
         """Check if the plugin is responsible for the given Zulip event.
@@ -272,160 +221,18 @@ class _Plugin(ABC):
         """
         return event.data["type"] in self.zulip_events
 
-    @final
-    def join(self) -> None:
-        """Wait for the plugin's thread/process to terminate."""
-        if self._worker is not None:
-            self._worker.join()
-
-    @final
-    def push_event(self, event: Event) -> None:
-        if self.queue is None:
-            return
-        self.queue.put(event)
-
-    @final
-    def run(self) -> None:
-        """Run the plugin.
-
-        Finish thread-/process-intern initialization and wait for events
-        on the main incoming queue and handle them.
-        """
-        self.logger.debug("init")
-        if self._client is None:
-            self._client = Client(config_file=self.plugin_context.zuliprc)
-        self._init_plugin()
-
-        self.logger.debug("started running")
-        assert self.queue is not None
-
-        while self.running.value:  # type: ignore
-            event: Event = self.queue.get()
-
-            if event.type == EventType._EMPTY:
-                break
-            try:
-                self.handle_event(event)
-            except Exception as e:
-                self.logger.exception(e)
-
-        self.clear_queue()
-
-        self.logger.debug("stopped running")
-
-    def reload(self) -> None:
-        """Reloads the plugin.
-
-        Does only debug logging per default.
-        """
-        self.logger.debug("reloading")
-
-    @final
-    def start(self) -> None:
-        """Start the plugin's thread/process."""
-        if self.running.value:  # type: ignore
-            self.logger.error("start failed; plugin already running")
-            return
-
-        self.running.value = True  # type: ignore
-        self.queue = self.create_queue()
-        self._worker = self.create_worker()
-        self._worker.start()
-
-    def stop(self) -> None:
-        """Tear the plugin down.
-
-        Note that this does not automatically join the thread/process!
-        """
-        self.running.value = False  # type: ignore
-        self.push_event(Event.stop_event("", ""))
-
-
-class PluginThread(_Plugin):
-    """Base class for plugins that live in a separate thread."""
-
-    need_exclusive_client = False
-
-    @final
-    def __init__(
-        self, plugin_context: PluginContext, client: SharedClient | None = None
-    ) -> None:
-        _Plugin.__init__(self, plugin_context, client)
-
-    @final
-    def clear_queue(self) -> None:
-        def _clear_queue(queue: "queue.SimpleQueue[Event]") -> None:
-            while not queue.empty():
-                queue.get_nowait()
-
-        _clear_queue(cast("queue.SimpleQueue[Event]", self.queue))
-
-    @final
-    def create_logger(self) -> logging.Logger:
-        return logging.getLogger()
-
-    @final
-    def create_queue(self) -> "queue.SimpleQueue[Event]":
-        return queue.SimpleQueue()
-
-    @final
-    def create_worker(self) -> Thread:
-        # The 'daemon'-Argument ensures that threads get
-        # terminated when the parent process terminates.
-        return Thread(target=self.run, name=self.plugin_name(), daemon=True)
-
-
-class PluginProcess(_Plugin):
-    """Base class for plugins that live in a separate process."""
-
-    need_exclusive_client = True
-
-    @final
-    def __init__(
-        self, plugin_context: PluginContext, client: SharedClient | None = None
-    ) -> None:
-        _Plugin.__init__(self, plugin_context, client)
-
-    @final
-    def clear_queue(self) -> None:
-        def _clear_queue(queue: "multiprocessing.SimpleQueue[Event]") -> None:
-            while not queue.empty():
-                queue.get()
-            queue.close()
-
-        _clear_queue(cast("multiprocessing.SimpleQueue[Event]", self.queue))
-
-    @final
-    def create_logger(self) -> logging.Logger:
-        return multiprocessing.log_to_stderr()
-
-    @final
-    def create_queue(self) -> "multiprocessing.SimpleQueue[Event]":
-        return multiprocessing.SimpleQueue()
-
-    @final
-    def create_worker(self) -> multiprocessing.Process:
-        def run_wrapper() -> None:
-            signal.signal(signal.SIGINT, signal.SIG_IGN)
-            signal.signal(signal.SIGTERM, signal.SIG_IGN)
-            self.run()
-
-        # The 'daemon'-Argument ensures that subprocesses get
-        # terminated when the parent process terminates.
-        return multiprocessing.Process(
-            target=run_wrapper, name=self.plugin_name(), daemon=True
-        )
 
 
 class ZulipUserNotFound(Exception):
     pass
 
+
 class ZulipUser:
     # todo: are there probles with threads?
-    _client: Client | None = None
+    _client: AsyncClient | None = None
 
     @classmethod
-    def set_client(cls, client: Client) -> None:
+    def set_client(cls, client: AsyncClient) -> None:
         cls._client = client
 
     def __init__(self, identifier: str | str) -> None:
@@ -435,57 +242,57 @@ class ZulipUser:
         if isinstance(identifier, int):
             self._id = identifier
             return
-        
+
         if isinstance(identifier, str):
             uname = Regex.get_user_name(identifier)
             if uname is None:
-                raise ZulipUserNotFound(f"Invalid user identifier `{identifier}`, use the same format as in the Zulip UI. (`@**<username>**`)")
+                raise ZulipUserNotFound(
+                    f"Invalid user identifier `{identifier}`, use the same format as in the Zulip UI. (`@**<username>**`)"
+                )
             self._name: str | int = uname
-    
-    def __eq__(self, other: Any) -> bool:
-        if not isinstance(other, ZulipUser):
-            return False
-        return self.id == other.id
-    
+
+    def __repr__(self) -> str:
+        return f"ZulipUser({self._id}, {self._name})"
+
     @property
-    def client(self) -> Client:
+    def client(self) -> AsyncClient:
         if ZulipUser._client is None:
             raise ValueError("Client not set for ZulipUser.")
         return ZulipUser._client
 
     @property
-    def id(self) -> int:
+    async def id(self) -> int:
         if self._id is not None:
             return self._id
-        
-        result = self.client.get_user_id_by_name(self.mention)
+
+        result = await self.client.get_user_id_by_name(await self.mention)
         if result is None:
-            raise ZulipUserNotFound(f"User @_**{self.name}** could be not found.")
+            raise ZulipUserNotFound(f"User {await self.mention_silent} could be not found.")
         self._id = result
         return result
-    
+
     @property
-    def name(self) -> str:
+    async def name(self) -> str:
         if self._name is not None:
             return self._name
-        
-        result = self.client.get_user_by_id(self._id)
-        if result['result'] != 'success':
+
+        result = await self.client.get_user_by_id(self._id)
+        if result["result"] != "success":
             raise ZulipUserNotFound(f"User with id {self._id} could be not found.")
-        self._name = result['user']['full_name']
-        return self._name 
-    
+        self._name = result["user"]["full_name"]
+        return self._name
+
     @property
-    def mention(self) -> str:
-        return f"@**{self.name}**"
-    
+    async def mention(self) -> str:
+        return f"@**{await self.name}**"
+
     @property
-    def mention_silent(self) -> str:
-        return f"@_**{self.name}**"
-    
+    async def mention_silent(self) -> str:
+        return f"@_**{await self.name}**"
+
     @property
-    def priviliged(self) -> bool:
-        return self.client.user_is_privileged(self.id)
+    async def privileged(self) -> bool:
+        return await self.client.user_is_privileged(await self.id)
 
 
 class Privilege(Enum):
@@ -495,16 +302,16 @@ class Privilege(Enum):
 
     def __ge__(self, other: Privilege) -> bool:
         return self.value >= other.value
-    
+
     def __gt__(self, other: Privilege) -> bool:
         return self.value > other.value
-    
+
     def __le__(self, other: Privilege) -> bool:
         return self.value <= other.value
-    
+
     def __lt__(self, other: Privilege) -> bool:
         return self.value < other.value
-    
+
     def __eq__(self, other: Privilege) -> bool:
         return self.value == other.value
 
@@ -521,6 +328,7 @@ class Privilege(Enum):
             return Privilege.ADMIN
         raise ValueError(f"no privilege level for {s}")
 
+
 @dataclass
 class ArgConfig:
     name: str
@@ -530,13 +338,12 @@ class ArgConfig:
     greedy: bool = False
     optional: bool = False
 
-
     @property
     def syntax(self) -> str:
-        lbr, rbr = ('[', ']') if self.optional else ('<', '>')
+        lbr, rbr = ("[", "]") if self.optional else ("<", ">")
         greedy = "..." if self.greedy else ""
         return lbr + self.name + greedy + rbr
-    
+
     @staticmethod
     def from_dict(d: dict[str, Any]) -> "ArgConfig":
         return ArgConfig(
@@ -545,7 +352,7 @@ class ArgConfig:
             description=d["description"],
             privilege=Privilege.from_str(d["privilege"]),
             greedy=d["greedy"],
-            optional=d["optional"]
+            optional=d["optional"],
         )
 
 
@@ -564,8 +371,8 @@ class OptConfig:
         except AttributeError:
             type_name = "arg"
         type = " <" + type_name + ">" if self.type is not None else ""
-        return '[-' + self.opt + type + ']'
-    
+        return "[-" + self.opt + type + "]"
+
     @staticmethod
     def from_dict(d: dict[str, Any]) -> "OptConfig":
         return OptConfig(
@@ -573,7 +380,7 @@ class OptConfig:
             long_opt=d["long_opt"],
             type=d["type"],
             description=d["description"],
-            privilege=Privilege.from_str(d["privilege"])
+            privilege=Privilege.from_str(d["privilege"]),
         )
 
 
@@ -592,26 +399,27 @@ class SubCommandConfig:
             args=[ArgConfig.from_dict(arg) for arg in d["args"]],
             opts=[OptConfig.from_dict(opt) for opt in d["opts"]],
             privilege=Privilege.from_str(d["privilege"]),
-            description=d["description"]
+            description=d["description"],
         )
 
     @property
     def syntax(self) -> str:
         if self.name is None:
             raise ValueError("Name of command is not set.")
-        
+
         args = [arg.syntax for arg in self.args]
         opts = [opt.syntax for opt in self.opts]
         if len(opts + args) > 0:
             return self.name + " " + " ".join(opts + args)
         return self.name
-    
+
     @property
     def short_help_msg(self) -> str:
         if self.description is None:
             return "No description available."
         return self.description
-    
+
+
 @dataclass
 class CommandConfig:
     name: str | None = None
@@ -623,13 +431,13 @@ class CommandConfig:
         return CommandConfig(
             name=d["name"],
             subcommands=[SubCommandConfig.from_dict(sub) for sub in d["subcommands"]],
-            description=d["description"]
+            description=d["description"],
         )
 
     @property
     def syntax(self) -> str:
         return "\n or ".join([self.name + " " + sub.syntax for sub in self.subcommands])
-    
+
     @property
     def short_help_msg(self) -> str:
         if self.description is None:
@@ -637,7 +445,7 @@ class CommandConfig:
         return self.description
 
 
-class PluginCommandMixin(_Plugin):
+class PluginCommandMixin(Plugin):
     """Base class tailored for interactive commands.
 
     This class is intendet to be inherited form **in addition** one of
@@ -647,8 +455,8 @@ class PluginCommandMixin(_Plugin):
 
     # The events this command would like to receive, defaults to
     # messages.
-    zulip_events = _Plugin.zulip_events + ["message"]
-    events = _Plugin.events + [EventType.GET_USAGE]
+    zulip_events = Plugin.zulip_events + ["message"]
+    events = Plugin.events + [EventType.GET_USAGE]
 
     # The command parser.
     _tumcs_bot_command_parser: CommandParser = CommandParser()
@@ -667,9 +475,15 @@ class PluginCommandMixin(_Plugin):
 
         with DB.session() as session:
             # todo: handle custom syntax
-            session.merge(PluginTable(name=self.plugin_name(), syntax=syntax, description=description, config=json.dumps(asdict(self._tumcs_bot_commands), default=str)))
+            session.merge(
+                PluginTable(
+                    name=self.plugin_name(),
+                    syntax=syntax,
+                    description=description,
+                    config=json.dumps(asdict(self._tumcs_bot_commands), default=str),
+                )
+            )
             session.commit()
-
 
     @final
     def get_usage(self) -> tuple[str, str, str]:
@@ -688,9 +502,9 @@ class PluginCommandMixin(_Plugin):
         automatically.
         """
         return (self.plugin_name(), self.syntax, self.description)
-    
-    # todo: @final
-    def handle_message(self, message: dict[str, Any]) -> Response | Iterable[Response]:
+
+
+    async def handle_message(self, message: dict[str, Any]) -> Response | Iterable[Response]:
         """Process message.
 
         Process the given message and return a Response or an Iterable
@@ -706,46 +520,44 @@ class PluginCommandMixin(_Plugin):
             self.logger.exception(e)
             return Response.build_message(message, str(e))
 
-        self.logger.debug(result)
-        
         if result is None:
             return Response.command_not_found(message)
         command, opts, args = result
-    
+
         if command in command_parser.commands:
             func: Callable[
-                [ZulipUser, Any, CommandParser.Args, CommandParser.Opts, dict[str, Any]],
+                [
+                    ZulipUser,
+                    Any,
+                    CommandParser.Args,
+                    CommandParser.Opts,
+                    dict[str, Any],
+                ],
                 Response | Iterable[Response],
             ] = getattr(self, command)
             self.logger.debug(f"executing subcommand: {command}")
             self.logger.debug(f"args: {args}")
             self.logger.debug(f"opts: {opts}")
             with DB.session() as session:
-                result = func(ZulipUser(message['sender_id']), session, args, opts, message)
+                try:
+                    result = await func(
+                        ZulipUser(message["sender_id"]), session, args, opts, message
+                    )
+                except sqlalchemy.exc.IntegrityError as e:
+                    result = Response.build_message(
+                        message, f"Database error: {str(e)}"
+                    )
             return result
         else:
             self.logger.debug(f"command not found: {command}")
             return Response.command_not_found(message)
 
-    def handle_zulip_event(self, event: Event) -> Response | Iterable[Response]:
+    async def handle_zulip_event(self, event: Event) -> Response | Iterable[Response]:
         """Defaults to assume event to be a message event.
 
         Overwrite if necessary!
         """
-        return self.handle_message(event.data["message"])
-
-    def handle_event(self, event: Event) -> None:
-        if event.type == EventType.GET_USAGE:
-            self.plugin_context.push_loopback(
-                Event(
-                    sender=self.plugin_name(),
-                    type=EventType.RET_USAGE,
-                    data=self.get_usage(),
-                    dest=event.reply_to,
-                )
-            )
-        else:
-            super().handle_event(event)
+        return await self.handle_message(event.data["message"])
 
     def is_responsible(self, event: Event) -> bool:
         """A default implementation for command plugins.
@@ -761,7 +573,7 @@ class PluginCommandMixin(_Plugin):
 
 
 def get_zulip_events_from_plugins(
-    plugins: Iterable[_Plugin] | Iterable[Type[_Plugin]],
+    plugins: Iterable[Plugin] | Iterable[Type[Plugin]],
 ) -> list[str]:
     """Get all Zulip events to listen to from the plugins.
 

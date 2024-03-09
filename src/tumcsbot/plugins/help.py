@@ -3,12 +3,13 @@
 # See LICENSE file for copyright and license details.
 # TUM CS Bot - https://github.com/ro-i/tumcsbot
 
+import asyncio
 from inspect import cleandoc
 import json
 from typing import Any, Iterable
 
 from tumcsbot.lib import Response, get_classes_from_path
-from tumcsbot.plugin import ArgConfig, CommandConfig, OptConfig, SubCommandConfig, PluginCommandMixin, _Plugin, PluginThread, PluginTable, Privilege
+from tumcsbot.plugin import ArgConfig, CommandConfig, OptConfig, SubCommandConfig, PluginCommandMixin, Plugin, PluginTable, Privilege
 from tumcsbot.db import DB
 
 HELP_TEMPLATE = cleandoc(
@@ -30,16 +31,16 @@ HELP_TEMPLATE = cleandoc(
 PRIVILAGE_MSG = "**[administrator/moderator rights needed]**"
 
 
-class Help(PluginCommandMixin, PluginThread):
+class Help(PluginCommandMixin, Plugin):
     """Post a help message to the requesting user."""
 
     # This plugin depends on all the others because it needs their db entries.
     dependencies = PluginCommandMixin.dependencies + [
         plugin_class.plugin_name()
-        for plugin_class in get_classes_from_path("tumcsbot.plugins", _Plugin)  # type: ignore
+        for plugin_class in get_classes_from_path("tumcsbot.plugins", Plugin)  # type: ignore
     ]
 
-    def handle_message(self, message: dict[str, Any]) -> Response | Iterable[Response]:
+    async def handle_message(self, message: dict[str, Any]) -> Response | Iterable[Response]:
         command: str = message["command"].strip()
         if not command:
             return self._help_overview(message)

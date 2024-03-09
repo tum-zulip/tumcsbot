@@ -8,10 +8,10 @@ from typing import cast, Any, Iterable
 
 from tumcsbot.lib import Regex, Response
 from tumcsbot.command_parser import CommandParser
-from tumcsbot.plugin import PluginCommandMixin, PluginThread
+from tumcsbot.plugin import PluginCommandMixin,Plugin
 from tumcsbot.plugin_decorators import *
 
-class Subscribe(PluginCommandMixin, PluginThread):
+class Subscribe(PluginCommandMixin, Plugin):
     """
     Subscribe all subscribers of the given streams or users to the destination stream.
     ---

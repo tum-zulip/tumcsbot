@@ -7,7 +7,7 @@ import unittest
 
 from typing import cast, Any
 
-from tumcsbot.lib import CommandParser
+from tumcsbot.command_parser import CommandParser
 
 
 class CommandParserTest(unittest.TestCase):
@@ -17,7 +17,11 @@ class CommandParserTest(unittest.TestCase):
         """Discard the subcommand_name, only return the arguments dict."""
         result: tuple[str, CommandParser.Opts, CommandParser.Args] | None
 
-        result = self.parser.parse(command)
+        try:
+            result = self.parser.parse(command)
+        except CommandParser.IllegalCommandParserState:
+            return None
+        
         if result is None:
             return result
         _, opts, args = result
@@ -99,7 +103,7 @@ class CommandParserTestArgs(CommandParserTest):
 
     def test_invalid_subcommands(self) -> None:
         self.parser.add_subcommand("test1", args={"arg1": int})
-        self.assertIsNone(self.parser.parse("testN 1"))
+        self.assertRaises(CommandParser.IllegalCommandParserState, self.parser.parse, "testN 1")
 
     def test_valid_greedy(self) -> None:
         self.parser.add_subcommand("test", greedy={"arg1": str})

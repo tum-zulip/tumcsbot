@@ -7,10 +7,10 @@ import logging
 from typing import Any, Iterable
 
 from tumcsbot.lib import Response, is_bot_owner
-from tumcsbot.plugin import PluginCommandMixin, PluginThread
+from tumcsbot.plugin import PluginCommandMixin,Plugin
 
 
-class Logfile(PluginCommandMixin, PluginThread):
+class Logfile(PluginCommandMixin, Plugin):
     syntax = "logfile"
     description = "Get the bot's own logfile.\n[bot owner only]"
 

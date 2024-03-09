@@ -7,10 +7,10 @@ import urllib.parse
 from typing import Any, Iterable
 
 from tumcsbot.lib import Response
-from tumcsbot.plugin import PluginCommandMixin, PluginThread
+from tumcsbot.plugin import PluginCommandMixin,Plugin
 from tumcsbot.plugin_decorators import *
 
-class Search(PluginCommandMixin, PluginThread):
+class Search(PluginCommandMixin, Plugin):
     syntax = "search <string>"
     description = 'Get a url to a search for "string" in all public streams.'
     msg_template: str = "Hi, I hope that these search results may help you: {}"

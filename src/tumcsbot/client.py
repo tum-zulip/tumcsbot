@@ -4,16 +4,14 @@
 # TUM CS Bot - https://github.com/ro-i/tumcsbot
 
 """Wrapper around Zulip's Client class."""
-
-from enum import Enum
-import functools
+from __future__ import annotations
+import asyncio
 import logging
 import re
-from threading import RLock
-import time
 from collections.abc import Iterable as IterableClass
-from typing import cast, Any, Callable, IO, Iterable, Sequence
+from typing import AsyncGenerator, cast, Any, IO, Iterable
 from sqlalchemy import Column, Boolean, String
+import urllib3
 
 from zulip import Client as ZulipClient
 
@@ -25,21 +23,13 @@ class PublicStreams(TableBase):
 
     StreamName = Column(String, primary_key=True)
     Subscribed = Column(Boolean, nullable=False, default=False)
-    
-def synchronized(lock: RLock) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
-    def _synchronized(func: Callable[..., Any]) -> Callable[..., Any]:
-        @functools.wraps(func)
-        def wrapper(*args: Any, **kwargs: Any) -> Any:
-            with lock:
-                return func(*args, **kwargs)
-
-        return wrapper
-
-    return _synchronized
 
 
-class Client(ZulipClient):
+
+class AsyncClient:
     """Wrapper around zulip.Client.
+
+    Most of the code is copied from the original zulip.Client class.
 
     Additional attributes:
       id         direct access to get_profile()['user_id']
@@ -70,16 +60,21 @@ class Client(ZulipClient):
                               stream.
     """
 
-    def __init__(self, *args: Any, **kwargs: Any) -> None:
-        """Override the constructor of the parent class."""
-        super().__init__(*args, **kwargs)
-        self.id: int = self.get_profile()["user_id"]
-        self.ping: str = f"@**{self.get_profile()['full_name']}**"
+    async def from_sync_client(*args: Any, **kwargs: Any) -> AsyncClient:
+        """Create an AsyncClient from a synchronous Zulip client."""
+        client = ZulipClient(*args, **kwargs)
+        profile = await client.get_profile()
+        return AsyncClient(profile["user_id"], f"@**{profile['full_name']}**", client)
+
+    def __init__(self, id: int, ping: str, client: ZulipClient) -> None:
+        self.id: int = id
+        self.ping: str = ping 
         self.ping_len: int = len(self.ping)
         self.register_params: dict[str, Any] = {}
-        self._db: DB = DB()
+        self._client: ZulipClient = client
 
-    def call_endpoint(
+    
+    async def call_endpoint(
         self,
         url: str | None = None,
         method: str = "POST",
@@ -94,49 +89,127 @@ class Client(ZulipClient):
         Automatically resend requests if they failed because of the
         API rate limit.
         """
-        result: dict[str, Any]
+        result: dict[str, Any] = {}
+        loop = asyncio.get_running_loop()
 
         while True:
-            result = super().call_endpoint(
-                url, method, request, longpolling, files, timeout
+            result = await loop.run_in_executor(
+                None,
+                lambda: self._client.call_endpoint(
+                    url, method, request, longpolling, files, timeout
+                ),
             )
+
             if not (
                 result["result"] == "error"
                 and "code" in result
                 and result["code"] == "RATE_LIMIT_HIT"
             ):
                 break
-            secs: float = result["retry-after"] if "retry-after" in result else 1
+
+            secs: float = result.get("retry-after", 1)
             logging.warning("hit API rate limit, waiting for %f seconds...", secs)
-            time.sleep(secs)
-
+            await asyncio.sleep(secs)
         return result
+    
+    async def render_message(self, request: dict[str, Any] | None = None) -> dict[str, Any]:
+        """
+        Example usage:
 
-    def call_on_each_event(
+        >>> await client.render_message(request=dict(content='foo **bar**'))
+        {u'msg': u'', u'rendered': u'<p>foo <strong>bar</strong></p>', u'result': u'success'}
+        """
+        return await self.call_endpoint(
+            url="messages/render",
+            method="POST",
+            request=request,
+        )
+    
+    async def get_streams(self, **request: Any) -> dict[str, Any]:
+        """
+        See examples/get-public-streams for example usage.
+        """
+        return await self.call_endpoint(
+            url="streams",
+            method="GET",
+            request=request,
+        )
+
+    async def get_events(self, **request: Any) -> dict[str, Any]:
+        """
+        See the register() method for example usage.
+        """
+        return await self.call_endpoint(
+            url="events",
+            method="GET",
+            longpolling=True,
+            request=request,
+        )
+    
+    async def events(
         self,
-        callback: Callable[[dict[str, Any]], None],
         event_types: list[str] | None = None,
         narrow: list[list[str]] | None = None,
         **kwargs: Any,
-    ) -> None:
-        """Override zulip.Client.call_on_each_event.
+    ): # todo: -> AsyncGenerator[Any, dict[str, Any]]
+        if narrow is None:
+            narrow = []
 
-        Add additional parameters to pass to register().
-        See https://zulip.com/api/register-queue for the parameters
-        the register() method accepts.
-        """
-        self.register_params = kwargs
-        super().call_on_each_event(callback, event_types, narrow)
+        async def do_register() -> tuple[str, int]:
+            while True:
+                if event_types is None:
+                    res = await self.register(None, None, **kwargs) 
+                else:
+                    res = await self.register(event_types, narrow, **kwargs) 
+                if "error" in res["result"]:
+                    if self.verbose:
+                        logging.error(f"Server returned error:\n{res['msg']}")
+                    await asyncio.sleep(1)
+                else:
+                    return res["queue_id"], res["last_event_id"]
 
-    def get_messages(self, message_filters: dict[str, Any]) -> dict[str, Any]:
+        queue_id, last_event_id = None, None
+
+        while True:
+            if queue_id is None:
+                queue_id, last_event_id = await do_register()
+
+            try:
+                res = await self.get_events(queue_id=queue_id, last_event_id=last_event_id)  # Ensure this is adapted to be async if necessary
+            except Exception as e:
+                # Handle exceptions appropriately, including logging and sleeping
+                if self.verbose:
+                    print(f"Error fetching events: {e}")
+                await asyncio.sleep(1)
+                continue
+
+            if "error" in res["result"]:
+                # Handle various error cases, including server errors and bad event queue ids
+                print(f"Server returned error: {res.get('msg', 'Unknown error')}")
+                if res.get("code") == "BAD_EVENT_QUEUE_ID":
+                    queue_id = None  # Force re-registration if the event queue ID is bad
+                await asyncio.sleep(1)  # Prevent rapid re-request on error
+                continue
+
+            for event in res["events"]:
+                last_event_id = max(last_event_id, int(event["id"]))
+
+                if event["type"] == "heartbeat":
+                    continue  # Skip heartbeat events
+
+                yield event  # yield the next relevant event
+
+    async def get_messages(self, message_filters: dict[str, Any]) -> dict[str, Any]:
         """Override zulip.Client.get_messages.
 
         Defaults to 'apply_markdown' = False.
+        See examples/get-messages for example usage
         """
-        message_filters["apply_markdown"] = False
-        return super().get_messages(message_filters)
+        if "apply_markdown" not in message_filters:
+            message_filters["apply_markdown"] = False
+        return await self.call_endpoint(url="messages", method="GET", request=message_filters)
 
-    def get_public_stream_names(self, use_db: bool = True) -> list[str]:
+    async def get_public_stream_names(self, use_db: bool = True) -> list[str]:
         """Get the names of all public streams.
 
         Use the database in conjunction with the plugin "autosubscriber"
@@ -144,8 +217,8 @@ class Client(ZulipClient):
         In case of an error, return an empty list.
         """
 
-        def without_db() -> list[str]:
-            result: dict[str, Any] = self.get_streams(
+        async def without_db() -> list[str]:
+            result: dict[str, Any] = await self.get_streams(
                 include_public=True, include_subscribed=False
             )
             if result["result"] != "success":
@@ -167,17 +240,17 @@ class Client(ZulipClient):
             logging.exception(e)
             return without_db()
 
-    def get_raw_message(
+    async def get_raw_message(
         self, message_id: int, apply_markdown: bool = True
     ) -> dict[str, Any]:
         """Adapt original code and add apply_markdown."""
-        return self.call_endpoint(
+        return await self.call_endpoint(
             url=f"messages/{message_id}",
             method="GET",
             request={"apply_markdown": apply_markdown},
         )
 
-    def get_streams_from_regex(self, regex: str) -> list[str]:
+    async def get_streams_from_regex(self, regex: str) -> list[str]:
         """Get the names of all public streams matching a regex.
 
         The regex has to match the full stream name.
@@ -196,17 +269,17 @@ class Client(ZulipClient):
 
         return [
             stream_name
-            for stream_name in self.get_public_stream_names()
+            for stream_name in await self.get_public_stream_names()
             if pat.fullmatch(stream_name)
         ]
 
-    def get_stream_name(self, stream_id: int) -> str | None:
+    async def get_stream_name(self, stream_id: int) -> str | None:
         """Get stream name for provided stream id.
 
         Return the stream name as string or None if the stream name
         could not be determined.
         """
-        result: dict[str, Any] = self.get_streams(include_all_active=True)
+        result: dict[str, Any] = await self.get_streams(include_all_active=True)
         if result["result"] != "success":
             return None
 
@@ -216,11 +289,24 @@ class Client(ZulipClient):
 
         return None
 
-    def get_user_ids_from_active_status(self, active: bool = True) -> list[int] | None:
-        """Get all user ids which are (de)activated."""
-        return self.get_user_ids_from_attribute("is_active", [active])
+    async def get_user_by_id(self, user_id: int, **request: Any) -> dict[str, Any]:
+        """
+        Example usage:
 
-    def get_user_ids_from_attribute(
+        >>> await client.get_user_by_id(8, include_custom_profile_fields=True)
+        {'result': 'success', 'msg': '', 'user': [{...}, {...}]}
+        """
+        return await self.call_endpoint(
+            url=f"users/{user_id}",
+            method="GET",
+            request=request,
+        )
+
+    async def get_user_ids_from_active_status(self, active: bool = True) -> list[int] | None:
+        """Get all user ids which are (de)activated."""
+        return await self.get_user_ids_from_attribute("is_active", [active])
+
+    async def get_user_ids_from_attribute(
         self, attribute: str, values: Iterable[Any], case_sensitive: bool = True
     ) -> list[int] | None:
         """Get the user ids from a given user attribute.
@@ -232,7 +318,7 @@ class Client(ZulipClient):
         interpreted as strings and compared case insensitively.
         Return None on error.
         """
-        result: dict[str, Any] = self.get_users()
+        result: dict[str, Any] = await self.get_users()
         if result["result"] != "success":
             return None
 
@@ -252,7 +338,7 @@ class Client(ZulipClient):
             )
         ]
 
-    def get_user_ids_from_display_names(
+    async def get_user_ids_from_display_names(
         self, display_names: Iterable[str]
     ) -> list[int] | None:
         """Get the user id from a user display name.
@@ -262,23 +348,40 @@ class Client(ZulipClient):
         of user display names.
         Return None on error.
         """
-        return self.get_user_ids_from_attribute("full_name", display_names)
+        return await self.get_user_ids_from_attribute("full_name", display_names)
 
-    def get_user_ids_from_emails(self, emails: Iterable[str]) -> list[int] | None:
+    async def get_user_ids_from_emails(self, emails: Iterable[str]) -> list[int] | None:
         """Get the user id from a user email address.
 
         Return None on error.
         """
-        return self.get_user_ids_from_attribute(
+        return await self.get_user_ids_from_attribute(
             "delivery_email", emails, case_sensitive=False
         )
 
-    def get_users(self, request: dict[str, Any] | None = None) -> dict[str, Any]:
+    async def get_users(self, request: dict[str, Any] | None = None) -> dict[str, Any]:
         """Override method from parent class."""
         # Try to minimize the network traffic.
         if request is not None:
             request.update(client_gravatar=True, include_custom_profile_fields=False)
-        return super().get_users(request)
+        return await self.call_endpoint(
+            url="users",
+            method="GET",
+            request=request,
+        )
+
+    async def get_profile(self, request: dict[str, Any] | None = None) -> dict[str, Any]:
+        """
+        Example usage:
+
+        >>> await client.get_profile()
+        {u'user_id': 5, u'full_name': u'Iago', u'short_name': u'iago', ...}
+        """
+        return await self.call_endpoint(
+            url="users/me",
+            method="GET",
+            request=request,
+        )
 
     def is_only_pm_recipient(self, message: dict[str, Any]) -> bool:
         """Check whether the bot is the only recipient of the given pm.
@@ -297,14 +400,14 @@ class Client(ZulipClient):
 
         return self.id in [recipients[0]["id"], recipients[1]["id"]]
 
-    def private_stream_exists(self, stream_name: str) -> bool:
+    async def private_stream_exists(self, stream_name: str) -> bool:
         """Check if there is a private stream with the given name.
 
         Return true if there is a private stream with the given name.
         Return false if there is no stream with this name or if the
         stream is not private.
         """
-        result: dict[str, Any] = self.get_streams(include_all_active=True)
+        result: dict[str, Any] = await self.get_streams(include_all_active=True)
         if result["result"] != "success":
             return False  # TODO?
 
@@ -314,32 +417,103 @@ class Client(ZulipClient):
 
         return False
 
-    def register(
+    async def register(
         self,
         event_types: Iterable[str] | None = None,
         narrow: list[list[str]] | None = None,
-        **kwargs: Any,
+        **kwargs: object,
     ) -> dict[str, Any]:
-        """Override zulip.Client.register.
-
-        Override the parent method in order to enable additional
-        parameters for the register() call internally used by
-        call_on_each_event.
         """
-        logging.debug("event_types: %s, narrow: %s", str(event_types), str(narrow))
-        return super().register(event_types, narrow, **self.register_params, **kwargs)
+        Example usage:
 
-    def send_response(self, response: Response) -> dict[str, Any]:
+        >>> await client.register(['message'])
+        {u'msg': u'', u'max_message_id': 112, u'last_event_id': -1, u'result': u'success', u'queue_id': u'1482093786:2'}
+        >>> client.get_events(queue_id='1482093786:2', last_event_id=0)
+        {...}
+        """
+
+        if narrow is None:
+            narrow = []
+        
+        logging.debug("event_types: %s, narrow: %s", str(event_types), str(narrow))
+        request = dict(event_types=event_types, narrow=narrow, **self.register_params, **kwargs)
+
+        return await self.call_endpoint(
+            url="register",
+            request=request,
+        )
+
+    async def deregister(self, queue_id: str, timeout: float | None = None) -> dict[str, Any]:
+        """
+        Example usage:
+
+        >>> await client.register(['message'])
+        {u'msg': u'', u'max_message_id': 113, u'last_event_id': -1, u'result': u'success', u'queue_id': u'1482093786:3'}
+        >>> await client.deregister('1482093786:3')
+        {u'msg': u'', u'result': u'success'}
+        """
+        request = dict(queue_id=queue_id)
+
+        return await self.call_endpoint(
+            url="events",
+            method="DELETE",
+            request=request,
+            timeout=timeout,
+        )
+    
+    async def send_message(self, message_data: dict[str, Any]) -> dict[str, Any]:
+        return await self.call_endpoint(
+            url="messages",
+            request=message_data,
+        )
+    
+    async def add_reaction(self, reaction_data: dict[str, Any]) -> dict[str, Any]:
+        """
+        Example usage:
+
+        >>> await client.add_reaction({
+            'message_id': 100,
+            'emoji_name': 'joy',
+            'emoji_code': '1f602',
+            'reaction_type': 'unicode_emoji'
+        })
+        {'result': 'success', 'msg': ''}
+        """
+        return await self.call_endpoint(
+            url="messages/{}/reactions".format(reaction_data["message_id"]),
+            method="POST",
+            request=reaction_data,
+        )
+    
+    async def remove_reaction(self, reaction_data: dict[str, Any]) -> dict[str, Any]:
+        """
+        Example usage:
+
+        >>> await client.remove_reaction({
+            'message_id': 100,
+            'emoji_name': 'joy',
+            'emoji_code': '1f602',
+            'reaction_type': 'unicode_emoji'
+        })
+        {'msg': '', 'result': 'success'}
+        """
+        return await self.call_endpoint(
+            url="messages/{}/reactions".format(reaction_data["message_id"]),
+            method="DELETE",
+            request=reaction_data,
+        )
+
+    async def send_response(self, response: Response) -> dict[str, Any]:
         """Send one single response."""
         logging.debug("send_response: %s", str(response))
 
         if response.message_type == MessageType.MESSAGE:
-            return self.send_message(response.response)
+            return await self.send_message(response.response)
         if response.message_type == MessageType.EMOJI:
-            return self.add_reaction(response.response)
+            return await self.add_reaction(response.response)
         return {}
 
-    def send_responses(
+    async def send_responses(
         self,
         responses: Response | Iterable[Response | Iterable[Response]],
     ) -> None:
@@ -349,13 +523,41 @@ class Client(ZulipClient):
             return
 
         if not isinstance(responses, IterableClass):
-            self.send_response(responses)
+            await self.send_response(responses)
             return
 
         for response in responses:
-            self.send_responses(response)
+            await self.send_responses(response)
+    
+    async def get_stream_id(self, stream: str) -> dict[str, Any]:
+        """
+        Example usage: await client.get_stream_id('devel')
+        """
+        stream_encoded = urllib3.parse.quote(stream, safe="")
+        url = f"get_stream_id?stream={stream_encoded}"
+        return await self.call_endpoint(
+            url=url,
+            method="GET",
+            request=None,
+        )
+    
+    async def get_subscribers(self, **request: Any) -> dict[str, Any]:
+        """
+        Example usage: await client.get_subscribers(stream='devel')
+        """
+        response = await self.get_stream_id(request["stream"])
+        if response["result"] == "error":
+            return response
 
-    def subscribe_all_from_stream_to_stream(
+        stream_id = response["stream_id"]
+        url = "streams/%d/members" % (stream_id,)
+        return await self.call_endpoint(
+            url=url,
+            method="GET",
+            request=request,
+        )
+
+    async def subscribe_all_from_stream_to_stream(
         self, from_stream: str, to_stream: str, description: str | None = None
     ) -> bool:
         """Try to subscribe all users from one public stream to another.
@@ -371,18 +573,18 @@ class Client(ZulipClient):
 
         Return true on success or false otherwise.
         """
-        if self.private_stream_exists(from_stream) or self.private_stream_exists(
+        if await self.private_stream_exists(from_stream) or await self.private_stream_exists(
             to_stream
         ):
             return False
 
-        subs: dict[str, Any] = self.get_subscribers(stream=from_stream)
+        subs: dict[str, Any] = await self.get_subscribers(stream=from_stream)
         if subs["result"] != "success":
             return False
 
-        return self.subscribe_users(subs["subscribers"], to_stream, description)
+        return await self.subscribe_users(subs["subscribers"], to_stream, description)
 
-    def subscribe_users(
+    async def subscribe_users(
         self,
         user_ids: list[int],
         stream_name: str,
@@ -407,14 +609,22 @@ class Client(ZulipClient):
 
         Return true on success or false otherwise.
         """
-        return self.subscribe_users_multiple_streams(
+        return await self.subscribe_users_multiple_streams(
             user_ids=user_ids,
             streams=[(stream_name, description)],
             allow_private_streams=allow_private_streams,
             filter_active=filter_active,
         )[0]
 
-    def subscribe_users_multiple_streams(
+    async def add_subscriptions(self, streams: Iterable[dict[str, Any]], **kwargs: Any) -> dict[str, Any]:
+        request = dict(subscriptions=streams, **kwargs)
+
+        return await self.call_endpoint(
+            url="users/me/subscriptions",
+            request=request,
+        )
+
+    async def subscribe_users_multiple_streams(
         self,
         user_ids: list[int],
         streams: list[tuple[str, str | None]],
@@ -448,13 +658,13 @@ class Client(ZulipClient):
             streams = [
                 (name, description)
                 for name, description in streams
-                if not self.private_stream_exists(name)
+                if not await self.private_stream_exists(name)
             ]
             if not streams:
                 return (True, None)
 
         if filter_active:
-            active_user_ids: list[int] | None = self.get_user_ids_from_active_status()
+            active_user_ids: list[int] | None = await self.get_user_ids_from_active_status()
             if active_user_ids is None:
                 logging.error("cannot retrieve active user ids")
                 return (False, "cannot retrieve active user ids")
@@ -475,7 +685,7 @@ class Client(ZulipClient):
             user_id_chunk: list[int] = user_ids[i : i + chunk_size]
 
             while True:
-                result: dict[str, Any] = self.add_subscriptions(
+                result: dict[str, Any] = await self.add_subscriptions(
                     streams=subscriptions, principals=user_id_chunk
                 )
                 if result["result"] == "success":
@@ -494,7 +704,7 @@ class Client(ZulipClient):
             None if success else ("the following errors occurred: " + ",".join(errs)),
         )
 
-    def user_is_privileged(self, user_id: int, allow_moderator: bool = False) -> bool:
+    async def user_is_privileged(self, user_id: int, allow_moderator: bool = False) -> bool:
         """Check whether a user is allowed to perform privileged commands.
 
         Arguments:
@@ -504,7 +714,7 @@ class Client(ZulipClient):
                              considered as privileged, too.
                              Defaults to False.
         """
-        result: dict[str, Any] = self.get_user_by_id(user_id)
+        result: dict[str, Any] = await self.get_user_by_id(user_id)
         if result["result"] != "success":
             return False
         user: dict[str, Any] = result["user"]
@@ -516,12 +726,12 @@ class Client(ZulipClient):
             or (allow_moderator and user["role"] == 300)
         )
 
-    def get_user_id_by_name(self, username: str) -> int | None:
+    async def get_user_id_by_name(self, username: str) -> int | None:
         request = {
             "content": username,
         }
 
-        result = self.render_message(request)
+        result = await self.render_message(request)
         if result["result"] != "success":
             return None
 
@@ -530,12 +740,12 @@ class Client(ZulipClient):
             return None
         return int(match.groupdict()["id"])
 
-    def get_stream_id_by_name(self, stream_name: str) -> int | None:
+    async def get_stream_id_by_name(self, stream_name: str) -> int | None:
         request = {
             "content": stream_name,
         }
 
-        result = self.render_message(request)
+        result = await self.render_message(request)
         if result["result"] != "success":
             return None
 
@@ -544,12 +754,12 @@ class Client(ZulipClient):
             return None
         return int(match.groupdict()["id"])
 
-    def get_group_id_by_name(self, group_name: str) -> int | None:
+    async def get_group_id_by_name(self, group_name: str) -> int | None:
         request = {
             "content": group_name,
         }
 
-        result = self.render_message(request)
+        result = await self.render_message(request)
         if result["result"] != "success":
             return None
 
@@ -558,362 +768,11 @@ class Client(ZulipClient):
             return None
         return int(match.groupdict()["id"])
 
-    def get_stream_by_id(self, stream_id: int) -> dict[str, Any] | None:
-        stream_result = self.call_endpoint(url=f"/streams/{stream_id}", method="GET")
+    async def get_stream_by_id(self, stream_id: int) -> dict[str, Any] | None:
+        stream_result = await self.call_endpoint(url=f"/streams/{stream_id}", method="GET")
 
         if stream_result["result"] != "success":
             return None
 
         stream_data: dict[str, Any] = stream_result["stream"]
         return stream_data
-
-    # TODO: add these functions as soon as the zulip api allow bot requests
-    # def get_groups(self) -> list[dict[str, Any]]:
-    #     request_result = self.get_user_groups()
-    #     if request_result["result"] != "success":
-    #         return []
-    #     groups_dict: list[dict[str, Any]] = request_result["user_groups"]
-    #     return groups_dict
-    #
-    # def create_group(self, name: str, description: str) -> bool:
-    #     request = {
-    #         "name": name,
-    #         "description": description,
-    #         "members": [],
-    #     }
-    #
-    #     request_result = self.call_endpoint(
-    #         f"/user_groups/create", method="POST", request=request
-    #     )  # self.create_user_group(request)
-    #     if request_result["result"] != "success":
-    #         return False
-    #     return True
-    #
-    # def delete_group(self, identifyer: int | str) -> bool:
-    #     group_id = self._group_id_by_identifier(identifyer)
-    #
-    #     if group_id is None:
-    #         return False
-    #
-    #     request_result = self.remove_user_group(group_id)
-    #     if request_result["result"] != "success":
-    #         return False
-    #     return True
-    #
-    # def _group_id_by_identifier(self, identifyer: int | str) -> int | None:
-    #     if isinstance(identifyer, int):
-    #         return int(identifyer)
-    #     return self.get_group_id_by_name(str(identifyer))
-    #
-    # def _user_id_by_identifier(self, identifyer: int | str) -> int | None:
-    #     if isinstance(identifyer, int):
-    #         return int(identifyer)
-    #     return self.get_user_id_by_name(str(identifyer))
-    #
-    # def _update_user_group_members(
-    #     self,
-    #     user_group_identifier: int | str,
-    #     add: list[int | str],
-    #     remove: list[int | str],
-    # ) -> bool:
-    #     request = {
-    #         "delete": [self._user_id_by_identifier(u) for u in remove],
-    #         "add": [self._user_id_by_identifier(u) for u in add],
-    #     }
-    #     gid = self._group_id_by_identifier(user_group_identifier)
-    #
-    #     if gid is None:
-    #         return False
-    #
-    #     request_result = self.update_user_group_members(int(gid), request)
-    #
-    #     if request_result["result"] != "success":
-    #         return False
-    #     return True
-    #
-    # def remove_user_from_group(
-    #     self, user_identifier: int | str, group_identifier: int | str
-    # ) -> bool:
-    #     return self._update_user_group_members(group_identifier, [], [user_identifier])
-    #
-    # def add_user_to_group(
-    #     self, user_identifier: int | str, group_identifier: int | str
-    # ) -> bool:
-    #     return self._update_user_group_members(group_identifier, [user_identifier], [])
-    #
-    # def get_group_members(self, group_identifier: int | str) -> dict[str, Any] | None:
-    #     group_id: int = self._group_id_by_identifier(group_identifier)
-    #     request_result = self.call_endpoint(
-    #         f"/user_groups/{group_id}/members", method="GET"
-    #     )
-    #
-    #     if request_result["result"] != "success":
-    #         return None
-    #     members: int = request_result["members"]
-    #     return members
-    #
-    # def get_groups_for_user(self, user_identifier: int | str) -> list[int]:
-    #     result: list[int] = []
-    #     groups = self.get_groups()
-    #     uid = self._user_id_by_identifier(user_identifier)
-    #
-    #     if groups is None or uid is None:
-    #         return result
-    #
-    #     for group in groups:
-    #         members: list[int] = group["members"]
-    #         if uid in members:
-    #             result.append(group["id"])
-    #     return result
-
-
-# This wrapper is kinda redundant, but this allows for better static analysis
-# than less verbose techniques...
-class SharedClient:
-    """A thread-safe wrapper around the Client class."""
-
-    _shared_client_lock: RLock = RLock()
-
-    def __init__(self, *args: Any, **kwargs: Any) -> None:
-        self._client: Client = Client(*args, **kwargs)
-        # Replace the db connection of the client so it doesn't check for
-        # thread-safety since we're already guaranteeing that.
-        # todo: check_same_thread=False
-        self._client._db = DB()
-    
-    @property
-    def base_url(self) -> str:
-        return self._client.base_url
-
-    @property
-    def id(self) -> int:
-        return self._client.id
-
-    @property
-    def ping(self) -> str:
-        return self._client.ping
-
-    @property
-    def ping_len(self) -> int:
-        return self._client.ping_len
-
-    @synchronized(_shared_client_lock)
-    def add_subscriptions(
-        self, streams: Iterable[dict[str, Any]], **kwargs: Any
-    ) -> dict[str, Any]:
-        return self._client.add_subscriptions(streams=streams, **kwargs)
-
-    @synchronized(_shared_client_lock)
-    def call_endpoint(
-        self,
-        url: str | None = None,
-        method: str = "POST",
-        request: dict[str, Any] | None = None,
-        longpolling: bool = False,
-        files: list[IO[Any]] | None = None,
-        timeout: float | None = None,
-    ) -> dict[str, Any]:
-        return self._client.call_endpoint(
-            url=url,
-            method=method,
-            request=request,
-            longpolling=longpolling,
-            files=files,
-            timeout=timeout,
-        )
-
-    @synchronized(_shared_client_lock)
-    def delete_message(self, message_id: int) -> dict[str, Any]:
-        return self._client.delete_message(message_id=message_id)
-
-    @synchronized(_shared_client_lock)
-    def delete_stream(self, stream_id: int) -> dict[str, Any]:
-        return self._client.delete_stream(stream_id=stream_id)
-
-    @synchronized(_shared_client_lock)
-    def get_messages(self, message_filters: dict[str, Any]) -> dict[str, Any]:
-        return self._client.get_messages(message_filters=message_filters)
-
-    @synchronized(_shared_client_lock)
-    def get_public_stream_names(self, use_db: bool = True) -> list[str]:
-        return self._client.get_public_stream_names(use_db=use_db)
-
-    @synchronized(_shared_client_lock)
-    def get_raw_message(
-        self, message_id: int, apply_markdown: bool = True
-    ) -> dict[str, Any]:
-        return self._client.get_raw_message(
-            message_id=message_id, apply_markdown=apply_markdown
-        )
-
-    @synchronized(_shared_client_lock)
-    def get_stream_id(self, stream: str) -> dict[str, Any]:
-        return self._client.get_stream_id(stream=stream)
-
-    @synchronized(_shared_client_lock)
-    def get_stream_name(self, stream_id: int) -> str | None:
-        return self._client.get_stream_name(stream_id=stream_id)
-
-    @synchronized(_shared_client_lock)
-    def get_streams_from_regex(self, regex: str) -> list[str]:
-        return self._client.get_streams_from_regex(regex)
-
-    @synchronized(_shared_client_lock)
-    def get_user_ids_from_active_status(self, active: bool = True) -> list[int] | None:
-        return self._client.get_user_ids_from_active_status(active=active)
-
-    @synchronized(_shared_client_lock)
-    def get_user_ids_from_attribute(
-        self, attribute: str, values: Iterable[Any], case_sensitive: bool = True
-    ) -> list[int] | None:
-        return self._client.get_user_ids_from_attribute(
-            attribute=attribute, values=values, case_sensitive=case_sensitive
-        )
-
-    @synchronized(_shared_client_lock)
-    def get_user_ids_from_display_names(
-        self, display_names: Iterable[str]
-    ) -> list[int] | None:
-        return self._client.get_user_ids_from_display_names(display_names=display_names)
-
-    @synchronized(_shared_client_lock)
-    def get_user_ids_from_emails(self, emails: Iterable[str]) -> list[int] | None:
-        return self._client.get_user_ids_from_emails(emails=emails)
-
-    @synchronized(_shared_client_lock)
-    def get_users(self, request: dict[str, Any] | None = None) -> dict[str, Any]:
-        return self._client.get_users(request=request)
-
-    @synchronized(_shared_client_lock)
-    def is_only_pm_recipient(self, message: dict[str, Any]) -> bool:
-        return self._client.is_only_pm_recipient(message=message)
-
-    @synchronized(_shared_client_lock)
-    def private_stream_exists(self, stream_name: str) -> bool:
-        return self._client.private_stream_exists(stream_name=stream_name)
-
-    @synchronized(_shared_client_lock)
-    def remove_reaction(self, reaction_data: dict[str, Any]) -> dict[str, Any]:
-        return self._client.remove_reaction(reaction_data=reaction_data)
-
-    @synchronized(_shared_client_lock)
-    def remove_subscriptions(
-        self,
-        streams: Iterable[str],
-        principals: Sequence[str] | Sequence[int] | None = None,
-    ) -> dict[str, Any]:
-        return self._client.remove_subscriptions(streams=streams, principals=principals)
-
-    @synchronized(_shared_client_lock)
-    def send_response(self, response: Response) -> dict[str, Any]:
-        return self._client.send_response(response=response)
-
-    @synchronized(_shared_client_lock)
-    def send_responses(
-        self,
-        responses: Response | Iterable[Response | Iterable[Response]],
-    ) -> None:
-        return self._client.send_responses(responses=responses)
-
-    @synchronized(_shared_client_lock)
-    def subscribe_all_from_stream_to_stream(
-        self, from_stream: str, to_stream: str, description: str | None = None
-    ) -> bool:
-        return self._client.subscribe_all_from_stream_to_stream(
-            from_stream=from_stream, to_stream=to_stream, description=description
-        )
-
-    @synchronized(_shared_client_lock)
-    def subscribe_users(
-        self,
-        user_ids: list[int],
-        stream_name: str,
-        description: str | None = None,
-        allow_private_streams: bool = False,
-        filter_active: bool = True,
-    ) -> bool:
-        return self._client.subscribe_users(
-            user_ids=user_ids,
-            stream_name=stream_name,
-            description=description,
-            allow_private_streams=allow_private_streams,
-            filter_active=filter_active,
-        )
-
-    @synchronized(_shared_client_lock)
-    def subscribe_users_multiple_streams(
-        self,
-        user_ids: list[int],
-        streams: list[tuple[str, str | None]],
-        allow_private_streams: bool = False,
-        filter_active: bool = True,
-    ) -> tuple[bool, str | None]:
-        return self._client.subscribe_users_multiple_streams(
-            user_ids=user_ids,
-            streams=streams,
-            allow_private_streams=allow_private_streams,
-            filter_active=filter_active,
-        )
-
-    @synchronized(_shared_client_lock)
-    def update_message(self, message_data: dict[str, Any]) -> dict[str, Any]:
-        return self._client.update_message(message_data=message_data)
-
-    @synchronized(_shared_client_lock)
-    def update_stream(self, stream_data: dict[str, Any]) -> dict[str, Any]:
-        return self._client.update_stream(stream_data=stream_data)
-
-    @synchronized(_shared_client_lock)
-    def user_is_privileged(self, user_id: int, allow_moderator: bool = False) -> bool:
-        return self._client.user_is_privileged(
-            user_id=user_id, allow_moderator=allow_moderator
-        )
-
-    @synchronized(_shared_client_lock)
-    def get_user_by_id(self, user_id: int) -> dict[str, Any]:
-        return self._client.get_user_by_id(user_id)
-
-    @synchronized(_shared_client_lock)
-    def get_user_id_by_name(self, username: str) -> int | None:
-        return self._client.get_user_id_by_name(username)
-
-    @synchronized(_shared_client_lock)
-    def get_stream_id_by_name(self, stream_name: str) -> int | None:
-        return self._client.get_stream_id_by_name(stream_name)
-
-    @synchronized(_shared_client_lock)
-    def get_stream_by_id(self, stream_id: int) -> dict[str, Any] | None:
-        return self._client.get_stream_by_id(stream_id)
-
-    # TODO: add these functions as soon as the zulip api allow bot requests
-    # @synchronized(_shared_client_lock)
-    # def get_groups(self) -> list[dict[str, Any]]:
-    #     return self._client.get_groups()
-    #
-    # @synchronized(_shared_client_lock)
-    # def create_group(self, name: str, description: str) -> bool:
-    #     return self._client.create_group(name, description)
-    #
-    # @synchronized(_shared_client_lock)
-    # def delete_group(self, identifyer: int | str) -> bool:
-    #     return self._client.delete_group(identifyer)
-    #
-    # @synchronized(_shared_client_lock)
-    # def remove_user_from_group(
-    #     self, user_identifier: int | str, group_identifier: int | str
-    # ) -> bool:
-    #     return self._client.remove_user_from_group(user_identifier, group_identifier)
-    #
-    # @synchronized(_shared_client_lock)
-    # def add_user_to_group(
-    #     self, user_identifier: int | str, group_identifier: int | str
-    # ) -> bool:
-    #     return self._client.add_user_to_group(group_identifier, user_identifier)
-    #
-    # @synchronized(_shared_client_lock)
-    # def get_groups_for_user(self, user_identifier: int | str) -> list[int]:
-    #     return self._client.get_groups_for_user(user_identifier)
-    #
-    # @synchronized(_shared_client_lock)
-    # def get_group_id_by_name(self, group_name: str) -> int | None:
-    #     return self._client.get_group_id_by_name(group_name)

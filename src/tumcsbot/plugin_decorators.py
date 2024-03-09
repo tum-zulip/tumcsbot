@@ -1,5 +1,5 @@
 from functools import wraps
-from typing import Callable, Any, Iterable, Iterator
+from typing import AsyncGenerator, Callable, Any, Iterable, Iterator
 from dataclasses import dataclass
 from inspect import cleandoc
 
@@ -97,37 +97,34 @@ def arg(
 
     def decorator(func):
         meta = get_meta(func)
-        meta.args.append(
-            ArgConfig(name, type, description, privilege, greedy, optional)
+        meta.args.insert(
+            0, ArgConfig(name, type, description, privilege, greedy, optional)
         )
 
         @wraps(func)
-        def wrapper(
+        async def wrapper(
             self,
             sender: ZulipUser,
             session,
             args: CommandParser.Args,
             opts: CommandParser.Opts,
             message: dict[str, Any],
-        ) -> Response | Iterable[Response]:
+        ) -> AsyncGenerator[Response, None]:
             if privilege is not None:  # and todo: check if option is present
                 # todo: check privilege
-                if not self.client.user_is_privileged(
-                    message["sender_id"],
-                    allow_moderator=privilege == Privilege.MODERATOR,
-                ):
+                if not await sender.privileged:
                     raise UserNotPrivilegedException(
-                        message, privilege, f"{self.plugin_name()} {func.__name__}"
+                        message, privilege, f"{self.plugin_name()} {get_meta(func).name}"
                     )
 
             if greedy and not optional:
                 if len(getattr(args, name, [])) == 0:
                     # todo: better error message
-                    return Response.build_message(
-                        message,
+                    raise DMError(
                         f"Error: At least one argument is required for `{name}`.",
                     )
-            return func(self, sender, session, args, opts, message)
+            async for response in func(self, sender, session, args, opts, message):
+                yield response
 
         return wrapper
 
@@ -143,28 +140,26 @@ def opt(
 ):
     def decorator(func):
         meta = get_meta(func)
-        meta.opts.append(OptConfig(opt, long_opt, type, description, privilege))
+        meta.opts.insert(0, OptConfig(opt, long_opt, type, description, privilege))
 
         @wraps(func)
-        def wrapper(
+        async def wrapper(
             self,
             sender: ZulipUser,
             session,
             args: CommandParser.Args,
             opts: CommandParser.Opts,
             message: dict[str, Any],
-        ) -> Response | Iterable[Response]:
+        ) -> AsyncGenerator[Response, None]:
             if privilege is not None:
                 # todo: check privilege
-                if not self.client.user_is_privileged(
-                    message["sender_id"],
-                    allow_moderator=privilege == Privilege.MODERATOR,
-                ):
+                if not await sender.privileged:
                     raise UserNotPrivilegedException(
-                        message, privilege, f"{self.plugin_name()} {func.__name__}"
+                        message, privilege, f"{self.plugin_name()} {get_meta(func).name}"
                     )
-                pass
-            return func(self, sender, session, args, opts, message)
+            
+            async for response in func(self, sender, session, args, opts, message):
+                yield response
 
         return wrapper
 
@@ -177,20 +172,21 @@ def privilege(privilege: Privilege):
         meta.privilege = privilege
 
         @wraps(func)
-        def wrapper(
+        async def wrapper(
             self,
             sender: ZulipUser,
             session,
             args: CommandParser.Args,
             opts: CommandParser.Opts,
             message: dict[str, Any],
-        ) -> Response | Iterable[Response]:
+        ) -> AsyncGenerator[Response, None]:
             if privilege is not None:
-                if not sender.priviliged:
+                if not await sender.privileged:
                     raise UserNotPrivilegedException(
-                        message, privilege, f"{self.plugin_name()} {func.__name__}"
+                        message, privilege, f"{self.plugin_name()} {get_meta(func).name}"
                     )
-            return func(self, sender, session, args, opts, message)
+            async for response in func(self, sender, session, args, opts, message):
+                yield response
 
         return wrapper
 
@@ -209,18 +205,6 @@ class command:
         self.fn = fn
         self.fn.__name__ = self.name
         return self
-
-    @staticmethod
-    def as_iterator(fn):
-        @wraps(fn)
-        def wrapper(*args, **kwargs):
-            result = fn(*args, **kwargs)
-            if isinstance(result, Iterator):
-                return result
-
-            return iter([result])
-
-        return wrapper
 
     @property
     def description(self):
@@ -249,7 +233,6 @@ class command:
 
     @property
     def args(self):
-        # build up in reverse ad decorators are applied in reverse
         return {
             arg.name: arg.type
             for arg in self.meta.args
@@ -258,8 +241,7 @@ class command:
 
     @property
     def opts(self):
-        # build up in reverse ad decorators are applied in reverse
-        opts = {opt.opt: opt.type for opt in self.meta.opts[::-1]}
+        opts = {opt.opt: opt.type for opt in self.meta.opts}
 
         opts.update(
             {
@@ -273,13 +255,11 @@ class command:
 
     @property
     def greedy(self):
-        # build up in reverse ad decorators are applied in reverse
-        return {arg.name: arg.type for arg in self.meta.args[::-1] if arg.greedy}
+        return {arg.name: arg.type for arg in self.meta.args if arg.greedy}
 
     @property
     def optional_args(self):
-        # build up in reverse ad decorators are applied in reverse
-        return {arg.name: arg.type for arg in self.meta.args[::-1] if arg.optional}
+        return {arg.name: arg.type for arg in self.meta.args if arg.optional}
 
     def __set_name__(self, owner, _):
 
@@ -310,7 +290,7 @@ class command:
         outer_self = self
 
         @wraps(self.fn)
-        def wrapper(
+        async def wrapper(
             self,
             sender: ZulipUser,
             session,
@@ -330,11 +310,11 @@ class command:
             responses = []
             successful = []
             errors = []
-            fn = command.as_iterator(outer_self.fn)
             try:
-                for response in fn(self, sender, session, args, opts, message):
+                async for response in outer_self.fn(self, sender, session, args, opts, message):
                     self.logger.debug("Collected Response: %s", response)
                     if isinstance(response, DMResponse):
+                        self.logger.debug("Collected DMResponse: %s", response.message)
                         responses.append(
                             Response.build_message(
                                 message,
@@ -342,6 +322,7 @@ class command:
                             )
                         )
                     elif isinstance(response, InlineResponse):
+                        self.logger.debug("Collected InlineResponse: %s", response.message)
                         responses.append(
                             Response.build_message(
                                 message,
@@ -349,6 +330,7 @@ class command:
                             )
                         )
                     elif isinstance(response, ReactionResponse):
+                        self.logger.debug("Collected ReactionResponse: %s", response.emote)
                         responses.append(
                             Response.build_reaction(
                                 message,
@@ -356,17 +338,22 @@ class command:
                             )
                         )
                     elif isinstance(response, DMMessage):
+                        self.logger.debug(
+                            "Collected DMMessage: %s to %s", response.message, response.to
+                        )
                         responses.append(
                             Response.build_message(
                                 None,
                                 content=response.message,
                                 msg_type="private",
-                                to=[response.to.id(self.client)],
+                                to=[await response.to.id],
                             )
                         )
                     elif isinstance(response, PartialSuccess):
+                        self.logger.debug("Collected PartialSuccess: %s", response.info)
                         successful.append(response.info)
                     elif isinstance(response, PartialError):
+                        self.logger.debug("Collected PartialError: %s", response.info)
                         errors.append(response.info)
                     else:
                         responses.append(response)

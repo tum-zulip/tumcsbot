@@ -16,10 +16,10 @@ from inspect import cleandoc
 from tumcsbot.lib import Response
 from tumcsbot.command_parser import CommandParser
 from tumcsbot.db import DB
-from tumcsbot.plugin import PluginCommandMixin, PluginThread
+from tumcsbot.plugin import PluginCommandMixin,Plugin
 
 
-class Rest(PluginCommandMixin, PluginThread):
+class Rest(PluginCommandMixin, Plugin):
     syntax = cleandoc(
         """
         rest method url [json_payload]

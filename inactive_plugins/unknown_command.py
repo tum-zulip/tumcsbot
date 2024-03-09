@@ -7,17 +7,17 @@ from inspect import cleandoc
 from typing import Any, Final, Iterable, cast
 
 from tumcsbot.lib import DB, Response, get_classes_from_path
-from tumcsbot.plugin import Event, PluginThread, _Plugin
+from tumcsbot.plugin import Event,Plugin, Plugin
 
 from openai import OpenAI
 
-class UnknownCommand(PluginThread):
+class UnknownCommand(Plugin):
     """Handle unknown commands."""
 
     # This plugin depends on all the others because it needs their db entries.
     dependencies = [
         plugin_class.plugin_name()
-        for plugin_class in get_classes_from_path("tumcsbot.plugins", _Plugin)  # type: ignore
+        for plugin_class in get_classes_from_path("tumcsbot.plugins", Plugin)  # type: ignore
         if plugin_class.plugin_name() != "help"
     ]
 

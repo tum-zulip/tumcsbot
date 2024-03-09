@@ -2,10 +2,9 @@ from os.path import isabs
 from contextlib import contextmanager
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
+import sqlalchemy.orm
 
-from sqlalchemy.ext.declarative import declarative_base
-
-TableBase = declarative_base()
+TableBase = sqlalchemy.orm.declarative_base()
 
 class DB:
     """Simple wrapper class to conveniently access a sqlite database."""

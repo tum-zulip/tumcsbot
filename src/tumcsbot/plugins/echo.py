@@ -3,17 +3,18 @@
 # See LICENSE file for copyright and license details.
 # TUM CS Bot - https://github.com/ro-i/tumcsbot
 
+import asyncio
 from time import sleep
 import random
 from typing import Any, Iterable
 
 from tumcsbot.lib import Response
-from tumcsbot.plugin import PluginCommandMixin, PluginThread
+from tumcsbot.plugin import PluginCommandMixin, Plugin
 from tumcsbot.plugin_decorators import *
 from tumcsbot.command_parser import CommandParser
 
 
-class Echo(PluginCommandMixin, PluginThread):
+class Echo(PluginCommandMixin, Plugin):
     """
     Respond to messages by echoing them back.
     """
@@ -28,10 +29,6 @@ class Echo(PluginCommandMixin, PluginThread):
         Echo the message text in uppercase. If the `number` option is given, echo the message multiple times.
         """
         for _ in range(opts.n or 1):
-            yield InlineResponse(args.text.upper())
-            yield PartialSuccess("Echoed message.")
-            yield PartialError("Echo failed.")
-            yield ReactionResponse("+1")
             yield DMMessage(args.user, args.text.upper())
 
     
@@ -41,7 +38,9 @@ class Echo(PluginCommandMixin, PluginThread):
         """
         Echo the message text in lowercase.
         """
-        return InlineResponse(args.text.lower())
+        # await Confirmation(f"Are you sure you want me to lowercase *{args.text}*?")
+        
+        yield InlineResponse(args.text.lower())
     
     @command
     @arg("text", str, "The message text", greedy=True)
@@ -56,10 +55,17 @@ class Echo(PluginCommandMixin, PluginThread):
     @command
     @arg("text", str, "The message text", greedy=True)
     @opt("d", long_opt="delay", type=int, description="The delay in seconds")
-    def delay(self, message: dict[str, Any], args: CommandParser.Args, opts: CommandParser.Opts) -> Response | Iterable[Response]:
+    async def delay(
+        self,
+        sender: ZulipUser,
+        session,
+        args: CommandParser.Args,
+        opts: CommandParser.Opts,
+        message: dict[str, Any],
+    ):
         """
         Echo the message text with a delay.
         """
-        delay = opts.delay or 5
-        sleep(delay)
-        return Response.build_message(message, args.text)
+        delay = opts.d or 5
+        await asyncio.sleep(delay)
+        yield DMResponse(args.text)

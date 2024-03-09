@@ -6,10 +6,10 @@
 from typing import Any, Iterable
 
 from tumcsbot.lib import Response
-from tumcsbot.plugin import PluginCommandMixin, PluginThread
+from tumcsbot.plugin import PluginCommandMixin,Plugin
 
 
-class Source(PluginCommandMixin, PluginThread):
+class Source(PluginCommandMixin, Plugin):
     syntax = "source"
     description = "Post the link to the repository of my source code."
 

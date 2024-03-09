@@ -13,10 +13,10 @@ from tumcsbot.lib import (
 )
 from tumcsbot.command_parser import CommandParser
 from tumcsbot.db import DB
-from tumcsbot.plugin import PluginCommandMixin, PluginThread
+from tumcsbot.plugin import PluginCommandMixin,Plugin
 
 
-class ArchiveStreams(PluginCommandMixin, PluginThread):
+class ArchiveStreams(PluginCommandMixin, Plugin):
     syntax = cleandoc(
         """
         archive_streams <stream>...

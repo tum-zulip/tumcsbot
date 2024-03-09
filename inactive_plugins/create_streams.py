@@ -7,11 +7,11 @@ from inspect import cleandoc
 from typing import Any, Iterable
 
 from tumcsbot.lib import split, Response
-from tumcsbot.plugin import PluginCommandMixin, PluginThread
+from tumcsbot.plugin import PluginCommandMixin,Plugin
 from tumcsbot.plugin_decorators import *
 
 
-class CreateStreams(PluginCommandMixin, PluginThread):
+class CreateStreams(PluginCommandMixin, Plugin):
     syntax = "create_streams <stream_name>,<stream_description>..."
     description = cleandoc(
         """

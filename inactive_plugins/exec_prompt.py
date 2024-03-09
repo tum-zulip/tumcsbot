@@ -29,10 +29,10 @@ import re
 from typing import Any, Final, Iterable
 
 from tumcsbot.lib import Conf, Response
-from tumcsbot.plugin import Event, EventType, PluginThread
+from tumcsbot.plugin import Event, EventType,Plugin
 
 
-class ExecPrompt(PluginThread):
+class ExecPrompt(Plugin):
     dependencies = ["conf"]
     zulip_events = ["reaction"]
 

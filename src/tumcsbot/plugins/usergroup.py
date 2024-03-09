@@ -10,18 +10,23 @@ Provide also an interactive command so administrators are able to
 change the alert words and specify the emojis to use for the reactions.
 """
 
-from typing import Any, Iterable
+# TODO: replacement for zulip usergroups. Replace as soon as api allows bot requests for usergroups
+
+from typing import Any, AsyncGenerator, Iterable
 from sqlalchemy import Column, Integer, PrimaryKeyConstraint, String, ForeignKey
+import sqlalchemy
 from sqlalchemy.orm import relationship, Mapped
 
 from tumcsbot.lib import Response
 from tumcsbot.command_parser import CommandParser
 from tumcsbot.db import DB, TableBase
-from tumcsbot.plugin import PluginCommandMixin, PluginThread
+from tumcsbot.plugin import PluginCommandMixin, Plugin
 from tumcsbot.plugin_decorators import *
 
 
 class UserGroup(TableBase):
+    """Represents a user group in the system."""
+
     __tablename__ = "UserGroups"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
@@ -29,10 +34,12 @@ class UserGroup(TableBase):
     description = Column(String, default="")
 
     # This will allow accessing the members from the UserGroup object
-    members: Mapped[list["UserGroupMember"]] = relationship()
+    members: Mapped[list["UserGroupMember"]] = relationship(viewonly=True)
 
 
 class UserGroupMember(TableBase):
+    """Represents a user group member in the system."""
+
     __tablename__ = "UserGroupMembers"
 
     gid = Column(
@@ -41,12 +48,12 @@ class UserGroupMember(TableBase):
     uid = Column(Integer, primary_key=True)
 
     # This establishes the relationship between UserGroupMember and UserGroup
-    groups: Mapped[list["UserGroup"]] = relationship()
+    groups: Mapped[list["UserGroup"]] = relationship(viewonly=True)
 
     __contstraints__ = (PrimaryKeyConstraint("uid", "gid"),)
 
 
-class Usergroup(PluginCommandMixin, PluginThread):
+class Usergroup(PluginCommandMixin, Plugin):
     """
     Manage user groups.
     Alternative to Zulip user groups, as the bot does not have access to the api.
@@ -65,14 +72,14 @@ class Usergroup(PluginCommandMixin, PluginThread):
         description="Display all user groups with all users",
         privilege=Privilege.ADMIN,
     )
-    def _list(
+    async def _list(
         self,
         sender: ZulipUser,
         session,
         args: CommandParser.Args,
         opts: CommandParser.Opts,
         message: dict[str, Any],
-    ) -> Response | Iterable[Response]:
+    ) -> AsyncGenerator[Response, None]:
         """
         List user groups
         """
@@ -89,211 +96,313 @@ class Usergroup(PluginCommandMixin, PluginThread):
                 yield DMResponse(
                     f"## {group.name}:\n"
                     + ", ".join(
-                        [ZulipUser(uid).mention_silent for uid in group.members]
+                        [
+                            await ZulipUser(member.uid).mention_silent
+                            for member in group.members
+                        ]
                         or ["No members"]
                     )
                 )
 
         else:
-            if sender.id != args.user.id and not sender.priviliged:
+            if await sender.id != await args.user.id and not await sender.privileged:
                 raise UserNotPrivilegedException("You can only list your own groups.")
 
-            groups = Usergroup.get_groups_for_user(session, args.user.id)
+            groups = await Usergroup.get_groups_for_user(session, args.user)
 
             if len(groups) == 0:
-                raise DMError(f"{args.user.mention_silent} is not in any user group")
+                raise DMError(
+                    f"{await args.user.mention_silent} is not in any user group"
+                )
 
             msg = ", ".join(f"`{g.name}`" for g in groups)
             yield DMResponse(
-                args.user.mention_silent + " is in the following user groups:\n" + msg
+                await args.user.mention_silent
+                + " is in the following usergroups:\n"
+                + msg
             )
 
     @command
     @privilege(Privilege.ADMIN)
     @arg("group", str, "The group the users should get added to")
     @arg("users", ZulipUser, "The users that should get added", greedy=True)
-    def add(
+    async def add(
         self,
         sender: ZulipUser,
         session,
         args: CommandParser.Args,
         opts: CommandParser.Opts,
         message: dict[str, Any],
-    ) -> Response | Iterable[Response]:
+    ):
         """
         Add users to group.
         """
         user: ZulipUser
+        s_ention = await sender.mention_silent
         for user in args.users:
-            if not Usergroup.add_user_to_group(session, user.id, args.group):
-                yield PartialError(user.mention_silent)
-            else:
+            try:
+                await Usergroup.add_user_to_group(session, user, args.group)
                 yield DMMessage(
                     user,
-                    f"Hey,\nYou have been added to the following user group by @_**{message['sender_full_name']}|{message['sender_id']}**:\n{args.group}"
+                    f"Hey {await user.mention_silent},\nYou have been added to the usergroup `{args.group}` by {s_ention}",
                 )
-                yield PartialSuccess(user)
+                yield PartialSuccess(await user.mention_silent)
+            except DMError as e:
+                yield PartialError(e.message)
 
     @command
     @privilege(Privilege.ADMIN)
     @arg("name", str, "The name of the user group")
     @arg("description", str, "The description of the user group.", optional=True)
-    def creat(
+    async def creat(
         self,
         sender: ZulipUser,
         session,
         args: CommandParser.Args,
         opts: CommandParser.Opts,
         message: dict[str, Any],
-    ) -> Response | Iterable[Response]:
+    ) -> AsyncGenerator[Response, None]:
         """
         Create an empty user group
         """
-        success = Usergroup.create_group(session, args.name, args.description)
-
-        if not success:
-            raise DMError(
-                f"Error: Could not create group '{args.name}' with description '{args.description}'. Maybe the group already exists?",
-            )
-
-        yield Response.ok(message)
+        if args.description is None:
+            args.description = "No description available"
+        await Usergroup.create_group(session, args.name, args.description)
+        yield DMResponse(f"User group `{args.name}` created")
 
     @command
+    @privilege(Privilege.ADMIN)
     @arg("group", str, "The group the user should get removed from")
     @arg(
         "user",
         ZulipUser,
-        "The user that should get removed from groups. Default is the sender of the command",
+        "The user that should get removed from groups. If no user is given, the entire group will be deleted.",
         optional=True,
     )
     @opt(
         "s",
         long_opt="silent",
         description="Do not notify the user",
-        privilege=Privilege.ADMIN,
     )
-    def remove(
+    async def remove(
         self,
         sender: ZulipUser,
         session,
         args: CommandParser.Args,
         opts: CommandParser.Opts,
         message: dict[str, Any],
-    ) -> Response | Iterable[Response]:
+    ):
         """
         remove user from group
         """
-        if args.user != sender and not sender.priviliged:
-            raise UserNotPrivilegedException(
-                "You can only remove yourself from groups."
-            )
+        sid = await sender.id
+        s_mention = await sender.mention_silent
 
         if args.user is None:
-            args.user = sender
+            # delete the group
+            if not opts.s:
+                # notify all members
+                for user in await Usergroup.get_group_members(session, args.group):
+                    yield DMMessage(user, f"Hey {await user.mention_silent},\nYou have been removed from the usergroup {args.group} by {s_mention}, because the group has been deleted.")
+                await Usergroup.delete_group(session, args.group)
+                yield DMResponse(f"User group `{args.group}` has been deleted")
+        else:
+            uid = await args.user.id
+            u_mention = await args.user.mention_silent
 
-        Usergroup.remove_user_from_group(session, args.user.id, args.group)
-        if args.user != sender:
-            yield Response.ok(message)
+            await Usergroup.remove_user_from_group(session, args.user, args.group)
+            yield PartialSuccess(u_mention)
 
-        if not opts.s:
-            yield DMMessage(
-                args.user,
-                f"Hey,\nYou have been removed to the following user group by @_**{message['sender_full_name']}|{message['sender_id']}**:\n`{args.group}`",
-            )
+            if not opts.s and uid != sid:
+                yield DMMessage(
+                    args.user,
+                    f"Hey {await args.user.mention_silent},\nYou have been removed to the usergroup by {s_mention}:\n`{args.group}`",
+                )
 
-    # TODO: replacement for zulip usergroups. Rreplace as soon as api allows bot requests for usergroups
+    @command
+    @arg("group", str, "The group you wish to leave")
+    async def leave(
+        self,
+        sender: ZulipUser,
+        session,
+        args: CommandParser.Args,
+        opts: CommandParser.Opts,
+        message: dict[str, Any],
+    ):
+        """
+        leave a usergroup
+        """
+        await Usergroup.remove_user_from_group(session, sender, args.group)
+        yield DMResponse(f"You have left the usergroup `{args.group}`")
 
     @staticmethod
     def get_groups(session) -> list[UserGroup]:
         return session.query(UserGroup).all()
 
     @staticmethod
-    def create_group(session, name: str, description: str) -> bool:
+    async def create_group(session, name: str, description: str):
+        """
+        Create a new user group.
+
+        Args:
+            session: The database session.
+            name: The name of the group.
+            description: The description of the group.
+
+        Raises:
+            DMError: If the group creation fails.
+
+        Returns:
+            None
+        """
         group = UserGroup(name=name, description=description)
-        session.add(group)
         try:
+            session.add(group)
             session.commit()
-        except Exception as e:
-            session.rollback()  # Assuming uniqueness violation or similar
-            print(str(e))
-            return False  # todo: replace with exception
-        return True
+        except sqlalchemy.exc.IntegrityError as e:
+            session.rollback()
+            raise DMError(f"Could not create group '{name}'. {str(e)}")
 
     @staticmethod
-    def delete_group(session, identifier: int | str) -> bool:
-        gid = Usergroup.group_id_by_identifier(session, identifier)
-        if gid is None:
-            return False
-        session.query(UserGroup).filter(UserGroup.id == gid).delete()
+    async def delete_group(session, identifier: int | str) -> None:
+        """
+        Delete a user group from the database.
+
+        Args:
+            session (Session): The database session.
+            identifier (int | str): The identifier of the group to delete.
+
+        Raises:
+            DMError: If the group cannot be deleted.
+
+        Returns:
+            None
+        """
+        g = await Usergroup.group_by_identifier(session, identifier)
+        try:
+            session.query(UserGroup).filter(UserGroup.id == g.id).delete()
+            session.commit()
+        except sqlalchemy.exc.IntegrityError as e:
+            session.rollback()
+            raise DMError(f"Could not delete group '{g.name}'. {str(e)}")
+
+    @staticmethod
+    async def remove_user_from_group(
+        session, user: ZulipUser, group_identifier: int | str
+    ) -> None:
+        """
+        Remove a user from a user group.
+
+        Args:
+            session: The database session.
+            user (ZulipUser): The user to be removed from the group.
+            group_identifier (int | str): The identifier of the group.
+
+        Raises:
+            DMError: If the user is not in the specified user group.
+
+        Returns:
+            None
+        """
+        uid = await user.id
+        g = await Usergroup.group_by_identifier(session, group_identifier)
+
+        relation = session.query(UserGroupMember).filter(
+            UserGroupMember.uid == uid
+        ).filter(UserGroupMember.gid == g.id)
+
+        if relation.first() is None:
+            raise DMError(f"{await user.mention_silent} is not in usergroup '{g.name}'")
+
+        relation.delete()
         session.commit()
-        return True
 
     @staticmethod
-    def remove_user_from_group(
-        session, user_identifier: int | str, group_identifier: int | str
-    ) -> bool:
-        uid = Usergroup.user_id_by_identifier(session, user_identifier)
-        gid = Usergroup.group_id_by_identifier(session, group_identifier)
-        if uid is None or gid is None:
-            return False
-        session.query(UserGroupMember).filter(
-            UserGroupMember.uid == gid, UserGroupMember.uid == uid
-        ).delete()
-        session.commit()
-        return True
+    async def add_user_to_group(
+        session, user: ZulipUser, group_identifier: int | str
+    ) -> None:
+        """
+        Add a user to a group.
+
+        Args:
+            session: The database session.
+            user: The user to be added to the group.
+            group_identifier: The identifier of the group to add the user to.
+
+        Raises:
+            DMError: If the user is already in the group.
+
+        """
+        uid = await user.id
+        g = await Usergroup.group_by_identifier(session, group_identifier)
+        try:
+            session.add(UserGroupMember(gid=g.id, uid=uid))
+            session.commit()
+        except sqlalchemy.exc.IntegrityError as e:
+            session.rollback()
+            raise DMError(
+                f"Could add {await user.mention_silent} usergroup '{group_identifier}'. Maybe the user is already in the group?"
+            )
 
     @staticmethod
-    def add_user_to_group(
-        session, user_identifier: int | str, group_identifier: int | str
-    ) -> bool:
-        uid = Usergroup.user_id_by_identifier(session, user_identifier)
-        gid = Usergroup.group_id_by_identifier(session, group_identifier)
-        if uid is None or gid is None:
-            return False
-        session.add(UserGroupMember(id=gid, uid=uid))
-        session.commit()
-        return True
+    async def get_groups_for_user(session, user: ZulipUser) -> list[UserGroup]:
+        """
+        Retrieve a list of UserGroup objects for a given user.
 
-    @staticmethod
-    def get_groups_for_user(session, user_identifier: int | str) -> list[UserGroup]:
-        uid = Usergroup.user_id_by_identifier(session, user_identifier)
+        Args:
+            session: The database session.
+            user: The ZulipUser object representing the user.
+
+        Returns:
+            A list of UserGroup objects that the user belongs to.
+        """
         return (
             session.query(UserGroup)
-            .join(UserGroupMember)
-            .filter(UserGroupMember.uid == UserGroup.id)
-            .filter(UserGroupMember.uid == uid)
+            .filter(UserGroup.id == UserGroupMember.gid)
+            .filter(UserGroupMember.uid == await user.id)
             .all()
         )
 
     @staticmethod
-    def get_group_id_by_name(session, group_name: str) -> int | None:
-        group = session.query(UserGroup).filter(UserGroup.name == group_name).first()
-        return group.id if group is not None else None
+    async def group_by_identifier(session, identifier: int | str) -> UserGroup:
+        """
+        Retrieve a UserGroup object based on the given identifier.
 
-    @staticmethod
-    def group_id_by_identifier(session, identifier: int | str) -> int | None:
+        Args:
+            session (Session): The database session.
+            identifier (int | str): The identifier of the group. It can be either an integer representing the group ID
+                or a string representing the group name.
+
+        Returns:
+            UserGroup: The UserGroup object matching the identifier.
+
+        Raises:
+            DMError: If no group is found with the given identifier.
+        """
         if isinstance(identifier, int):
-            return int(identifier)
+            group = session.query(UserGroup).filter(UserGroup.id == identifier).first()
+            if group is None:
+                raise DMError(f"Could not find group with id {identifier}")
+        else:
+            group = (
+                session.query(UserGroup).filter(UserGroup.name == identifier).first()
+            )
+            if group is None:
+                raise DMError(f"Could not find group `{identifier}`")
 
-        return Usergroup.get_group_id_by_name(session, str(identifier))
+        return group
 
     @staticmethod
-    def get_group_by_identifier(session, identifier: int | str) -> UserGroup | None:
-        gid = Usergroup.group_id_by_identifier(session, identifier)
-        if gid is None:
-            return None
+    async def get_group_members(session, identifier: int | str) -> list[ZulipUser]:
+        """
+        Get the members of a user group.
 
-        return session.query(UserGroup).filter(UserGroup.id == gid).first()
+        Args:
+            session: The session object for database operations.
+            identifier: The identifier of the user group.
 
-    @staticmethod
-    def get_group_members(session, identifier: int | str) -> list[int]:
-        g = Usergroup.get_group_by_identifier(session, identifier)
-        if g is None:
-            return []
-        members: list[int] = g.members
-        return members
-
-    def user_id_by_identifier(self, identifier: int | str) -> int | None:
-        if isinstance(identifier, int):
-            return int(identifier)
-        return self.client.get_user_id_by_name(str(identifier))
+        Returns:
+            A list of ZulipUser objects representing the members of the user group.
+        """
+        g = await Usergroup.group_by_identifier(session, identifier)
+        return map(lambda m: ZulipUser(m.uid), g.members)

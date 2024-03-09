@@ -7,10 +7,10 @@ from inspect import cleandoc
 from typing import Any, Iterable
 
 from tumcsbot.lib import split, Response
-from tumcsbot.plugin import PluginCommandMixin, PluginThread
+from tumcsbot.plugin import PluginCommandMixin,Plugin
 
 
-class RenameStreams(PluginCommandMixin, PluginThread):
+class RenameStreams(PluginCommandMixin, Plugin):
     syntax = "rename_streams <stream_name_old>,<stream_name_new>..."
     description = cleandoc(
         """

@@ -17,11 +17,11 @@ from typing import Iterable
 from sqlalchemy import Column, Boolean, String
 
 from tumcsbot.lib import Response
-from tumcsbot.plugin import Event, PluginThread
+from tumcsbot.plugin import Event,Plugin
 from tumcsbot.db import DB, TableBase
 
 
-class AutoSubscriber(PluginThread):
+class AutoSubscriber(Plugin):
     zulip_events = ["stream"]
     _insert_sql: str = "insert or ignore into PublicStreams values (?, 0)"
     _select_sql: str = "select StreamName, Subscribed from PublicStreams"

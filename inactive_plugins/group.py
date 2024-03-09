@@ -50,7 +50,7 @@ class GroupClaimAll(TableBase):
     # Define the constraint to ensure MessageId is unique across all GroupClaims tables
     UniqueConstraint('MessageId', name='uq_group_claims_all_message_id')
 
-class Group(PluginCommandMixin, PluginProcess):
+class Group(PluginCommandMixin, Plugin):
     zulip_events = ["message", "reaction", "stream"]
     syntax = cleandoc(
         """

@@ -6,10 +6,10 @@
 from typing import Iterable
 
 from tumcsbot.lib import Response
-from tumcsbot.plugin import Event, PluginThread
+from tumcsbot.plugin import Event,Plugin
 
 
-class Ping(PluginThread):
+class Ping(Plugin):
     """The user pinged us. Still be nice! :)
 
     Do not react on pings in private messages that do not contain a
@@ -18,12 +18,7 @@ class Ping(PluginThread):
     notifies them of the subscription (with ping) and we react on the
     messages of the Notification Bot to the users.
     """
-
     zulip_events = ["message"]
-
-    def _init_plugin(self) -> None:
-        # Precompute the client id.
-        self.client_id: int = self.client.id
 
     def handle_zulip_event(self, event: Event) -> Response | Iterable[Response]:
         return Response.build_reaction(event.data["message"], "wave")
@@ -37,7 +32,7 @@ class Ping(PluginThread):
             )
             or (
                 "command_name" not in event.data["message"]
-                and event.data["message"]["sender_id"] != self.client_id
+                and event.data["message"]["sender_id"] != self.client.id
                 and "mentioned" in event.data["flags"]
                 and (
                     not event.data["message"]["type"] == "private"

@@ -7,10 +7,10 @@ from inspect import cleandoc
 from typing import Any, Final, Iterable
 
 from tumcsbot.lib import DB, Response
-from tumcsbot.plugin import Event, PluginThread
+from tumcsbot.plugin import Event,Plugin
 
 
-class Repost(PluginThread):
+class Repost(Plugin):
     """Handle unknown commands."""
 
     dependencies = ["conf"]

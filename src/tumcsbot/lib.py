@@ -308,10 +308,6 @@ class ConfigTable(TableBase):
 
 
 class Conf:
-    _get_sql: str = "select Value from Conf where Key = ?"
-    _list_sql: str = "select * from Conf"
-    _remove_sql: str = "delete from Conf where Key = ?"
-    _update_sql: str = "replace into Conf values (?,?)"
 
     @staticmethod
     def get(key: str) -> str | None:
@@ -322,12 +318,13 @@ class Conf:
     @staticmethod
     def list() -> list[tuple[str, str]]:
         with DB.session() as session:
-            return cast(list[tuple[str, str]], session.query(ConfigTable).all())
+            return [(t.Key, t.Value) for t in session.query(ConfigTable).all()]
     
     @staticmethod
     def remove(key: str) -> None:
         with DB.session() as session:
             session.query(ConfigTable).filter_by(Key=key).delete()
+            session.commit()
 
     @staticmethod
     def set(key: str, value: str) -> None:
@@ -337,7 +334,8 @@ class Conf:
         passed through.
         """
         with DB.session() as session:
-            session.add(ConfigTable(Key=key, Value=value))
+            session.merge(ConfigTable(Key=key, Value=value))
+            session.commit()
 
 class Response:
     """Some useful methods for building a response message."""

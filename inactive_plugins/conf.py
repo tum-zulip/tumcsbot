@@ -7,10 +7,10 @@ from inspect import cleandoc
 from typing import Any, Iterable
 
 from tumcsbot.lib import Conf, Response, is_bot_owner
-from tumcsbot.plugin import PluginCommandMixin, PluginThread
+from tumcsbot.plugin import PluginCommandMixin,Plugin
 from tumcsbot.command_parser import CommandParser
 
-class ConfPlugin(PluginCommandMixin, PluginThread):
+class ConfPlugin(PluginCommandMixin, Plugin):
     syntax = cleandoc(
         """
         conf set <key> <value>

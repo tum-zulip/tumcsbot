@@ -10,10 +10,10 @@ from pathlib import Path
 from typing import Any, Iterable
 
 from tumcsbot.lib import Response, is_bot_owner
-from tumcsbot.plugin import PluginCommandMixin, PluginThread
+from tumcsbot.plugin import PluginCommandMixin,Plugin
 
 
-class Update(PluginCommandMixin, PluginThread):
+class Update(PluginCommandMixin, Plugin):
     syntax = "update"
     description = cleandoc(
         """

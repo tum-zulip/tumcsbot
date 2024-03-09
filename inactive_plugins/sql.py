@@ -7,10 +7,10 @@ from inspect import cleandoc
 from typing import Any, Iterable
 
 from tumcsbot.lib import DB, Response
-from tumcsbot.plugin import PluginCommandMixin, PluginThread
+from tumcsbot.plugin import PluginCommandMixin,Plugin
 
 
-class Source(PluginCommandMixin, PluginThread):
+class Source(PluginCommandMixin, Plugin):
     syntax = cleandoc(
         """
         sql <sql_script>

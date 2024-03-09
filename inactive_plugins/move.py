@@ -8,10 +8,10 @@ from typing import Any, Iterable
 
 from tumcsbot.command_parser import CommandParser
 from tumcsbot.lib import Regex, Response
-from tumcsbot.plugin import PluginCommandMixin, PluginThread
+from tumcsbot.plugin import PluginCommandMixin,Plugin
 
 
-class Move(PluginCommandMixin, PluginThread):
+class Move(PluginCommandMixin, Plugin):
     syntax = cleandoc(
         """
         move <destination>

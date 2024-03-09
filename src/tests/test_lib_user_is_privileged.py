@@ -8,18 +8,21 @@ import unittest
 from unittest.mock import patch
 from typing import Any
 
-from tumcsbot.client import Client
-
+from tumcsbot.client import AsyncClient as Client
+from .test_client import asSync
 
 @patch.object(Client, "__init__", lambda _: None)
 class UserPrivilegedTest(unittest.TestCase):
-    def test_invalid_user_data(self) -> None:
+
+    @asSync
+    async def test_invalid_user_data(self) -> None:
         ret: dict[str, Any] = {"result": "error"}
         with patch.object(Client, "get_user_by_id", return_value=ret):
-            assert Client().get_user_by_id(0) == ret
-            self.assertFalse(Client().user_is_privileged(0))
+            assert await Client().get_user_by_id(0) == ret
+            self.assertFalse(await Client().user_is_privileged(0))
 
-    def test_no_privilege(self) -> None:
+    @asSync
+    async def test_no_privilege(self) -> None:
         data: list[dict[str, Any]] = [
             {"role": -200},
             {"role": 0},
@@ -34,21 +37,23 @@ class UserPrivilegedTest(unittest.TestCase):
         for d in data:
             ret: dict[str, Any] = {"result": "success", "user": d}
             with patch.object(Client, "get_user_by_id", return_value=ret):
-                assert Client().get_user_by_id(0) == ret
-                self.assertFalse(Client().user_is_privileged(0))
-
-    def test_privilege(self) -> None:
+                assert await Client().get_user_by_id(0) == ret
+                self.assertFalse(await Client().user_is_privileged(0))  
+    
+    @asSync
+    async def test_privilege(self) -> None:
         data: list[dict[str, Any]] = [{"role": 100}, {"role": 200}]
         for d in data:
             ret: dict[str, Any] = {"result": "success", "user": d}
             with patch.object(Client, "get_user_by_id", return_value=ret):
-                assert Client().get_user_by_id(0) == ret
-                self.assertTrue(Client().user_is_privileged(0))
+                assert await Client().get_user_by_id(0) == ret
+                self.assertTrue(await Client().user_is_privileged(0))
 
-    def test_privilege_mod(self) -> None:
+    @asSync
+    async def test_privilege_mod(self) -> None:
         data: list[dict[str, Any]] = [{"role": 100}, {"role": 200}, {"role": 300}]
         for d in data:
             ret: dict[str, Any] = {"result": "success", "user": d}
             with patch.object(Client, "get_user_by_id", return_value=ret):
-                assert Client().get_user_by_id(0) == ret
-                self.assertTrue(Client().user_is_privileged(0, allow_moderator=True))
+                assert await Client().get_user_by_id(0) == ret
+                self.assertTrue(await Client().user_is_privileged(0, allow_moderator=True))

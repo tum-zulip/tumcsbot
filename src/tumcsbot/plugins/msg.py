@@ -10,7 +10,7 @@ from sqlalchemy import Column, String
 from tumcsbot.lib import Response
 from tumcsbot.command_parser import CommandParser
 from tumcsbot.db import DB, TableBase
-from tumcsbot.plugin import PluginCommandMixin, PluginThread
+from tumcsbot.plugin import PluginCommandMixin,Plugin
 from tumcsbot.plugin_decorators import *
 
 class Messages(TableBase):
@@ -19,7 +19,7 @@ class Messages(TableBase):
     MsgId = Column(String, primary_key=True)
     MsgText = Column(String, nullable=False)
 
-class Msg(PluginCommandMixin, PluginThread):
+class Msg(PluginCommandMixin, Plugin):
     """
     Store a message for later use, send or delete a stored message \
     or list all stored messages. The text must be quoted but may

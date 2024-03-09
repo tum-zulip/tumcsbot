@@ -8,10 +8,10 @@ from typing import Any, Iterable
 
 from tumcsbot.lib import Response
 from tumcsbot.command_parser import CommandParser
-from tumcsbot.plugin import Event, PluginCommandMixin, PluginThread
+from tumcsbot.plugin import Event, PluginCommandMixin,Plugin
 
 
-class Plugin(PluginCommandMixin, PluginThread):
+class Plugin(PluginCommandMixin, Plugin):
     syntax = cleandoc(
         """
         plugin (reload|start|stop) <plugin>

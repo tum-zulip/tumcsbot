@@ -12,8 +12,9 @@ from tumcsbot.lib import Conf, DB
 class ConfTest(unittest.TestCase):
     def test_conf(self) -> None:
         with tempfile.NamedTemporaryFile() as file:
-            db = DB(db_path=file.name)
-            conf = Conf(db=db)
+            DB.set_path(file.name)
+            DB.create_tables()
+            conf = Conf()
 
             self.assertIsNone(conf.get("name"))
             try:
@@ -30,6 +31,7 @@ class ConfTest(unittest.TestCase):
 
             conf.remove("name")
             self.assertIsNone(conf.get("name"))
+            
             try:
                 conf.remove("name")
             except Exception as exc:

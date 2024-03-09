@@ -28,7 +28,7 @@ class Alert(TableBase):
     Phrase = Column(String, primary_key=True)
     Emoji = Column(String, nullable=False)
 
-class AlertWord(PluginCommandMixin, PluginProcess):
+class AlertWord(PluginCommandMixin, Plugin):
     syntax = cleandoc(
         """
         alert_word add '<alert phrase>' <emoji>

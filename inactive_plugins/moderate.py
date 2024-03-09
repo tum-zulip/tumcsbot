@@ -16,11 +16,11 @@ from typing import Any, Iterable, Callable
 from tumcsbot.lib import Response, Regex
 from tumcsbot.command_parser import CommandParser
 from tumcsbot.db import DB
-from tumcsbot.plugin import PluginCommandMixin, PluginThread
+from tumcsbot.plugin import PluginCommandMixin,Plugin
 from tumcsbot.plugins.moderation_reaction_handler import ModerationReactionHandler
 
 
-class Moderate(PluginCommandMixin, PluginThread):
+class Moderate(PluginCommandMixin, Plugin):
     _actions = {
         "dm": "sends a message to the author",
         "delete": "deletes the message",

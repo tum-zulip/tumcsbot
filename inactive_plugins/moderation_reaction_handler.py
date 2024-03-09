@@ -13,12 +13,12 @@ change the alert words and specify the emojis to use for the reactions.
 from typing import Any, Iterable, Callable
 
 from tumcsbot.lib import DB, Response
-from tumcsbot.plugin import Event, PluginThread
+from tumcsbot.plugin import Event,Plugin
 
 import urllib
 
 
-class ModerationReactionHandler(PluginThread):
+class ModerationReactionHandler(Plugin):
     # pylint: disable=line-too-long
     _replace_dict: dict[
         str, tuple[Callable[[dict[str, Any], dict[str, Any]], str], str]
