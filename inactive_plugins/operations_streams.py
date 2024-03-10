@@ -3,7 +3,6 @@
 # See LICENSE file for copyright and license details.
 # TUM CS Bot - https://github.com/ro-i/tumcsbot
 
-from inspect import cleandoc
 from shlex import quote
 from typing import Any, Iterable
 from tumcsbot.lib import split, Response
@@ -71,9 +70,7 @@ class OperationStreams(PluginCommandMixin, PluginThread):
             if result["result"] != "success" or result["messages"]:
                 failed.append(stream)
                 raise PartialError()
-
-            # Archive the stream: https://zulip.com/help/archive-a-stream
-            # todo: delete_stream async?
+            
             result = await sender.client.delete_stream(stream_id)
             if result["result"] != "success":
                 failed.append(stream)
@@ -212,7 +209,6 @@ class OperationStreams(PluginCommandMixin, PluginThread):
                    raise PartialError()
                 stream_id: int = result_id["stream_id"]
 
-                # todo: mark_stream_as_read async?
                 result = await sender.client.mark_stream_as_read(stream_id)
                 if result["result"] != "success":
                     failed.append(f"stream: {stream}")
