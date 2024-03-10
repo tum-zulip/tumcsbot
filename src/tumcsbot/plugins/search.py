@@ -4,11 +4,13 @@
 # TUM CS Bot - https://github.com/ro-i/tumcsbot
 
 import urllib.parse
-from typing import Any, Iterable
+from typing import Any, AsyncGenerator
+from tumcsbot.db import Session
 
-from tumcsbot.lib import Response
-from tumcsbot.plugin import PluginCommandMixin,Plugin
-from tumcsbot.plugin_decorators import *
+from tumcsbot.command_parser import CommandParser
+from tumcsbot.plugin import PluginCommandMixin, Plugin, ZulipUser
+from tumcsbot.plugin_decorators import command, arg, response_type, DMResponse
+
 
 class Search(PluginCommandMixin, Plugin):
     syntax = "search <string>"
@@ -18,7 +20,14 @@ class Search(PluginCommandMixin, Plugin):
 
     @command
     @arg("string", str, description="The string to search for.", greedy=True)
-    def search(self, message: dict[str, Any], args: CommandParser.Args, opts: CommandParser.Opts) -> Response | Iterable[Response]:
+    async def search(
+        self,
+        _sender: ZulipUser,
+        _session: Session,
+        _args: CommandParser.Args,
+        _opts: CommandParser.Opts,
+        message: dict[str, Any],
+    ) -> AsyncGenerator[response_type, None]:
         # todo: use argument instead of urrlib.parse.quote
         # Get search string and quote it.
         search: str = urllib.parse.quote(message["command"], safe="")
@@ -29,5 +38,5 @@ class Search(PluginCommandMixin, Plugin):
         # Build the full url.
         url: str = base_url + self.path + search
         # Remove requesting message.
-        self.client.delete_message(message["id"])
-        return Response.build_message(message, self.msg_template.format(url))
+        await self.client.delete_message(message["id"])
+        yield DMResponse(self.msg_template.format(url))

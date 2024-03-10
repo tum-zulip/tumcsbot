@@ -9,7 +9,16 @@ import json
 from typing import Any, Iterable
 
 from tumcsbot.lib import Response, get_classes_from_path
-from tumcsbot.plugin import ArgConfig, CommandConfig, OptConfig, SubCommandConfig, PluginCommandMixin, Plugin, PluginTable, Privilege
+from tumcsbot.plugin import (
+    ArgConfig,
+    CommandConfig,
+    OptConfig,
+    SubCommandConfig,
+    PluginCommandMixin,
+    Plugin,
+    PluginTable,
+    Privilege,
+)
 from tumcsbot.db import DB
 
 HELP_TEMPLATE = cleandoc(
@@ -40,7 +49,9 @@ class Help(PluginCommandMixin, Plugin):
         for plugin_class in get_classes_from_path("tumcsbot.plugins", Plugin)  # type: ignore
     ]
 
-    async def handle_message(self, message: dict[str, Any]) -> Response | Iterable[Response]:
+    async def handle_message(
+        self, message: dict[str, Any]
+    ) -> Response | Iterable[Response]:
         command: str = message["command"].strip()
         if not command:
             return self._help_overview(message)
@@ -57,9 +68,11 @@ class Help(PluginCommandMixin, Plugin):
     def _format_syntax(syntax: str) -> str:
         """Format the syntax string of a command."""
         return "```text\n" + syntax.strip() + "\n```\n"
-    
+
     @staticmethod
-    def _get_help_info(command: str | None = None, privilige: Privilege = Privilege.USER) -> list[CommandConfig]:
+    def _get_help_info(
+        command: str | None = None, privilige: Privilege = Privilege.USER
+    ) -> list[CommandConfig]:
         """Get help information from each command.
 
         Return a list of tuples (command name, syntax, description).
@@ -70,10 +83,11 @@ class Help(PluginCommandMixin, Plugin):
                 plugins = [session.query(PluginTable).filter_by(name=command).first()]
             else:
                 plugins = session.query(PluginTable).all()
-        
+
         result: CommandConfig = [
             CommandConfig.from_dict(json.loads(p.config))
-            for p in plugins if p is not None
+            for p in plugins
+            if p is not None
         ]
         # Sort by name.
         return sorted(result, key=lambda c: c.name)
@@ -85,17 +99,19 @@ class Help(PluginCommandMixin, Plugin):
         result = Help._get_help_info(command)
         if len(result) == 0:
             return Response.command_not_found(message)
-        
+
         cmd = result[0]
 
         msg = f"# {cmd.name.capitalize()}\n"
 
-        only_mod_privileges = all([sub.privilege > Privilege.USER for sub in cmd.subcommands])
+        only_mod_privileges = all(
+            [sub.privilege > Privilege.USER for sub in cmd.subcommands]
+        )
         if only_mod_privileges:
             msg += PRIVILAGE_MSG + "\n"
 
         msg += "\n" + cmd.short_help_msg
-        
+
         msg += f"\n```text\n{cmd.syntax}\n```\n\n"
 
         msg += "## Subcommands:\n" if cmd.subcommands else ""
@@ -105,22 +121,35 @@ class Help(PluginCommandMixin, Plugin):
         return Response.build_message(
             message, content=msg, msg_type="private", to=message["sender_email"]
         )
-    
+
     @staticmethod
     def _format_option(option: OptConfig) -> str:
         long_opt = f"/--{option.long_opt}" if option.long_opt else ""
-        privilage = " " + PRIVILAGE_MSG if option.privilege is not None and option.privilege > Privilege.USER else ""
+        privilage = (
+            " " + PRIVILAGE_MSG
+            if option.privilege is not None and option.privilege > Privilege.USER
+            else ""
+        )
         return f"- `-{option.opt}{long_opt}`\t{option.description}{privilage}"
-    
+
     @staticmethod
     def _format_argument(argument: ArgConfig) -> str:
-        privilage = " " + PRIVILAGE_MSG if argument.privilege is not None and argument.privilege > Privilege.USER else ""
+        privilage = (
+            " " + PRIVILAGE_MSG
+            if argument.privilege is not None and argument.privilege > Privilege.USER
+            else ""
+        )
         greedy = " (greedy)" if argument.greedy else ""
         return f"- `{argument.name}`\t{argument.description}{greedy}{privilage}"
-    
+
     @staticmethod
     def _format_subcommand(cmd_name: str, subcommand: SubCommandConfig) -> str:
-        privilage = " " + PRIVILAGE_MSG + "\n" if  subcommand.privilege is not None and subcommand.privilege > Privilege.USER else ""
+        privilage = (
+            " " + PRIVILAGE_MSG + "\n"
+            if subcommand.privilege is not None
+            and subcommand.privilege > Privilege.USER
+            else ""
+        )
         out = f"```spoiler {subcommand.name.capitalize()}\n{privilage}\n{subcommand.short_help_msg}\n````text\n{cmd_name} {subcommand.syntax}\n````\n\n"
         for opt in subcommand.opts:
             out += Help._format_option(opt) + "\n"
@@ -137,9 +166,7 @@ class Help(PluginCommandMixin, Plugin):
 
         return Response.build_message(
             message,
-            HELP_TEMPLATE.format(
-                message["sender_full_name"], help_message
-            ),
+            HELP_TEMPLATE.format(message["sender_full_name"], help_message),
             msg_type="private",
             to=message["sender_email"],
         )

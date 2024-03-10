@@ -235,7 +235,7 @@ class ZulipUser:
     def set_client(cls, client: AsyncClient) -> None:
         cls._client = client
 
-    def __init__(self, identifier: str | str) -> None:
+    def __init__(self, identifier: str | int) -> None:
         self._id: int | None = None
         self._name: str | None = None
 
@@ -301,18 +301,28 @@ class Privilege(Enum):
     ADMIN = 3
 
     def __ge__(self, other: Privilege) -> bool:
+        if not isinstance(other, Privilege):
+            raise ValueError(f"Cannot compare Privilege with {type(other)}")
         return self.value >= other.value
 
     def __gt__(self, other: Privilege) -> bool:
+        if not isinstance(other, Privilege):
+            raise ValueError(f"Cannot compare Privilege with {type(other)}")
         return self.value > other.value
 
     def __le__(self, other: Privilege) -> bool:
+        if not isinstance(other, Privilege):
+            raise ValueError(f"Cannot compare Privilege with {type(other)}")
         return self.value <= other.value
 
     def __lt__(self, other: Privilege) -> bool:
+        if not isinstance(other, Privilege):
+            raise ValueError(f"Cannot compare Privilege with {type(other)}")
         return self.value < other.value
 
     def __eq__(self, other: Privilege) -> bool:
+        if not isinstance(other, Privilege):
+            raise ValueError(f"Cannot compare Privilege with {type(other)}")
         return self.value == other.value
 
     @staticmethod
@@ -535,18 +545,10 @@ class PluginCommandMixin(Plugin):
                 ],
                 Response | Iterable[Response],
             ] = getattr(self, command)
-            self.logger.debug(f"executing subcommand: {command}")
-            self.logger.debug(f"args: {args}")
-            self.logger.debug(f"opts: {opts}")
             with DB.session() as session:
-                try:
-                    result = await func(
-                        ZulipUser(message["sender_id"]), session, args, opts, message
-                    )
-                except sqlalchemy.exc.IntegrityError as e:
-                    result = Response.build_message(
-                        message, f"Database error: {str(e)}"
-                    )
+                result = await func(
+                    ZulipUser(message["sender_id"]), session, args, opts, message
+                )
             return result
         else:
             self.logger.debug(f"command not found: {command}")

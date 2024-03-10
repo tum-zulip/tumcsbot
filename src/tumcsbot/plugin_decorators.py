@@ -1,5 +1,6 @@
+from __future__ import annotations
 from functools import wraps
-from typing import AsyncGenerator, Callable, Any, Iterable, Iterator
+from typing import AsyncGenerator, Callable, Any, Iterable, Protocol
 from dataclasses import dataclass
 from inspect import cleandoc
 
@@ -15,7 +16,6 @@ from tumcsbot.plugin import (
     ZulipUser,
     ZulipUserNotFound,
 )
-
 
 class DMError(Exception):
     pass
@@ -78,9 +78,29 @@ class PartialError:
     info: str
 
 
-def get_meta(func) -> SubCommandConfig:
+response_type = DMResponse | DMMessage | InlineResponse | ReactionResponse | PartialSuccess | PartialError | Response
+
+command_func_type = Callable[
+    [
+        Any,
+        ZulipUser,
+        Any,
+        CommandParser.Args,
+        CommandParser.Opts,
+        dict[str, Any],
+    ],
+    AsyncGenerator[response_type, None],
+]
+
+command_decorator_type = Callable[[command_func_type], command_func_type]
+
+def get_meta(func: Any) -> SubCommandConfig:
     if not hasattr(func, "__tumsbot_plugin_meta__"):
         func.__tumsbot_plugin_meta__ = SubCommandConfig()
+    if not isinstance(func.__tumsbot_plugin_meta__, SubCommandConfig):
+        raise ValueError(
+            f"Expected {func} to have a __tumsbot_plugin_meta__ attribute of type SubCommandConfig"
+        )
     return func.__tumsbot_plugin_meta__
 
 
@@ -91,11 +111,11 @@ def arg(
     privilege: Privilege | None = None,
     greedy: bool = False,
     optional: bool = False,
-):
+) -> command_decorator_type:
     if greedy and optional:
         raise ValueError("An argument cannot be both greedy and optional")
 
-    def decorator(func):
+    def decorator(func: command_func_type) -> command_func_type:
         meta = get_meta(func)
         meta.args.insert(
             0, ArgConfig(name, type, description, privilege, greedy, optional)
@@ -109,7 +129,7 @@ def arg(
             args: CommandParser.Args,
             opts: CommandParser.Opts,
             message: dict[str, Any],
-        ) -> AsyncGenerator[Response, None]:
+        ) -> AsyncGenerator[response_type, None]:
             if privilege is not None:  # and todo: check if option is present
                 # todo: check privilege
                 if not await sender.privileged:
@@ -137,8 +157,8 @@ def opt(
     type: Callable[[Any], Any] | None = None,
     description: str | None = None,
     privilege: Privilege | None = None,
-):
-    def decorator(func):
+) -> command_decorator_type:
+    def decorator(func: command_func_type) -> command_func_type:
         meta = get_meta(func)
         meta.opts.insert(0, OptConfig(opt, long_opt, type, description, privilege))
 
@@ -150,7 +170,7 @@ def opt(
             args: CommandParser.Args,
             opts: CommandParser.Opts,
             message: dict[str, Any],
-        ) -> AsyncGenerator[Response, None]:
+        ) -> AsyncGenerator[response_type, None]:
             if privilege is not None:
                 # todo: check privilege
                 if not await sender.privileged:
@@ -166,8 +186,8 @@ def opt(
     return decorator
 
 
-def privilege(privilege: Privilege):
-    def decorator(func):
+def privilege(privilege: Privilege) -> command_decorator_type:
+    def decorator(func: command_func_type) -> command_func_type:
         meta = get_meta(func)
         meta.privilege = privilege
 
@@ -179,7 +199,7 @@ def privilege(privilege: Privilege):
             args: CommandParser.Args,
             opts: CommandParser.Opts,
             message: dict[str, Any],
-        ) -> AsyncGenerator[Response, None]:
+        ) -> AsyncGenerator[response_type, None]:
             if privilege is not None:
                 if not await sender.privileged:
                     raise UserNotPrivilegedException(
@@ -194,24 +214,27 @@ def privilege(privilege: Privilege):
 
 
 class command:
-    def __init__(self, fn=None, name=None):
+    def __init__(self, fn: command_func_type | None = None, name: str | None = None):
         self.fn = fn
         self.name = name
+
+        if name is None and fn is None:
+            raise ValueError("name or function must be provided") 
 
         if name is None:
             self.name = fn.__name__
 
-    def __call__(self, fn) -> Any:
+    def __call__(self, fn: command_func_type) -> command:
         self.fn = fn
         self.fn.__name__ = self.name
         return self
 
     @property
-    def description(self):
+    def description(self) -> str | None:
         return cleandoc(self.fn.__doc__) if self.fn.__doc__ else None
 
     @property
-    def syntax(self):
+    def syntax(self) -> str:
         optarg: Callable[[str], str] = lambda x: (
             " arg" if x in self.opts and self.opts[x] is not None else ""
         )
@@ -228,11 +251,11 @@ class command:
         return f"{self.name}"
 
     @property
-    def meta(self):
+    def meta(self) -> SubCommandConfig:
         return get_meta(self.fn)
 
     @property
-    def args(self):
+    def args(self) -> dict[str, Any]:
         return {
             arg.name: arg.type
             for arg in self.meta.args
@@ -240,7 +263,7 @@ class command:
         }
 
     @property
-    def opts(self):
+    def opts(self) -> dict[str, Any]:
         opts = {opt.opt: opt.type for opt in self.meta.opts}
 
         opts.update(
@@ -254,14 +277,14 @@ class command:
         return opts
 
     @property
-    def greedy(self):
+    def greedy(self) -> dict[str, Any]:
         return {arg.name: arg.type for arg in self.meta.args if arg.greedy}
 
     @property
-    def optional_args(self):
+    def optional_args(self) -> dict[str, Any]:
         return {arg.name: arg.type for arg in self.meta.args if arg.optional}
 
-    def __set_name__(self, owner, _):
+    def __set_name__(self, owner, _) -> None:
 
         if not issubclass(owner, PluginCommandMixin):
             raise TypeError(
@@ -297,7 +320,7 @@ class command:
             args: CommandParser.Args,
             opts: CommandParser.Opts,
             message: dict[str, Any],
-        ) -> Response | Iterable[Response]:
+        ) -> list[Response] | Iterable[Response] | Response:
             ZulipUser.set_client(self.client)
             self.logger.debug(
                 "%s is calling `%s %s` with args %s and opts %s",

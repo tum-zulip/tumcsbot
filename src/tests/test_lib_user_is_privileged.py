@@ -8,12 +8,16 @@ import unittest
 from unittest.mock import patch
 from typing import Any
 
-from tumcsbot.client import AsyncClient as Client
+from zulip import Client as ZulipClient
+from tumcsbot.client import AsyncClient
 from .test_client import asSync
+
+class Client(AsyncClient):
+    def __init__(self) -> None:
+        super().__init__(0, "unused", ZulipClient())
 
 @patch.object(Client, "__init__", lambda _: None)
 class UserPrivilegedTest(unittest.TestCase):
-
     @asSync
     async def test_invalid_user_data(self) -> None:
         ret: dict[str, Any] = {"result": "error"}

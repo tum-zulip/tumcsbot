@@ -18,12 +18,12 @@ from zulip import Client as ZulipClient
 from tumcsbot.lib import stream_names_equal, DB, Response, MessageType, Regex
 from tumcsbot.db import TableBase
 
+
 class PublicStreams(TableBase):
     __tablename__ = "PublicStreams"
 
     StreamName = Column(String, primary_key=True)
     Subscribed = Column(Boolean, nullable=False, default=False)
-
 
 
 class AsyncClient:
@@ -68,12 +68,15 @@ class AsyncClient:
 
     def __init__(self, id: int, ping: str, client: ZulipClient) -> None:
         self.id: int = id
-        self.ping: str = ping 
+        self.ping: str = ping
         self.ping_len: int = len(self.ping)
         self.register_params: dict[str, Any] = {}
         self._client: ZulipClient = client
-
     
+    @property
+    def base_url(self) -> str:
+        return self._client.base_url
+
     async def call_endpoint(
         self,
         url: str | None = None,
@@ -111,8 +114,10 @@ class AsyncClient:
             logging.warning("hit API rate limit, waiting for %f seconds...", secs)
             await asyncio.sleep(secs)
         return result
-    
-    async def render_message(self, request: dict[str, Any] | None = None) -> dict[str, Any]:
+
+    async def render_message(
+        self, request: dict[str, Any] | None = None
+    ) -> dict[str, Any]:
         """
         Example usage:
 
@@ -124,7 +129,7 @@ class AsyncClient:
             method="POST",
             request=request,
         )
-    
+
     async def get_streams(self, **request: Any) -> dict[str, Any]:
         """
         See examples/get-public-streams for example usage.
@@ -145,22 +150,22 @@ class AsyncClient:
             longpolling=True,
             request=request,
         )
-    
+
     async def events(
         self,
         event_types: list[str] | None = None,
         narrow: list[list[str]] | None = None,
         **kwargs: Any,
-    ): # todo: -> AsyncGenerator[Any, dict[str, Any]]
+    ):  # todo: -> AsyncGenerator[Any, dict[str, Any]]
         if narrow is None:
             narrow = []
 
         async def do_register() -> tuple[str, int]:
             while True:
                 if event_types is None:
-                    res = await self.register(None, None, **kwargs) 
+                    res = await self.register(None, None, **kwargs)
                 else:
-                    res = await self.register(event_types, narrow, **kwargs) 
+                    res = await self.register(event_types, narrow, **kwargs)
                 if "error" in res["result"]:
                     if self.verbose:
                         logging.error(f"Server returned error:\n{res['msg']}")
@@ -175,7 +180,9 @@ class AsyncClient:
                 queue_id, last_event_id = await do_register()
 
             try:
-                res = await self.get_events(queue_id=queue_id, last_event_id=last_event_id)  # Ensure this is adapted to be async if necessary
+                res = await self.get_events(
+                    queue_id=queue_id, last_event_id=last_event_id
+                )  # Ensure this is adapted to be async if necessary
             except Exception as e:
                 # Handle exceptions appropriately, including logging and sleeping
                 if self.verbose:
@@ -187,7 +194,9 @@ class AsyncClient:
                 # Handle various error cases, including server errors and bad event queue ids
                 print(f"Server returned error: {res.get('msg', 'Unknown error')}")
                 if res.get("code") == "BAD_EVENT_QUEUE_ID":
-                    queue_id = None  # Force re-registration if the event queue ID is bad
+                    queue_id = (
+                        None  # Force re-registration if the event queue ID is bad
+                    )
                 await asyncio.sleep(1)  # Prevent rapid re-request on error
                 continue
 
@@ -207,7 +216,9 @@ class AsyncClient:
         """
         if "apply_markdown" not in message_filters:
             message_filters["apply_markdown"] = False
-        return await self.call_endpoint(url="messages", method="GET", request=message_filters)
+        return await self.call_endpoint(
+            url="messages", method="GET", request=message_filters
+        )
 
     async def get_public_stream_names(self, use_db: bool = True) -> list[str]:
         """Get the names of all public streams.
@@ -302,7 +313,9 @@ class AsyncClient:
             request=request,
         )
 
-    async def get_user_ids_from_active_status(self, active: bool = True) -> list[int] | None:
+    async def get_user_ids_from_active_status(
+        self, active: bool = True
+    ) -> list[int] | None:
         """Get all user ids which are (de)activated."""
         return await self.get_user_ids_from_attribute("is_active", [active])
 
@@ -370,7 +383,12 @@ class AsyncClient:
             request=request,
         )
 
-    async def get_profile(self, request: dict[str, Any] | None = None) -> dict[str, Any]:
+    async def delete_message(self, message_id: int) -> dict[str, Any]:
+        return await self.call_endpoint(url=f"messages/{message_id}", method="DELETE")
+    
+    async def get_profile(
+        self, request: dict[str, Any] | None = None
+    ) -> dict[str, Any]:
         """
         Example usage:
 
@@ -434,16 +452,20 @@ class AsyncClient:
 
         if narrow is None:
             narrow = []
-        
+
         logging.debug("event_types: %s, narrow: %s", str(event_types), str(narrow))
-        request = dict(event_types=event_types, narrow=narrow, **self.register_params, **kwargs)
+        request = dict(
+            event_types=event_types, narrow=narrow, **self.register_params, **kwargs
+        )
 
         return await self.call_endpoint(
             url="register",
             request=request,
         )
 
-    async def deregister(self, queue_id: str, timeout: float | None = None) -> dict[str, Any]:
+    async def deregister(
+        self, queue_id: str, timeout: float | None = None
+    ) -> dict[str, Any]:
         """
         Example usage:
 
@@ -460,13 +482,13 @@ class AsyncClient:
             request=request,
             timeout=timeout,
         )
-    
+
     async def send_message(self, message_data: dict[str, Any]) -> dict[str, Any]:
         return await self.call_endpoint(
             url="messages",
             request=message_data,
         )
-    
+
     async def add_reaction(self, reaction_data: dict[str, Any]) -> dict[str, Any]:
         """
         Example usage:
@@ -484,7 +506,7 @@ class AsyncClient:
             method="POST",
             request=reaction_data,
         )
-    
+
     async def remove_reaction(self, reaction_data: dict[str, Any]) -> dict[str, Any]:
         """
         Example usage:
@@ -501,6 +523,12 @@ class AsyncClient:
             url="messages/{}/reactions".format(reaction_data["message_id"]),
             method="DELETE",
             request=reaction_data,
+        )
+    
+    async def delete_stream(self, stream_id: int) -> dict[str, Any]:
+        return await self.call_endpoint(
+            url=f"streams/{stream_id}",
+            method="DELETE",
         )
 
     async def send_response(self, response: Response) -> dict[str, Any]:
@@ -528,7 +556,7 @@ class AsyncClient:
 
         for response in responses:
             await self.send_responses(response)
-    
+
     async def get_stream_id(self, stream: str) -> dict[str, Any]:
         """
         Example usage: await client.get_stream_id('devel')
@@ -540,7 +568,7 @@ class AsyncClient:
             method="GET",
             request=None,
         )
-    
+
     async def get_subscribers(self, **request: Any) -> dict[str, Any]:
         """
         Example usage: await client.get_subscribers(stream='devel')
@@ -573,9 +601,9 @@ class AsyncClient:
 
         Return true on success or false otherwise.
         """
-        if await self.private_stream_exists(from_stream) or await self.private_stream_exists(
-            to_stream
-        ):
+        if await self.private_stream_exists(
+            from_stream
+        ) or await self.private_stream_exists(to_stream):
             return False
 
         subs: dict[str, Any] = await self.get_subscribers(stream=from_stream)
@@ -616,7 +644,9 @@ class AsyncClient:
             filter_active=filter_active,
         )[0]
 
-    async def add_subscriptions(self, streams: Iterable[dict[str, Any]], **kwargs: Any) -> dict[str, Any]:
+    async def add_subscriptions(
+        self, streams: Iterable[dict[str, Any]], **kwargs: Any
+    ) -> dict[str, Any]:
         request = dict(subscriptions=streams, **kwargs)
 
         return await self.call_endpoint(
@@ -664,16 +694,20 @@ class AsyncClient:
                 return (True, None)
 
         if filter_active:
-            active_user_ids: list[int] | None = await self.get_user_ids_from_active_status()
+            active_user_ids: list[int] | None = (
+                await self.get_user_ids_from_active_status()
+            )
             if active_user_ids is None:
                 logging.error("cannot retrieve active user ids")
                 return (False, "cannot retrieve active user ids")
             user_ids = list(set(user_ids) & set(active_user_ids))
 
         subscriptions: list[dict[str, str]] = [
-            {"name": name}
-            if description is None
-            else {"name": name, "description": description}
+            (
+                {"name": name}
+                if description is None
+                else {"name": name, "description": description}
+            )
             for name, description in streams
         ]
 
@@ -704,7 +738,9 @@ class AsyncClient:
             None if success else ("the following errors occurred: " + ",".join(errs)),
         )
 
-    async def user_is_privileged(self, user_id: int, allow_moderator: bool = False) -> bool:
+    async def user_is_privileged(
+        self, user_id: int, allow_moderator: bool = False
+    ) -> bool:
         """Check whether a user is allowed to perform privileged commands.
 
         Arguments:
@@ -769,7 +805,9 @@ class AsyncClient:
         return int(match.groupdict()["id"])
 
     async def get_stream_by_id(self, stream_id: int) -> dict[str, Any] | None:
-        stream_result = await self.call_endpoint(url=f"/streams/{stream_id}", method="GET")
+        stream_result = await self.call_endpoint(
+            url=f"/streams/{stream_id}", method="GET"
+        )
 
         if stream_result["result"] != "success":
             return None

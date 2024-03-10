@@ -1,10 +1,13 @@
 from os.path import isabs
 from contextlib import contextmanager
+from typing import Generator
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 import sqlalchemy.orm
 
-TableBase = sqlalchemy.orm.declarative_base()
+TableBase = sqlalchemy.orm.declarative_base() # type: ignore
+
+Session = sqlalchemy.orm.Session
 
 class DB:
     """Simple wrapper class to conveniently access a sqlite database."""
@@ -37,7 +40,7 @@ class DB:
 
     @contextmanager
     @staticmethod
-    def session():
+    def session() -> Generator[Session, None, None]:
         SessionLocal = sessionmaker(bind=DB.engine)
         session = SessionLocal()
 

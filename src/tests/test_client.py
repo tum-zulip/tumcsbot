@@ -7,11 +7,11 @@ import asyncio
 from functools import wraps
 import unittest
 
-from typing import Any, ClassVar
+from typing import Any, Callable, ClassVar
 
 from tumcsbot.client import AsyncClient as TUMCSBotClient
 
-def asSync(func):
+def asSync(func: Callable[[Any], Any]) -> Callable[[Any], Any]:
     @wraps(func)
     def wrapper(*args, **kwargs):
         loop = asyncio.new_event_loop()

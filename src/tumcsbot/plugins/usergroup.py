@@ -12,16 +12,28 @@ change the alert words and specify the emojis to use for the reactions.
 
 # TODO: replacement for zulip usergroups. Replace as soon as api allows bot requests for usergroups
 
-from typing import Any, AsyncGenerator, Iterable
+from typing import Any, AsyncGenerator
 from sqlalchemy import Column, Integer, PrimaryKeyConstraint, String, ForeignKey
 import sqlalchemy
 from sqlalchemy.orm import relationship, Mapped
 
 from tumcsbot.lib import Response
 from tumcsbot.command_parser import CommandParser
-from tumcsbot.db import DB, TableBase
-from tumcsbot.plugin import PluginCommandMixin, Plugin
-from tumcsbot.plugin_decorators import *
+from tumcsbot.db import Session, TableBase
+from tumcsbot.plugin import PluginCommandMixin, Plugin, Privilege, ZulipUser
+from tumcsbot.plugin_decorators import (
+    DMError,
+    DMMessage,
+    DMResponse,
+    PartialError,
+    PartialSuccess,
+    UserNotPrivilegedException,
+    command,
+    arg,
+    opt,
+    privilege,
+    response_type,
+)
 
 
 class UserGroup(TableBase):
@@ -75,11 +87,11 @@ class Usergroup(PluginCommandMixin, Plugin):
     async def _list(
         self,
         sender: ZulipUser,
-        session,
+        session: Session,
         args: CommandParser.Args,
         opts: CommandParser.Opts,
-        message: dict[str, Any],
-    ) -> AsyncGenerator[Response, None]:
+        _message: dict[str, Any],
+    ) -> AsyncGenerator[response_type, None]:
         """
         List user groups
         """
@@ -93,20 +105,21 @@ class Usergroup(PluginCommandMixin, Plugin):
                 raise DMError(f"No user groups found")
 
             for group in groups:
-                yield DMResponse(
-                    f"## {group.name}:\n"
-                    + ", ".join(
-                        [
-                            await ZulipUser(member.uid).mention_silent
-                            for member in group.members
-                        ]
-                        or ["No members"]
-                    )
-                )
+                members = [
+                    await ZulipUser(int(member.uid)).mention_silent
+                    for member in group.members
+                ] or ["No members"]
+
+                yield DMResponse(f"## {group.name}:\n" + ", ".join(members))
 
         else:
             if await sender.id != await args.user.id and not await sender.privileged:
-                raise UserNotPrivilegedException("You can only list your own groups.")
+                # todo: normal exceptions
+                raise UserNotPrivilegedException(
+                    "You can only list your own groups.",
+                    Privilege.ADMIN,
+                    "usergroup list",
+                )
 
             groups = await Usergroup.get_groups_for_user(session, args.user)
 
@@ -129,11 +142,11 @@ class Usergroup(PluginCommandMixin, Plugin):
     async def add(
         self,
         sender: ZulipUser,
-        session,
+        session: Session,
         args: CommandParser.Args,
-        opts: CommandParser.Opts,
-        message: dict[str, Any],
-    ):
+        _opts: CommandParser.Opts,
+        _message: dict[str, Any],
+    ) -> AsyncGenerator[response_type, None]:
         """
         Add users to group.
         """
@@ -148,7 +161,7 @@ class Usergroup(PluginCommandMixin, Plugin):
                 )
                 yield PartialSuccess(await user.mention_silent)
             except DMError as e:
-                yield PartialError(e.message)
+                yield PartialError(str(e))
 
     @command
     @privilege(Privilege.ADMIN)
@@ -156,12 +169,12 @@ class Usergroup(PluginCommandMixin, Plugin):
     @arg("description", str, "The description of the user group.", optional=True)
     async def creat(
         self,
-        sender: ZulipUser,
-        session,
+        _sender: ZulipUser,
+        session: Session,
         args: CommandParser.Args,
-        opts: CommandParser.Opts,
-        message: dict[str, Any],
-    ) -> AsyncGenerator[Response, None]:
+        _opts: CommandParser.Opts,
+        _message: dict[str, Any],
+    ) -> AsyncGenerator[response_type, None]:
         """
         Create an empty user group
         """
@@ -187,11 +200,11 @@ class Usergroup(PluginCommandMixin, Plugin):
     async def remove(
         self,
         sender: ZulipUser,
-        session,
+        session: Session,
         args: CommandParser.Args,
         opts: CommandParser.Opts,
-        message: dict[str, Any],
-    ):
+        _message: dict[str, Any],
+    ) -> AsyncGenerator[response_type, None]:
         """
         remove user from group
         """
@@ -203,7 +216,10 @@ class Usergroup(PluginCommandMixin, Plugin):
             if not opts.s:
                 # notify all members
                 for user in await Usergroup.get_group_members(session, args.group):
-                    yield DMMessage(user, f"Hey {await user.mention_silent},\nYou have been removed from the usergroup {args.group} by {s_mention}, because the group has been deleted.")
+                    yield DMMessage(
+                        user,
+                        f"Hey {await user.mention_silent},\nYou have been removed from the usergroup {args.group} by {s_mention}, because the group has been deleted.",
+                    )
                 await Usergroup.delete_group(session, args.group)
                 yield DMResponse(f"User group `{args.group}` has been deleted")
         else:
@@ -224,11 +240,11 @@ class Usergroup(PluginCommandMixin, Plugin):
     async def leave(
         self,
         sender: ZulipUser,
-        session,
+        session: Session,
         args: CommandParser.Args,
-        opts: CommandParser.Opts,
-        message: dict[str, Any],
-    ):
+        _opts: CommandParser.Opts,
+        _message: dict[str, Any],
+    ) -> AsyncGenerator[response_type, None]:
         """
         leave a usergroup
         """
@@ -236,11 +252,11 @@ class Usergroup(PluginCommandMixin, Plugin):
         yield DMResponse(f"You have left the usergroup `{args.group}`")
 
     @staticmethod
-    def get_groups(session) -> list[UserGroup]:
+    def get_groups(session: Session) -> list[UserGroup]:
         return session.query(UserGroup).all()
 
     @staticmethod
-    async def create_group(session, name: str, description: str):
+    async def create_group(session: Session, name: str, description: str) -> None:
         """
         Create a new user group.
 
@@ -261,10 +277,10 @@ class Usergroup(PluginCommandMixin, Plugin):
             session.commit()
         except sqlalchemy.exc.IntegrityError as e:
             session.rollback()
-            raise DMError(f"Could not create group '{name}'. {str(e)}")
+            raise DMError(f"Could not create group '{name}'. {str(e)}") from e
 
     @staticmethod
-    async def delete_group(session, identifier: int | str) -> None:
+    async def delete_group(session: Session, identifier: int | str) -> None:
         """
         Delete a user group from the database.
 
@@ -284,11 +300,11 @@ class Usergroup(PluginCommandMixin, Plugin):
             session.commit()
         except sqlalchemy.exc.IntegrityError as e:
             session.rollback()
-            raise DMError(f"Could not delete group '{g.name}'. {str(e)}")
+            raise DMError(f"Could not delete group '{g.name}'. {str(e)}") from e
 
     @staticmethod
     async def remove_user_from_group(
-        session, user: ZulipUser, group_identifier: int | str
+        session: Session, user: ZulipUser, group_identifier: int | str
     ) -> None:
         """
         Remove a user from a user group.
@@ -307,9 +323,11 @@ class Usergroup(PluginCommandMixin, Plugin):
         uid = await user.id
         g = await Usergroup.group_by_identifier(session, group_identifier)
 
-        relation = session.query(UserGroupMember).filter(
-            UserGroupMember.uid == uid
-        ).filter(UserGroupMember.gid == g.id)
+        relation = (
+            session.query(UserGroupMember)
+            .filter(UserGroupMember.uid == uid)
+            .filter(UserGroupMember.gid == g.id)
+        )
 
         if relation.first() is None:
             raise DMError(f"{await user.mention_silent} is not in usergroup '{g.name}'")
@@ -319,7 +337,7 @@ class Usergroup(PluginCommandMixin, Plugin):
 
     @staticmethod
     async def add_user_to_group(
-        session, user: ZulipUser, group_identifier: int | str
+        session: Session, user: ZulipUser, group_identifier: int | str
     ) -> None:
         """
         Add a user to a group.
@@ -342,10 +360,10 @@ class Usergroup(PluginCommandMixin, Plugin):
             session.rollback()
             raise DMError(
                 f"Could add {await user.mention_silent} usergroup '{group_identifier}'. Maybe the user is already in the group?"
-            )
+            ) from e
 
     @staticmethod
-    async def get_groups_for_user(session, user: ZulipUser) -> list[UserGroup]:
+    async def get_groups_for_user(session: Session, user: ZulipUser) -> list[UserGroup]:
         """
         Retrieve a list of UserGroup objects for a given user.
 
@@ -364,7 +382,7 @@ class Usergroup(PluginCommandMixin, Plugin):
         )
 
     @staticmethod
-    async def group_by_identifier(session, identifier: int | str) -> UserGroup:
+    async def group_by_identifier(session: Session, identifier: int | str) -> UserGroup:
         """
         Retrieve a UserGroup object based on the given identifier.
 
@@ -393,7 +411,9 @@ class Usergroup(PluginCommandMixin, Plugin):
         return group
 
     @staticmethod
-    async def get_group_members(session, identifier: int | str) -> list[ZulipUser]:
+    async def get_group_members(
+        session: Session, identifier: int | str
+    ) -> list[ZulipUser]:
         """
         Get the members of a user group.
 
@@ -405,4 +425,4 @@ class Usergroup(PluginCommandMixin, Plugin):
             A list of ZulipUser objects representing the members of the user group.
         """
         g = await Usergroup.group_by_identifier(session, identifier)
-        return map(lambda m: ZulipUser(m.uid), g.members)
+        return [ZulipUser(int(m.uid)) for m in g.members]

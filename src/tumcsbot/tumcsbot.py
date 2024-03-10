@@ -17,10 +17,11 @@ import signal
 from graphlib import TopologicalSorter
 import sys
 from typing import Any, Callable, Iterable, Type, cast
+from sqlalchemy import Boolean, Column, String
 
 from zulip import Client as ZulipClient
 from tumcsbot import lib
-from tumcsbot.db import DB
+from tumcsbot.db import DB, TableBase
 from tumcsbot.client import AsyncClient
 from tumcsbot.plugin import (
     Event,
@@ -35,52 +36,39 @@ class EventQueue(asyncio.Queue[Event]):
     pass
 
 
+class PlublicStreams(TableBase):
+    __tablename__ = "PublicStreams"
+
+    StreamName = Column(String, primary_key=True)
+    Subscribed = Column(Boolean, nullable=False)
+
 class _RootClient(AsyncClient):
     """Enhanced Client class with additional functionality.
 
     Particularly, this client initializes the Client's database tables.
     """
 
+    @staticmethod
     async def from_sync_client(*args: Any, **kwargs: Any) -> _RootClient:
         client = ZulipClient(*args, **kwargs)
         profile = client.get_profile()
-        return AsyncClient(profile["user_id"], f"@**{profile['full_name']}**", client)
+        client = _RootClient(profile["user_id"], f"@**{profile['full_name']}**", client)
+        await client.init_db()
+        return client
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
-        self._init_db()
 
-    def _init_db(self) -> None:
+
+    async def init_db(self) -> None:
         """Initialize some tables of the database."""
-        self._db.checkout_table(
-            "PublicStreams",
-            "(StreamName text primary key, Subscribed integer not null)",
-        )
-        # Get previous data.
-        old_streams: dict[str, int] = dict(
-            cast(
-                Iterable[tuple[str, int]],
-                self._db.execute("select StreamName, Subscribed from PublicStreams"),
-            )
-        )
-        # Clear table to prevent deprecated information.
-        self._db.execute("delete from PublicStreams")
 
-        # Fill in current data.
-        stream_names: list[str] = self.get_public_stream_names(use_db=False)
-        for stream_name in stream_names:
-            subscribed: bool = False
-            # We do not compare the streams using lib.stream_names_equal here,
-            # because we store the stream names in the database as we receive
-            # them from Zulip. There is no user interaction involved.
-            if stream_name in old_streams and old_streams[stream_name] == 1:
-                subscribed = True
-            self._db.execute(
-                "insert or ignore into PublicStreams values (?, ?)",
-                stream_name,
-                subscribed,
-                commit=True,
-            )
+        stream_names = await self.get_public_stream_names(use_db=False)
+        with DB.session() as session:
+            for entry in session.query(PlublicStreams).all():
+                if not str(entry.StreamName) in stream_names:
+                    session.delete(entry)
+            session.commit()
 
 
 class TumCSBot:
@@ -168,33 +156,6 @@ class TumCSBot:
 
         # Get events to listen for.
         self.events = get_zulip_events_from_plugins(plugin_classes)
-        # Init the Zulip event listener.
-        # self._event_listener: _ZulipEventListener = _ZulipEventListener(
-        #     zuliprc, self.events, self.event_queue
-        # )
-
-    async def distribute_event(self, event: Event) -> None:
-        """Distribute a given event to the appropriate plugins."""
-        if event.dest is not None:
-            # We need special handling for the start/stop events because
-            # they operate on the thread/process workers.
-            if event.dest in self.plugins:
-                if event.type == EventType.STOP:
-                    self.stopPlugin(event.dest)
-                else:
-                    await self.plugins[event.dest].push_event(event)
-            elif event.dest in self.plugins_stopped:
-                if event.type == EventType.START:
-                    self.restartPlugin(event.dest)
-                else:
-                    logging.warning(
-                        "non-start event ignored for stopped plugin: %s", event.dest
-                    )
-            else:
-                logging.error("event.dest unknown: %s", event.dest)
-        else:
-            for plugin in self.plugins.values():
-                await plugin.push_event(event)
 
     # def exit_handler(self) -> None:
     #     """Stop the main loop if necessary."""
@@ -244,6 +205,7 @@ class TumCSBot:
                 self.stopped = True
                 break
 
+            # todo: handle other event types
             if event.type == EventType.ZULIP:
                 if event.data["type"] == "heartbeat":
                     continue
