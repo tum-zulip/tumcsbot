@@ -16,13 +16,13 @@ import logging
 import signal
 from graphlib import TopologicalSorter
 import sys
-from typing import Any, Callable, Iterable, Type, cast
+from typing import Any, Iterable, Type
 from sqlalchemy import Boolean, Column, String
 
 from zulip import Client as ZulipClient
 from tumcsbot import lib
 from tumcsbot.db import DB, TableBase
-from tumcsbot.client import AsyncClient
+from tumcsbot.client import AsyncClient, PlublicStreams
 from tumcsbot.plugin import (
     Event,
     Plugin,
@@ -36,12 +36,6 @@ class EventQueue(asyncio.Queue[Event]):
     pass
 
 
-class PlublicStreams(TableBase):
-    __tablename__ = "PublicStreams"
-
-    StreamName = Column(String, primary_key=True)
-    Subscribed = Column(Boolean, nullable=False)
-
 class _RootClient(AsyncClient):
     """Enhanced Client class with additional functionality.
 
@@ -49,11 +43,10 @@ class _RootClient(AsyncClient):
     """
 
     @staticmethod
-    async def from_sync_client(*args: Any, **kwargs: Any) -> _RootClient:
+    def from_sync_client(*args: Any, **kwargs: Any) -> _RootClient:
         client = ZulipClient(*args, **kwargs)
         profile = client.get_profile()
         client = _RootClient(profile["user_id"], f"@**{profile['full_name']}**", client)
-        await client.init_db()
         return client
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
@@ -84,26 +77,10 @@ class TumCSBot:
     logfile       use LOGFILE for logging output
     """
 
-    async def from_sync_client(
-        zuliprc: str,
-        db_path: str,
-        debug: bool = False,
-        logfile: str | None = None,
-    ) -> TumCSBot:
-        client = await _RootClient.from_sync_client(config_file=zuliprc)
-        return TumCSBot(
-            zuliprc=zuliprc,
-            db_path=db_path,
-            client=client,
-            debug=debug,
-            logfile=logfile,
-        )
-
     def __init__(
         self,
         zuliprc: str,
         db_path: str,
-        client: _RootClient,
         debug: bool = False,
         logfile: str | None = None,
     ) -> None:
@@ -132,7 +109,9 @@ class TumCSBot:
 
         # Init own Zulip client which also inits the global DB tables for all
         # Zulip client objects.
-        self.client = client
+        self.client = _RootClient.from_sync_client(config_file=zuliprc)
+
+        self.loop = asyncio.get_event_loop()
 
         # Init the event queue. It is not a multiprocessing queue because the
         # communication with the process plugins goes over their queues and a
@@ -145,8 +124,8 @@ class TumCSBot:
         logging.debug("start queue forward worker")
 
         # Cleanup properly on SIGTERM and SIGINT.
-        # signal.signal(signal.SIGTERM, self.sigterm_handler)
-        # signal.signal(signal.SIGINT, self.sigterm_handler)
+        for s in [signal.SIGINT, signal.SIGTERM]:
+            self.loop.add_signal_handler(s, lambda s=s: self.loop.create_task(self.stop()))
 
         # Get the plugin classes and start the plugins in correct dependency order.
         plugin_classes: Iterable[Type[Plugin]] = lib.get_classes_from_path(
@@ -157,75 +136,101 @@ class TumCSBot:
         # Get events to listen for.
         self.events = get_zulip_events_from_plugins(plugin_classes)
 
-    # def exit_handler(self) -> None:
-    #     """Stop the main loop if necessary."""
-    #     logging.debug("exit handler")
-    #
-    #     if not self.stopped:
-    #         self.stopped = True
-    #         await self.event_queue.put(Event._empty_event("", ""))
+    def run(self) -> None:
+        """Run the bot."""
+        logging.info("start main loop")
+        try:
+            self.loop.create_task(self.the_loop())
+            self.loop.run_forever()
+        finally:
+            logging.info("stop main loop")
+            self.loop.close()
 
-    #     def restartPlugin(self, name: str) -> None:
-    #         """Restart a plugin given its name."""
-    #         logging.debug("restart plugin %s ...", name)
-    #         plugin: Plugin = self.plugins_stopped[name]
-    #         plugin.start()
-    #         self.plugins[name] = plugin
-    #         del self.plugins_stopped[name]
 
-    async def run(self) -> None:
+    def clear_queue(self) -> None:
+        """Clear the event queue."""
+        while not self.event_queue.empty():
+            self.event_queue.get_nowait()
+            self.event_queue.task_done()
+        
+    async def stop(self) -> None:
+        """Stop the main loop"""
+
+        if not self.stopped:
+            logging.debug("clear queue: %s events dropped", self.event_queue.qsize())
+            self.clear_queue()
+
+            tasks = [t for t in asyncio.all_tasks() if t is not asyncio.current_task()]
+            logging.debug("cancel %s tasks", len(tasks))
+            [task.cancel() for task in tasks]
+
+            logging.debug("stop client")
+            self.client.stop()
+
+            logging.debug("wait for tasks to finish")
+            await asyncio.gather(*tasks, return_exceptions=True)
+            self.loop.stop()
+
+            self.stopped = True
+
+    async def _event_listener(self) -> None:
+        logging.debug("waiting for events ...")
+        async for event_data in self.client.events():
+            logging.debug("received event data %s", str(event_data))
+            await self.event_queue.put(Event(sender="_root", type=EventType.ZULIP, data=event_data))
+            logging.debug("waiting for events ...")
+
+
+    async def the_loop(self) -> None:
         """Run the central event queue.
 
         This queue does not only get the events from the event listener,
         but also loopback data from the plugins.
         """
 
+        logging.info("start bot")
+
+        logging.debug("init db")
+        await self.client.init_db()
+
         logging.debug("start event listener, listening on events: %s", str(self.events))
-        logging.debug("start central queue")
+        self.loop.create_task(self._event_listener())
 
-        async def _event_listener() -> None:
-            logging.debug("waiting for events ...")
-            async for event_data in self.client.events():
-                logging.debug("received event data %s", str(event_data))
-                await self.event_queue.put(Event(sender="_root", type=EventType.ZULIP, data=event_data))
-                logging.debug("waiting for events ...")
-
-        _ = asyncio.create_task(_event_listener())
         
-        tasks: list[asyncio.Task] = []
-        while True:
-            logging.debug("waiting for event ...")
-            event = await self.event_queue.get()
-            logging.debug("received event (%s) %s", id(event), str(event))
-            tasks = [task for task in tasks if not task.done()]
+        logging.debug("start central queue")
+        # todo: limit queue size
+        try:
+            while True:
+                logging.debug("waiting for event ...")
+                event = await self.event_queue.get()
+                logging.debug("received event (%s) %s", id(event), str(event))
 
-            if self.stopped or event.type == EventType._EMPTY:
-                if event.type == EventType._EMPTY and event.sender == "restart":
+                if event.type == EventType.RESTART:
+                    logging.debug("restart event received")
                     self.restart = True
-                self.stopped = True
-                break
+                    event.type = EventType.STOP
 
-            # todo: handle other event types
-            if event.type == EventType.ZULIP:
-                if event.data["type"] == "heartbeat":
-                    continue
-                try:
-                    event.data = self.zulip_event_preprocess(event.data)
-                except Exception as exc:
-                    logging.exception(exc)
-                    continue
-                
-                for plugin in self.plugins.values():
-                    if plugin.is_responsible(event):
-                        logging.debug("push event to plugin %s", plugin.plugin_name())
-                        tasks.append(asyncio.create_task(plugin.handle_event(event)))
+                if self.stopped or event.type == EventType.STOP:
+                    break
 
-        logging.debug("stopping plugins ...")
-        for plugin_name in self.plugins:
-            self.stopPlugin(plugin_name, updatePlugins_dicts=False)
+                # todo: handle other event types
+                if event.type == EventType.ZULIP:
+                    if event.data["type"] == "heartbeat":
+                        continue
+                    try:
+                        event.data = self.zulip_event_preprocess(event.data)
+                    except Exception as exc:
+                        logging.exception(exc)
+                        continue
+                    
+                    for plugin in self.plugins.values():
+                        if plugin.is_responsible(event):
+                            logging.debug("push event to plugin %s", plugin.plugin_name())
+                            self.loop.create_task(plugin.handle_event(event))
+        except asyncio.CancelledError:
+            pass
 
-    def sigterm_handler(self, *_: Any) -> None:
-        self.exit_handler()
+        logging.debug("graceful exit")
 
     def startPlugins(
         self, plugin_classes: Iterable[Type[Plugin]], zuliprc: str, logging_level: int

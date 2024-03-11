@@ -12,9 +12,11 @@ from zulip import Client as ZulipClient
 from tumcsbot.client import AsyncClient
 from .test_client import asSync
 
+
 class Client(AsyncClient):
     def __init__(self) -> None:
         super().__init__(0, "unused", ZulipClient())
+
 
 @patch.object(Client, "__init__", lambda _: None)
 class UserPrivilegedTest(unittest.TestCase):
@@ -42,8 +44,8 @@ class UserPrivilegedTest(unittest.TestCase):
             ret: dict[str, Any] = {"result": "success", "user": d}
             with patch.object(Client, "get_user_by_id", return_value=ret):
                 assert await Client().get_user_by_id(0) == ret
-                self.assertFalse(await Client().user_is_privileged(0))  
-    
+                self.assertFalse(await Client().user_is_privileged(0))
+
     @asSync
     async def test_privilege(self) -> None:
         data: list[dict[str, Any]] = [{"role": 100}, {"role": 200}]
@@ -60,4 +62,6 @@ class UserPrivilegedTest(unittest.TestCase):
             ret: dict[str, Any] = {"result": "success", "user": d}
             with patch.object(Client, "get_user_by_id", return_value=ret):
                 assert await Client().get_user_by_id(0) == ret
-                self.assertTrue(await Client().user_is_privileged(0, allow_moderator=True))
+                self.assertTrue(
+                    await Client().user_is_privileged(0, allow_moderator=True)
+                )

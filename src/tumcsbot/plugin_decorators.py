@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from inspect import cleandoc
 
 from tumcsbot.command_parser import CommandParser
+from tumcsbot.db import Session
 from tumcsbot.lib import Response
 from tumcsbot.plugin import (
     ArgConfig,
@@ -125,7 +126,7 @@ def arg(
         async def wrapper(
             self,
             sender: ZulipUser,
-            session,
+            session: Session,
             args: CommandParser.Args,
             opts: CommandParser.Opts,
             message: dict[str, Any],
@@ -166,7 +167,7 @@ def opt(
         async def wrapper(
             self,
             sender: ZulipUser,
-            session,
+            session: Session,
             args: CommandParser.Args,
             opts: CommandParser.Opts,
             message: dict[str, Any],
@@ -195,7 +196,7 @@ def privilege(privilege: Privilege) -> command_decorator_type:
         async def wrapper(
             self,
             sender: ZulipUser,
-            session,
+            session: Session,
             args: CommandParser.Args,
             opts: CommandParser.Opts,
             message: dict[str, Any],
@@ -216,18 +217,24 @@ def privilege(privilege: Privilege) -> command_decorator_type:
 class command:
     def __init__(self, fn: command_func_type | None = None, name: str | None = None):
         self.fn = fn
-        self.name = name
+        self._name = name
 
         if name is None and fn is None:
             raise ValueError("name or function must be provided") 
 
         if name is None:
-            self.name = fn.__name__
+            self._name = fn.__name__
 
     def __call__(self, fn: command_func_type) -> command:
         self.fn = fn
         self.fn.__name__ = self.name
         return self
+    
+    @property
+    def name(self) -> str:
+        if self._name is None:
+            raise ValueError("name is not set")
+        return self._name
 
     @property
     def description(self) -> str | None:
@@ -382,8 +389,9 @@ class command:
                         responses.append(response)
             except StopIteration:
                 pass
-            except UserNotPrivilegedException as upe:
-                return Response.privilege_excpetion(upe.message, upe.description)
+            except UserNotPrivilegedException as e:
+                what = f"You don't have sufficient privileges to execute the command `{outer_self.name}`: {str(e)}"
+                return Response.privilege_excpetion(message, what)
             except ZulipUserNotFound as e:
                 return Response.build_message(
                     message,
@@ -422,22 +430,5 @@ class command:
 
 
 class UserNotPrivilegedException(Exception):
-    def __init__(self, msg, required_privilege: Privilege, command_name: str) -> None:
-        text = cleandoc(
-            """
-             You don't have sufficient privileges to execute the command `{}`.
-             This command requires at least {} rights.
- 
-            """
-        )
-        self._description = text.format(command_name, required_privilege)
-        self._message = msg
-        super().__init__(self._description)
+    pass
 
-    @property
-    def message(self):
-        return self._message
-
-    @property
-    def description(self):
-        return self._description

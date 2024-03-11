@@ -17,7 +17,6 @@ PluginCommandMixin   Mixin class tailored for interactive commands.
 """
 
 from __future__ import annotations
-import asyncio
 from dataclasses import asdict, dataclass, field
 from enum import Enum
 from inspect import cleandoc
@@ -25,8 +24,6 @@ import json
 import logging
 from abc import ABC, abstractmethod
 from typing import Any, Callable, Final, Iterable, Type, final
-
-import sqlalchemy
 
 from tumcsbot.client import AsyncClient
 from tumcsbot.lib import LOGGING_FORMAT, Regex, Response, StrEnum
@@ -46,13 +43,11 @@ class PluginTable(TableBase):
 
 @final
 class EventType(StrEnum):
-    GET_USAGE = "get_usage"
-    RET_USAGE = "ret_usage"
-    RELOAD = "reload"
-    START = "start"
+    # todo: GET_USAGE = "get_usage"
+    # todo: RET_USAGE = "ret_usage"
     STOP = "stop"
     ZULIP = "zulip"
-    _EMPTY = "_empty"
+    RESTART = "restart"
 
 
 @final
@@ -97,20 +92,16 @@ class Event:
         )
 
     @classmethod
-    def _empty_event(cls, sender: str, dest: str) -> "Event":
-        return cls(sender, type=EventType._EMPTY, dest=dest)
-
-    @classmethod
-    def reload_event(cls, sender: str, dest: str) -> "Event":
-        return cls(sender, type=EventType.RELOAD, dest=dest)
-
-    @classmethod
-    def start_event(cls, sender: str, dest: str) -> "Event":
-        return cls(sender, type=EventType.START, dest=dest)
-
-    @classmethod
-    def stop_event(cls, sender: str, dest: str) -> "Event":
+    def stop_event(cls, sender: str, dest: str | None = None) -> Event:
         return cls(sender, type=EventType.STOP, dest=dest)
+    
+    @classmethod
+    def zulip_event(cls, sender: str, data: Any, dest: str | None = None, reply_to: str | None = None) -> Event:
+        return cls(sender, type=EventType.ZULIP, data=data, dest=dest, reply_to=reply_to)
+    
+    @classmethod
+    def restart_event(cls, sender: str, dest: str | None = None) -> Event:
+        return cls(sender, type=EventType.RESTART, dest=dest)
 
 
 @final
@@ -155,7 +146,7 @@ class Plugin(ABC):
     # List of plugins which have to be loaded before this plugin.
     dependencies: list[str] = []
     # List of events this plugin is responsible for.
-    events: list[EventType] = [EventType.RELOAD, EventType.STOP, EventType.ZULIP]
+    events: list[EventType] = [EventType.RESTART, EventType.STOP, EventType.ZULIP]
     # List of Zulip events this plugin is responsible for.
     # See https://zulip.com/api/get-events.
     zulip_events: list[str] = []
@@ -300,29 +291,29 @@ class Privilege(Enum):
     MODERATOR = 2
     ADMIN = 3
 
-    def __ge__(self, other: Privilege) -> bool:
+    def __ge__(self, other: object) -> bool:
         if not isinstance(other, Privilege):
-            raise ValueError(f"Cannot compare Privilege with {type(other)}")
+            raise TypeError(f"cannot compare {type(self)} with {type(other)}")
         return self.value >= other.value
 
-    def __gt__(self, other: Privilege) -> bool:
+    def __gt__(self, other: object) -> bool:
         if not isinstance(other, Privilege):
-            raise ValueError(f"Cannot compare Privilege with {type(other)}")
+            raise TypeError(f"cannot compare {type(self)} with {type(other)}")
         return self.value > other.value
 
-    def __le__(self, other: Privilege) -> bool:
+    def __le__(self, other: object) -> bool:
         if not isinstance(other, Privilege):
-            raise ValueError(f"Cannot compare Privilege with {type(other)}")
+            raise TypeError(f"cannot compare {type(self)} with {type(other)}")
         return self.value <= other.value
 
-    def __lt__(self, other: Privilege) -> bool:
+    def __lt__(self, other: object) -> bool:
         if not isinstance(other, Privilege):
-            raise ValueError(f"Cannot compare Privilege with {type(other)}")
+            raise TypeError(f"cannot compare {type(self)} with {type(other)}")
         return self.value < other.value
 
-    def __eq__(self, other: Privilege) -> bool:
+    def __eq__(self, other: object) -> bool:
         if not isinstance(other, Privilege):
-            raise ValueError(f"Cannot compare Privilege with {type(other)}")
+            raise TypeError(f"cannot compare {type(self)} with {type(other)}")
         return self.value == other.value
 
     @staticmethod
@@ -466,7 +457,7 @@ class PluginCommandMixin(Plugin):
     # The events this command would like to receive, defaults to
     # messages.
     zulip_events = Plugin.zulip_events + ["message"]
-    events = Plugin.events + [EventType.GET_USAGE]
+    # todo: usage? events = Plugin.events + 
 
     # The command parser.
     _tumcs_bot_command_parser: CommandParser = CommandParser()
@@ -491,7 +482,7 @@ class PluginCommandMixin(Plugin):
                     syntax=syntax,
                     description=description,
                     config=json.dumps(asdict(self._tumcs_bot_commands), default=str),
-                )
+                ) 
             )
             session.commit()
 

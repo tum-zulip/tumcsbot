@@ -6,25 +6,27 @@
 """Wrapper around Zulip's Client class."""
 from __future__ import annotations
 import asyncio
+from concurrent.futures import ThreadPoolExecutor
+import json
 import logging
 import re
 from collections.abc import Iterable as IterableClass
+import threading
 from typing import AsyncGenerator, cast, Any, IO, Iterable
-from sqlalchemy import Column, Boolean, String
+from anyio import Event
+from sqlalchemy import Boolean, Column, String
 import urllib3
 
 from zulip import Client as ZulipClient
+from tumcsbot.db import DB, TableBase
 
-from tumcsbot.lib import stream_names_equal, DB, Response, MessageType, Regex
-from tumcsbot.db import TableBase
+from tumcsbot.lib import stream_names_equal, Response, MessageType, Regex
 
-
-class PublicStreams(TableBase):
+class PlublicStreams(TableBase):
     __tablename__ = "PublicStreams"
 
     StreamName = Column(String, primary_key=True)
-    Subscribed = Column(Boolean, nullable=False, default=False)
-
+    Subscribed = Column(Boolean, nullable=False)
 
 class AsyncClient:
     """Wrapper around zulip.Client.
@@ -60,22 +62,28 @@ class AsyncClient:
                               stream.
     """
 
-    async def from_sync_client(*args: Any, **kwargs: Any) -> AsyncClient:
-        """Create an AsyncClient from a synchronous Zulip client."""
-        client = ZulipClient(*args, **kwargs)
-        profile = await client.get_profile()
-        return AsyncClient(profile["user_id"], f"@**{profile['full_name']}**", client)
-
     def __init__(self, id: int, ping: str, client: ZulipClient) -> None:
         self.id: int = id
         self.ping: str = ping
         self.ping_len: int = len(self.ping)
         self.register_params: dict[str, Any] = {}
         self._client: ZulipClient = client
+        self._executor = ThreadPoolExecutor()
+        self.stopped = Event()
     
     @property
     def base_url(self) -> str:
         return self._client.base_url
+    
+
+    def stop(self) -> None:
+        self.stopped.set()
+        asyncio.get_running_loop().call_soon_threadsafe(self.stopped.set)
+
+        # interrupt long polling
+        self._client.set_typing_status({'op': 'stop', 'to': [self.id]})
+        self._executor.shutdown(cancel_futures=True)
+
 
     async def call_endpoint(
         self,
@@ -86,8 +94,7 @@ class AsyncClient:
         files: list[IO[Any]] | None = None,
         timeout: float | None = None,
     ) -> dict[str, Any]:
-        """Override zulip.Client.call_on_each_event.
-
+        """
         This is the backend for almost all API-user facing methods.
         Automatically resend requests if they failed because of the
         API rate limit.
@@ -97,12 +104,15 @@ class AsyncClient:
 
         while True:
             result = await loop.run_in_executor(
-                None,
+                self._executor,
                 lambda: self._client.call_endpoint(
                     url, method, request, longpolling, files, timeout
                 ),
             )
-
+            
+            if self.stopped.is_set():
+                raise asyncio.CancelledError
+            
             if not (
                 result["result"] == "error"
                 and "code" in result
@@ -156,7 +166,7 @@ class AsyncClient:
         event_types: list[str] | None = None,
         narrow: list[list[str]] | None = None,
         **kwargs: Any,
-    ):  # todo: -> AsyncGenerator[Any, dict[str, Any]]
+    ) -> AsyncGenerator[Any, dict[str, Any]]:
         if narrow is None:
             narrow = []
 
@@ -186,13 +196,13 @@ class AsyncClient:
             except Exception as e:
                 # Handle exceptions appropriately, including logging and sleeping
                 if self.verbose:
-                    print(f"Error fetching events: {e}")
+                    logging.exception(e)
                 await asyncio.sleep(1)
                 continue
 
             if "error" in res["result"]:
                 # Handle various error cases, including server errors and bad event queue ids
-                print(f"Server returned error: {res.get('msg', 'Unknown error')}")
+                logging.error(f"Server returned error: {res.get('msg', 'Unknown error')}")
                 if res.get("code") == "BAD_EVENT_QUEUE_ID":
                     queue_id = (
                         None  # Force re-registration if the event queue ID is bad
@@ -237,19 +247,19 @@ class AsyncClient:
             return list(map(lambda d: cast(str, d["name"]), result["streams"]))
 
         if not use_db:
-            return without_db()
+            return await without_db()
 
         try:
-            return list(
-                map(
-                    lambda t: cast(str, t[0]),
-                    self._db.execute("select StreamName from PublicStreams"),
-                    # todo: fix this
+            with DB.session() as session:
+                return list(
+                    map(
+                        lambda t: cast(str, t[0]),
+                        session.query(PlublicStreams.StreamName).all(),
+                    )
                 )
-            )
         except Exception as e:
             logging.exception(e)
-            return without_db()
+            return await without_db()
 
     async def get_raw_message(
         self, message_id: int, apply_markdown: bool = True

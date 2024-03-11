@@ -13,10 +13,10 @@ class Restart(PluginCommandMixin, Plugin):
     syntax = "restart"
     description = "Restart the bot.\n[only bot owner]"
 
-    def handle_message(self, message: dict[str, Any]) -> Response | Iterable[Response]:
+    async def handle_message(self, message: dict[str, Any]) -> Response | Iterable[Response]:
         if not is_bot_owner(message["sender_id"]):
             return Response.privilege_err(message)
 
-        self.plugin_context.push_loopback(Event._empty_event("restart", "_root"))
+        await self.plugin_context.push_loopback(Event.restart_event(sender='restart'))
 
         return Response.none()

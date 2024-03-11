@@ -3,7 +3,7 @@
 # See LICENSE file for copyright and license details.
 # TUM CS Bot - https://github.com/ro-i/tumcsbot
 
-from typing import AsyncGenerator, cast, Any, Iterable
+from typing import AsyncGenerator, Any
 from tumcsbot.db import Session
 
 from tumcsbot.lib import Regex, Response

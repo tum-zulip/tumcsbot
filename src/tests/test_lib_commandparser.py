@@ -21,7 +21,7 @@ class CommandParserTest(unittest.TestCase):
             result = self.parser.parse(command)
         except CommandParser.IllegalCommandParserState:
             return None
-        
+
         if result is None:
             return result
         _, opts, args = result
@@ -90,10 +90,7 @@ class CommandParserTestArgs(CommandParserTest):
         result: tuple[str, CommandParser.Opts, CommandParser.Args]
         self.parser.add_subcommand("test1", args={"arg1": int})
         self.parser.add_subcommand("test2", args={"arg1": str, "arg2": str})
-        result = cast(
-            tuple[str, CommandParser.Opts, CommandParser.Args],
-            self.parser.parse("test1 1"),
-        )
+        result = self.parser.parse("test1 1")
         self.assertEqual(result[0], "test1")
         result = cast(
             tuple[str, CommandParser.Opts, CommandParser.Args],
@@ -103,7 +100,9 @@ class CommandParserTestArgs(CommandParserTest):
 
     def test_invalid_subcommands(self) -> None:
         self.parser.add_subcommand("test1", args={"arg1": int})
-        self.assertRaises(CommandParser.IllegalCommandParserState, self.parser.parse, "testN 1")
+        self.assertRaises(
+            CommandParser.IllegalCommandParserState, self.parser.parse, "testN 1"
+        )
 
     def test_valid_greedy(self) -> None:
         self.parser.add_subcommand("test", greedy={"arg1": str})

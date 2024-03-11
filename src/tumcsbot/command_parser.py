@@ -5,6 +5,7 @@ import regex
 
 from tumcsbot.lib import Regex
 
+
 class CommandParser:
     """A simple shell-like command line parser.
 
@@ -46,10 +47,10 @@ class CommandParser:
     def add_subcommand(
         self,
         name: str,
-        opts: dict[str, Callable[[str], Any] | None] = {},
-        args: dict[str, Callable[[str], Any]] = {},
-        optionals: dict[str, Callable[[str], Any]] = {},
-        greedy: dict[str, Callable[[str], Any]] = {},
+        opts: dict[str, Callable[[str], Any] | None] | None = None,
+        args: dict[str, Callable[[str], Any]] | None = None,
+        optionals: dict[str, Callable[[str], Any]] | None = None,
+        greedy: dict[str, Callable[[str], Any]] | None = None,
     ) -> bool:
         """Add a subcommand to the parser.
 
@@ -93,7 +94,7 @@ class CommandParser:
         if not name:
             raise self.IllegalCommandParserState()
 
-        self.commands[name] = (opts, args, optionals, greedy)
+        self.commands[name] = (opts or {}, args or {}, optionals or {}, greedy or {})
         return True
 
     @staticmethod
@@ -115,17 +116,20 @@ class CommandParser:
 
         if not command:
             raise CommandParser.IllegalCommandParserState("No command given")
-        
-        if not self.commands:
-            raise CommandParser.IllegalCommandParserState("No subcommands specified that can be parsed.")
-        
-        # Split on tokens.
 
+        if not self.commands:
+            raise CommandParser.IllegalCommandParserState(
+                "No subcommands specified that can be parsed."
+            )
+
+        # Split on tokens.
         matches_opt: regex.regex.Match[str] | None = Regex._ARGUMENT_PATTERN.match(
             command
         )
         if not matches_opt:
-            raise CommandParser.IllegalCommandParserState(f"`{command}` is not a valid pattern")
+            raise CommandParser.IllegalCommandParserState(
+                f"`{command}` is not a valid pattern"
+            )
 
         matches: regex.regex.Match[str] = matches_opt
         try:
@@ -138,11 +142,15 @@ class CommandParser:
                 if e
             ]
         except Exception as e:
-            raise CommandParser.IllegalCommandParserState(f"`{command}` is not a valid pattern") from e
-        
+            raise CommandParser.IllegalCommandParserState(
+                f"`{command}` is not a valid pattern"
+            ) from e
+
         if not tokens or len(tokens) == 0:
-            raise CommandParser.IllegalCommandParserState(f"`{command}` is not a valid pattern")
-        
+            raise CommandParser.IllegalCommandParserState(
+                f"`{command}` is not a valid pattern"
+            )
+
         # Get the fitting subcommand.
         subcommand: str = tokens[0]
         if subcommand not in self.commands:
@@ -303,7 +311,7 @@ class CommandParser:
             except Exception as e:
                 raise CommandParser.IllegalCommandParserState(
                     f"Could not parse option `{opt}` for subcommand."
-                ) from e 
+                ) from e
 
         # Skip last option if there have been only options.
         if token and token[0] == "-":
@@ -320,4 +328,3 @@ class CommandParser:
         # Note that split() in self.parse() already converted the two
         # backslashes to a single one!
         return (result, [t[1:] if t[0:2] == r"\-" else t for t in tokens[index:]])
-

@@ -9,6 +9,7 @@ import unittest
 
 from typing import Any, Callable, ClassVar
 
+from zulip import Client as ZulipClient
 from tumcsbot.client import AsyncClient as TUMCSBotClient
 
 def asSync(func: Callable[[Any], Any]) -> Callable[[Any], Any]:
@@ -25,10 +26,10 @@ def asSync(func: Callable[[Any], Any]) -> Callable[[Any], Any]:
 class ClientGetUserIdsFromAttributeTest(unittest.TestCase):
     class Client(TUMCSBotClient):
         def __init__(self) -> None:
-            pass
+            super().__init__(0, "test", ZulipClient())
 
-        def get_users(self, request: dict[str, Any] | None = None) -> dict[str, Any]:
-            return get_users()
+        async def get_users(self, _: dict[str, Any] | None = None) -> dict[str, Any]:
+            return await get_users()
 
     _client: ClassVar[Client]
 

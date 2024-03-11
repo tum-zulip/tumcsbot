@@ -80,11 +80,12 @@ run_func () {
 static_analysis_func () {
     _enter_venv
     # Disable some checks.
+    # todo: reanable C0301
     pylint --overgeneral-exceptions=builtins.BaseException \
         --min-similarity-lines=100 \
         --no-docstring-rgx='.*' \
         --good-names-rgxs='[a-z],[a-z][a-z]' \
-        --disable=C0103,C0114,W0201,W0702 \
+        --disable=C0103,C0114,W0201,W0702,C0301 \
         --exit-zero \
         "${dest_dir}/src"
     mypy_func

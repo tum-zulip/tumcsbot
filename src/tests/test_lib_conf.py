@@ -6,7 +6,8 @@
 import tempfile
 import unittest
 
-from tumcsbot.lib import Conf, DB
+from tumcsbot.db import DB
+from tumcsbot.conf import Conf
 
 
 class ConfTest(unittest.TestCase):
@@ -31,7 +32,7 @@ class ConfTest(unittest.TestCase):
 
             conf.remove("name")
             self.assertIsNone(conf.get("name"))
-            
+
             try:
                 conf.remove("name")
             except Exception as exc:

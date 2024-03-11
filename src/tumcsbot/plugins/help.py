@@ -3,10 +3,10 @@
 # See LICENSE file for copyright and license details.
 # TUM CS Bot - https://github.com/ro-i/tumcsbot
 
-import asyncio
 from inspect import cleandoc
 import json
 from typing import Any, Iterable
+from openai import OpenAI
 
 from tumcsbot.lib import Response, get_classes_from_path
 from tumcsbot.plugin import (
@@ -20,6 +20,7 @@ from tumcsbot.plugin import (
     Privilege,
 )
 from tumcsbot.db import DB
+from tumcsbot.plugin_decorators import DMError
 
 HELP_TEMPLATE = cleandoc(
     """
@@ -52,10 +53,26 @@ class Help(PluginCommandMixin, Plugin):
     async def handle_message(
         self, message: dict[str, Any]
     ) -> Response | Iterable[Response]:
-        command: str = message["command"].strip()
-        if not command:
-            return self._help_overview(message)
-        return self._help_command(message, command)
+        # Example: reuse your existing OpenAI setup
+
+        # Point to the local server
+        client = OpenAI(base_url="http://localhost:1234/v1", api_key="not-needed")
+
+        completion = client.chat.completions.create(
+          model="local-model", # this field is currently unused
+          messages=[
+            {"role": "system", "content": "Always answer in rhymes."},
+            {"role": "user", "content": message['content']}
+          ],
+          temperature=0.7,
+        )
+
+        return Response.build_message(message, completion.choices[0].message)
+
+        # command: str = message["command"].strip()
+        # if not command:
+        #     return self._help_overview(message)
+        # return self._help_command(message, command)
 
     @staticmethod
     def _format_description(description: str) -> str:
@@ -80,12 +97,12 @@ class Help(PluginCommandMixin, Plugin):
         # todo: privilage level
         with DB.session() as session:
             if command is not None:
-                plugins = [session.query(PluginTable).filter_by(name=command).first()]
+                plugins = [c for c in session.query(PluginTable).filter_by(name=command).all() if c is not None]
             else:
                 plugins = session.query(PluginTable).all()
 
         result: CommandConfig = [
-            CommandConfig.from_dict(json.loads(p.config))
+            CommandConfig.from_dict(json.loads(str(p.config)))
             for p in plugins
             if p is not None
         ]
@@ -98,11 +115,11 @@ class Help(PluginCommandMixin, Plugin):
 
         result = Help._get_help_info(command)
         if len(result) == 0:
-            return Response.command_not_found(message)
+            raise DMError(f"Command '{command}' not found.")
 
         cmd = result[0]
-
-        msg = f"# {cmd.name.capitalize()}\n"
+        name = cmd.name or command
+        msg = f"# {name.capitalize()}\n"
 
         only_mod_privileges = all(
             [sub.privilege > Privilege.USER for sub in cmd.subcommands]

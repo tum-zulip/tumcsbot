@@ -30,9 +30,6 @@ from inspect import cleandoc, getmembers, isclass, ismodule
 from itertools import repeat
 
 from typing import Any, Callable, Final, Iterable, Type, TypeVar, cast
-from sqlalchemy import Column, String
-
-from tumcsbot.db import DB, TableBase
 
 
 T = TypeVar("T")
@@ -300,43 +297,6 @@ class Regex:
             raise ValueError()
 
 
-class ConfigTable(TableBase):
-    __tablename__ = "Conf"
-
-    Key = Column(String, primary_key=True)
-    Value = Column(String, nullable=False)
-
-
-class Conf:
-
-    @staticmethod
-    def get(key: str) -> str | None:
-        with DB.session() as session:
-            result: str | None = session.query(ConfigTable).filter_by(Key=key).first()
-            return result.Value if result else None
-        
-    @staticmethod
-    def list() -> list[tuple[str, str]]:
-        with DB.session() as session:
-            return [(t.Key, t.Value) for t in session.query(ConfigTable).all()]
-    
-    @staticmethod
-    def remove(key: str) -> None:
-        with DB.session() as session:
-            session.query(ConfigTable).filter_by(Key=key).delete()
-            session.commit()
-
-    @staticmethod
-    def set(key: str, value: str) -> None:
-        """Set a key.
-
-        Note that a potential exception from the database is simply
-        passed through.
-        """
-        with DB.session() as session:
-            session.merge(ConfigTable(Key=key, Value=value))
-            session.commit()
-
 class Response:
     """Some useful methods for building a response message."""
 
@@ -577,12 +537,6 @@ def get_classes_from_path(module_path: str, class_type: Type[T]) -> Iterable[Typ
                 plugin_classes.append(value)  # pyright: ignore
 
     return plugin_classes
-
-
-def is_bot_owner(user_id: int, db: DB | None = None) -> bool:
-    """Checks whether the given user id belongs to the bot owner."""
-    conf: Conf = Conf(db=db)
-    return conf.get("bot_owner") == str(user_id)
 
 
 def split(

@@ -6,7 +6,8 @@
 import logging
 from typing import Any, Iterable
 
-from tumcsbot.lib import Response, is_bot_owner
+from tumcsbot.lib import Response
+from tumcsbot.conf import Conf
 from tumcsbot.plugin import PluginCommandMixin,Plugin
 
 
@@ -14,8 +15,8 @@ class Logfile(PluginCommandMixin, Plugin):
     syntax = "logfile"
     description = "Get the bot's own logfile.\n[bot owner only]"
 
-    def handle_message(self, message: dict[str, Any]) -> Response | Iterable[Response]:
-        if not is_bot_owner(message["sender_id"]):
+    async def handle_message(self, message: dict[str, Any]) -> Response | Iterable[Response]:
+        if not Conf.is_bot_owner(message["sender_id"]):
             return Response.privilege_err(message)
 
         handlers: list[logging.Handler] = logging.getLogger().handlers
@@ -27,7 +28,7 @@ class Logfile(PluginCommandMixin, Plugin):
 
         # Upload the logfile. (see https://zulip.com/api/upload-file)
         with open(handlers[0].baseFilename, "rb") as lf:
-            result: dict[str, Any] = self.client.call_endpoint(
+            result: dict[str, Any] = await self.client.call_endpoint(
                 "user_uploads", method="POST", files=[lf]
             )
 

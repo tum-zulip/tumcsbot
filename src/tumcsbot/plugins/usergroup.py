@@ -17,7 +17,6 @@ from sqlalchemy import Column, Integer, PrimaryKeyConstraint, String, ForeignKey
 import sqlalchemy
 from sqlalchemy.orm import relationship, Mapped
 
-from tumcsbot.lib import Response
 from tumcsbot.command_parser import CommandParser
 from tumcsbot.db import Session, TableBase
 from tumcsbot.plugin import PluginCommandMixin, Plugin, Privilege, ZulipUser

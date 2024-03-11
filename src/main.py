@@ -11,14 +11,13 @@ a private message or a message starting with @mentioning the bot.
 """
 
 import argparse
-import asyncio
 import os
 import sys
 
 from tumcsbot.tumcsbot import TumCSBot
 
 
-async def main() -> None:
+def main() -> None:
     argument_parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawTextHelpFormatter
     )
@@ -39,14 +38,14 @@ async def main() -> None:
     )
     args: argparse.Namespace = argument_parser.parse_args()
 
-    bot: TumCSBot = await TumCSBot.from_sync_client(
+    bot: TumCSBot = TumCSBot(
         zuliprc=args.zuliprc[0],
         db_path=args.db_path[0],
         debug=args.debug,
         logfile=args.logfile,
     )
 
-    await bot.run()
+    bot.run()
 
     if bot.restart:
         print("Received termination request. Restarting: " + str(sys.argv))
@@ -56,4 +55,4 @@ async def main() -> None:
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()
