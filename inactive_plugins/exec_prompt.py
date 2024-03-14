@@ -38,7 +38,7 @@ class ExecPrompt(Plugin):
 
     _approve_emoji: Final[str] = "check"
 
-    def handle_zulip_event(self, event: Event) -> Response | Iterable[Response]:
+    def handle_event(self, event: Event) -> Response | Iterable[Response]:
         result: dict[str, Any]
 
         # Get request message content.

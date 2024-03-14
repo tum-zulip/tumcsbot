@@ -37,7 +37,7 @@ T = TypeVar("T")
 
 LOGGING_FORMAT: Final[
     str
-] = "%(asctime)s %(processName)s %(threadName)-30s %(module)-15s %(funcName)-15s: %(message)s"
+] = "[%(levelname)-8s] (%(asctime)s) | %(threadName)-15s| %(module)-15s| %(funcName)-15s: %(message)s"
 
 
 class StrEnum(str, Enum):

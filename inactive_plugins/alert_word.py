@@ -104,7 +104,7 @@ class AlertWord(PluginCommandMixin, Plugin):
         self._db.execute(self._remove_sql, alert_phrase, commit=True)
         return Response.ok(message)
 
-    def handle_zulip_event(self, event: Event) -> Response | Iterable[Response]:
+    def handle_event(self, event: Event) -> Response | Iterable[Response]:
         if self._received_command:
             self._received_command = False
             return self.handle_message(event.data["message"])

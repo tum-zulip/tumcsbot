@@ -16,52 +16,31 @@ import logging
 import signal
 from graphlib import TopologicalSorter
 import sys
+import threading
 from typing import Any, Iterable, Type
-from sqlalchemy import Boolean, Column, String
+
+from langchain_openai import ChatOpenAI
+from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
+from langchain.agents.format_scratchpad.openai_tools import (
+    format_to_openai_tool_messages,
+)
+from langchain.agents.output_parsers.openai_tools import OpenAIToolsAgentOutputParser
+from langchain.agents import AgentExecutor
 
 from zulip import Client as ZulipClient
 from tumcsbot import lib
-from tumcsbot.db import DB, TableBase
-from tumcsbot.client import AsyncClient, PlublicStreams
+from tumcsbot.db import DB
+from tumcsbot.client import AsyncClient, PlublicStreams, PluginContext
 from tumcsbot.plugin import (
     Event,
     Plugin,
     EventType,
-    PluginContext,
     get_zulip_events_from_plugins,
 )
 
 
 class EventQueue(asyncio.Queue[Event]):
     pass
-
-
-class _RootClient(AsyncClient):
-    """Enhanced Client class with additional functionality.
-
-    Particularly, this client initializes the Client's database tables.
-    """
-
-    @staticmethod
-    def from_sync_client(*args: Any, **kwargs: Any) -> _RootClient:
-        client = ZulipClient(*args, **kwargs)
-        profile = client.get_profile()
-        client = _RootClient(profile["user_id"], f"@**{profile['full_name']}**", client)
-        return client
-
-    def __init__(self, *args: Any, **kwargs: Any) -> None:
-        super().__init__(*args, **kwargs)
-
-
-    async def init_db(self) -> None:
-        """Initialize some tables of the database."""
-
-        stream_names = await self.get_public_stream_names(use_db=False)
-        with DB.session() as session:
-            for entry in session.query(PlublicStreams).all():
-                if not str(entry.StreamName) in stream_names:
-                    session.delete(entry)
-            session.commit()
 
 
 class TumCSBot:
@@ -102,26 +81,39 @@ class TumCSBot:
             stream=sys.stdout,  # filename=logfile if logfile else sys.stdout
         )
 
+        threading.current_thread().name = "Main"
+
         # Init database handler.
         DB.set_path(db_path)
         # Ensure presence of Plugins table.
         DB.create_tables()
 
-        # Init own Zulip client which also inits the global DB tables for all
-        # Zulip client objects.
-        self.client = _RootClient.from_sync_client(config_file=zuliprc)
-
         self.loop = asyncio.get_event_loop()
 
-        # Init the event queue. It is not a multiprocessing queue because the
-        # communication with the process plugins goes over their queues and a
-        # separate loopback queue. The loopback queue for the thread plugins
+        # Init the event queue. The loopback queue for the thread plugins
         # simply is the central event queue.
-        # In order to deliver the events from the process loopback queue to the
-        # central event queue, too, we additionally need a small worker thread.
-
         self.event_queue: EventQueue = asyncio.Queue()
-        logging.debug("start queue forward worker")
+
+        # get plugin context
+        client = ZulipClient(config_file=zuliprc, insecure=True)
+        profile = client.get_profile()
+        self.plugin_context = PluginContext(
+            bot_id=profile["user_id"],
+            bot_mention=f"@**{profile['full_name']}**",
+            zuliprc=zuliprc,
+            push_loopback=self.event_queue.put,
+            logging_level=logging.DEBUG if debug else logging.INFO,
+        )
+
+        # Init own Zulip client which also inits the global DB tables for all
+        # Zulip client objects.
+        self.client = AsyncClient(self.plugin_context, insecure=True)
+
+        self.llm = ChatOpenAI(base_url="http://localhost:1234/v1", api_key="not-needed")
+        self.tools = []
+        self.llm_with_tools = None
+        self.agent = None
+        
 
         # Cleanup properly on SIGTERM and SIGINT.
         for s in [signal.SIGINT, signal.SIGTERM]:
@@ -131,7 +123,7 @@ class TumCSBot:
         plugin_classes: Iterable[Type[Plugin]] = lib.get_classes_from_path(
             "tumcsbot.plugins", Plugin  # type: ignore
         )
-        self.startPlugins(plugin_classes, zuliprc, logging_level)
+        self.start_plugins(plugin_classes, zuliprc, logging_level)
 
         # Get events to listen for.
         self.events = get_zulip_events_from_plugins(plugin_classes)
@@ -140,7 +132,7 @@ class TumCSBot:
         """Run the bot."""
         logging.info("start main loop")
         try:
-            self.loop.create_task(self.the_loop())
+            self.loop.create_task(self.run_loop())
             self.loop.run_forever()
         finally:
             logging.info("stop main loop")
@@ -179,9 +171,19 @@ class TumCSBot:
             logging.debug("received event data %s", str(event_data))
             await self.event_queue.put(Event(sender="_root", type=EventType.ZULIP, data=event_data))
             logging.debug("waiting for events ...")
+    
+    async def init_db(self) -> None:
+        """Initialize some tables of the database."""
+
+        stream_names = await self.get_public_stream_names(use_db=False)
+        with DB.session() as session:
+            for entry in session.query(PlublicStreams).all():
+                if not str(entry.StreamName) in stream_names:
+                    session.delete(entry)
+            session.commit()
 
 
-    async def the_loop(self) -> None:
+    async def run_loop(self) -> None:
         """Run the central event queue.
 
         This queue does not only get the events from the event listener,
@@ -189,13 +191,13 @@ class TumCSBot:
         """
 
         logging.info("start bot")
+        # agent_executor = AgentExecutor(agent=self.agent, tools=self.tools, verbose=True)
 
         logging.debug("init db")
-        await self.client.init_db()
+        await self.init_db()
 
         logging.debug("start event listener, listening on events: %s", str(self.events))
         self.loop.create_task(self._event_listener())
-
         
         logging.debug("start central queue")
         # todo: limit queue size
@@ -211,7 +213,7 @@ class TumCSBot:
                     event.type = EventType.STOP
 
                 if self.stopped or event.type == EventType.STOP:
-                    break
+                    raise asyncio.CancelledError()
 
                 # todo: handle other event types
                 if event.type == EventType.ZULIP:
@@ -226,13 +228,30 @@ class TumCSBot:
                     for plugin in self.plugins.values():
                         if plugin.is_responsible(event):
                             logging.debug("push event to plugin %s", plugin.plugin_name())
-                            self.loop.create_task(plugin.handle_event(event))
+                            plugin.push_event(event)
+                    
+                    # if event.data["type"] == "message":
+                    #     logging.debug("push event to agent")
+                    #     print('-' * 80)
+                    #     print(await agent_executor.ainvoke({'input': event.data['message']['content']}))
+                    #     print('-' * 80)
+
         except asyncio.CancelledError:
-            pass
+            self.stop_plugins()
 
         logging.debug("graceful exit")
+    
+    async def init_db(self) -> None:
+        """Initialize some tables of the database."""
 
-    def startPlugins(
+        stream_names = await self.client.get_public_stream_names(use_db=False)
+        with DB.session() as session:
+            for entry in session.query(PlublicStreams).all():
+                if not str(entry.StreamName) in stream_names:
+                    session.delete(entry)
+            session.commit()
+
+    def start_plugins(
         self, plugin_classes: Iterable[Type[Plugin]], zuliprc: str, logging_level: int
     ) -> None:
         # First, build the correct order using the dependency information.
@@ -249,13 +268,51 @@ class TumCSBot:
             plugin_class = plugin_class_dict[plugin_name]
 
             plugin: Plugin = plugin_class(
-                PluginContext(zuliprc, self.event_queue.put, logging_level),
-                self.client,
+                self.plugin_context,
             )
 
             if plugin_name in self.plugins:
                 raise ValueError(f"plugin {plugin.plugin_name()} appears twice")
+            
+            for fun in plugin_class.__dict__.values():
+                tool = getattr(fun, "_tumcsbot_tool", None)
+                if tool is not None:
+                    self.tools.append(tool)
+            
             self.plugins[plugin_name] = plugin
+            plugin.start()
+
+        prompt = ChatPromptTemplate.from_messages(
+            [
+                (
+                    "system",
+                    "You are very powerful assistant, but don't know current events",
+                ),
+                ("user", "{input}"),
+                MessagesPlaceholder(variable_name="agent_scratchpad"),
+            ]
+        )
+        # llm stuff: print("#" * 80)
+        # llm stuff: print(self.tools)
+        # llm stuff: self.llm_with_tools = self.llm.bind_tools(self.tools)
+        # llm stuff: self.agent = (
+        # llm stuff:     {
+        # llm stuff:         "input": lambda x: x["input"],
+        # llm stuff:         "agent_scratchpad": lambda x: format_to_openai_tool_messages(
+        # llm stuff:             x["intermediate_steps"]
+        # llm stuff:         ),
+        # llm stuff:     }
+        # llm stuff:     | prompt
+        # llm stuff:     | self.llm_with_tools
+        # llm stuff:     | OpenAIToolsAgentOutputParser()
+        # llm stuff: )
+        
+    def stop_plugins(self) -> None:
+        for plugin in self.plugins.values():
+            plugin.stop()
+            plugin.join()
+            self.plugins_stopped[plugin.plugin_name()] = plugin
+        self.plugins.clear()
 
     def zulip_event_preprocess(self, event: dict[str, Any]) -> dict[str, Any]:
         """Preprocess a Zulip event dictionary.

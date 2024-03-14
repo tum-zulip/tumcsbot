@@ -39,7 +39,7 @@ class Repost(Plugin):
         )
         self._repost_emoji = None if not result else result[0][0]
 
-    def handle_zulip_event(self, event: Event) -> Response | Iterable[Response]:
+    def handle_event(self, event: Event) -> Response | Iterable[Response]:
         # Check that the reacting user has sufficient rights.
         if not self.client.user_is_privileged(event.data["user_id"]):
             return Response.none()

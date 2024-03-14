@@ -133,7 +133,7 @@
 <text text-anchor="start" x="2336.38" y="-1553.45" font-family="Times,serif" font-style="italic" font-size="14.00">create_worker</text>
 <text text-anchor="start" x="2438.38" y="-1553.45" font-family="Times,serif" font-size="14.00">(): Thread | multiprocessing.Process</text>
 <text text-anchor="start" x="2336.38" y="-1539.45" font-family="Times,serif" font-size="14.00">handle_event(event: Event): None</text>
-<text text-anchor="start" x="2336.38" y="-1525.45" font-family="Times,serif" font-style="italic" font-size="14.00">handle_zulip_event</text>
+<text text-anchor="start" x="2336.38" y="-1525.45" font-family="Times,serif" font-style="italic" font-size="14.00">handle_event</text>
 <text text-anchor="start" x="2472.12" y="-1525.45" font-family="Times,serif" font-size="14.00">(event: Event): Response | Iterable[Response]</text>
 <text text-anchor="start" x="2336.38" y="-1511.45" font-family="Times,serif" font-size="14.00">is_alive(): bool</text>
 <text text-anchor="start" x="2336.38" y="-1497.45" font-family="Times,serif" font-size="14.00">is_responsible(event: Event): bool</text>
@@ -466,7 +466,7 @@
 <text text-anchor="start" x="1775.25" y="-910.83" font-family="Times,serif" font-size="14.00">handle_event(event: Event): None</text>
 <text text-anchor="start" x="1775.25" y="-896.83" font-family="Times,serif" font-style="italic" font-size="14.00">handle_message</text>
 <text text-anchor="start" x="1892.25" y="-896.83" font-family="Times,serif" font-size="14.00">(message: dict[str, Any]): Response | Iterable[Response]</text>
-<text text-anchor="start" x="1775.25" y="-882.83" font-family="Times,serif" font-size="14.00">handle_zulip_event(event: Event): Response | Iterable[Response]</text>
+<text text-anchor="start" x="1775.25" y="-882.83" font-family="Times,serif" font-size="14.00">handle_event(event: Event): Response | Iterable[Response]</text>
 <text text-anchor="start" x="1775.25" y="-868.83" font-family="Times,serif" font-size="14.00">is_responsible(event: Event): bool</text>
 <text text-anchor="start" x="1775.25" y="-854.83" font-family="Times,serif" font-size="14.00">update_plugin_usage(): None</text>
 </g>

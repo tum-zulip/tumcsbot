@@ -29,7 +29,7 @@ class UnknownCommand(Plugin):
             map(lambda t: cast(str, t[0]), DB(read_only=True).execute(self._select_sql))
         )
 
-    def handle_zulip_event(self, event: Event) -> Response | Iterable[Response]:
+    def handle_event(self, event: Event) -> Response | Iterable[Response]:
         message = event.data["message"]
 
         request: dict[str, Any] = {

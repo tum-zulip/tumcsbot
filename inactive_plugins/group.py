@@ -226,7 +226,7 @@ class Group(PluginCommandMixin, Plugin):
             "[{0}](" + self.client.base_url[:-4] + "#narrow/id/{0})"
         )
 
-    def handle_zulip_event(self, event: Event) -> Response | Iterable[Response]:
+    def handle_event(self, event: Event) -> Response | Iterable[Response]:
         if event.data["type"] == "reaction":
             return self.handle_reaction_event(event.data)
         if event.data["type"] == "stream":

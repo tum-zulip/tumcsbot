@@ -92,7 +92,7 @@ class ModerationReactionHandler(Plugin):
             and event.data["user_id"] != self.client_id
         )
 
-    def handle_zulip_event(self, event: Event) -> Response | Iterable[Response]:
+    def handle_event(self, event: Event) -> Response | Iterable[Response]:
         uid: int = event.data["user_id"]
         mid: int = event.data["message_id"]
 

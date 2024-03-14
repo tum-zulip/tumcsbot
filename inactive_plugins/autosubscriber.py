@@ -43,7 +43,7 @@ class AutoSubscriber(Plugin):
             or event.data["op"] == "delete"
         )
 
-    def handle_zulip_event(self, event: Event) -> Response | Iterable[Response]:
+    def handle_event(self, event: Event) -> Response | Iterable[Response]:
         if event.data["op"] == "create":
             for stream in event.data["streams"]:
                 self._handle_stream(stream["name"], stream["invite_only"])

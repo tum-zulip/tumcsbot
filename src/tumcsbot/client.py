@@ -7,12 +7,12 @@
 from __future__ import annotations
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
-import json
+from contextlib import asynccontextmanager
+from dataclasses import dataclass
 import logging
 import re
 from collections.abc import Iterable as IterableClass
-import threading
-from typing import AsyncGenerator, cast, Any, IO, Iterable
+from typing import AsyncGenerator, Callable, cast, Any, IO, Iterable, Final, final
 from anyio import Event
 from sqlalchemy import Boolean, Column, String
 import urllib3
@@ -21,6 +21,27 @@ from zulip import Client as ZulipClient
 from tumcsbot.db import DB, TableBase
 
 from tumcsbot.lib import stream_names_equal, Response, MessageType, Regex
+
+@final
+@dataclass
+class PluginContext:
+    """All information a plugin may need.
+
+    Parameters:
+    -------
+    id             The bots user id in zulip.
+    ping           The string to ping the bot.
+    zuliprc        The bot's zuliprc in case the plugin need an own
+                   client instance.
+    push_loopback  Method to push an event to the central event queue of
+                   the bot.
+    logging_level  The logging level to be used.
+    """
+    bot_id: Final[int]
+    bot_mention: Final[str]
+    zuliprc: Final[str]
+    push_loopback: Final[Callable[[Event], None]]
+    logging_level: Final[Any]
 
 class PlublicStreams(TableBase):
     __tablename__ = "PublicStreams"
@@ -62,12 +83,12 @@ class AsyncClient:
                               stream.
     """
 
-    def __init__(self, id: int, ping: str, client: ZulipClient) -> None:
-        self.id: int = id
-        self.ping: str = ping
+    def __init__(self, plugin_context: PluginContext, *args, **kwargs) -> None:
+        self.id: int = plugin_context.bot_id
+        self.ping: str = plugin_context.bot_mention
         self.ping_len: int = len(self.ping)
         self.register_params: dict[str, Any] = {}
-        self._client: ZulipClient = client
+        self._client: ZulipClient = ZulipClient(*args, config_file=plugin_context.zuliprc, **kwargs)
         self._executor = ThreadPoolExecutor()
         self.stopped = Event()
     
@@ -824,3 +845,37 @@ class AsyncClient:
 
         stream_data: dict[str, Any] = stream_result["stream"]
         return stream_data
+    
+    async def start_typing_direct(self, user_ids: int | list[int]) -> dict[str, Any]:
+        if isinstance(user_ids, int):
+            user_ids = [user_ids]
+        
+        request = {
+            "op": "start",
+            "to": user_ids,
+        }
+        return await self.call_endpoint(
+            url="typing",
+            request=request,
+        )
+    
+    async def stop_typing_direct(self, user_ids: int | list[int]) -> dict[str, Any]:
+        if isinstance(user_ids, int):
+            user_ids = [user_ids]
+        
+        request = {
+            "op": "stop",
+            "to": user_ids,
+        }
+        return await self.call_endpoint(
+            url="typing",
+            request=request,
+        )
+    
+    @asynccontextmanager
+    async def typing_direct(self, user_ids: int | list[int]) -> AsyncGenerator[None, None]:
+        await self.start_typing_direct(user_ids)
+        try:
+            yield
+        finally:
+            await self.stop_typing_direct(user_ids)

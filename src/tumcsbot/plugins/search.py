@@ -13,13 +13,13 @@ from tumcsbot.plugin_decorators import command, arg, response_type, DMResponse
 
 
 class Search(PluginCommandMixin, Plugin):
+
     syntax = "search <string>"
-    description = 'Get a url to a search for "string" in all public streams.'
     msg_template: str = "Hi, I hope that these search results may help you: {}"
     path: str = "#narrow/streams/public/search/"
 
     @command
-    @arg("string", str, description="The string to search for.", greedy=True)
+    @arg("search_string", str, description="The string to search for.", greedy=True)
     async def search(
         self,
         _sender: ZulipUser,
@@ -28,6 +28,9 @@ class Search(PluginCommandMixin, Plugin):
         _opts: CommandParser.Opts,
         message: dict[str, Any],
     ) -> AsyncGenerator[response_type, None]:
+        """
+        Get a url to a search for "string" in all public streams.
+        """
         # todo: use argument instead of urrlib.parse.quote
         # Get search string and quote it.
         search: str = urllib.parse.quote(message["command"], safe="")

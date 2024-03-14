@@ -6,7 +6,6 @@
 from inspect import cleandoc
 import json
 from typing import Any, Iterable
-from openai import OpenAI
 
 from tumcsbot.lib import Response, get_classes_from_path
 from tumcsbot.plugin import (
@@ -54,25 +53,25 @@ class Help(PluginCommandMixin, Plugin):
         self, message: dict[str, Any]
     ) -> Response | Iterable[Response]:
         # Example: reuse your existing OpenAI setup
-
         # Point to the local server
-        client = OpenAI(base_url="http://localhost:1234/v1", api_key="not-needed")
+        # client = OpenAI(base_url="http://localhost:1234/v1", api_key="not-needed")
+        # self.logger.info("Sending message to OpenAI")
+        # async with self.client.typing_direct(message["sender_id"]):
+        #     # Example: create a completion using the local model (the default model for the organization
+        #     completion = client.chat.completions.create(
+        #         model="local-model", # this field is currently unused
+        #         messages=[
+        #           {"role": "system", "content": "You are a helpful assistant. You are a bot on the messenger plattform Zulip, the main communication channel for many students at the TUM."},
+        #           {"role": "user", "content": message['content']}
+        #         ],
+        #         temperature=0.7,
+        #     )
+        #     return Response.build_message(message, completion.choices[0].message.content)
 
-        completion = client.chat.completions.create(
-          model="local-model", # this field is currently unused
-          messages=[
-            {"role": "system", "content": "Always answer in rhymes."},
-            {"role": "user", "content": message['content']}
-          ],
-          temperature=0.7,
-        )
-
-        return Response.build_message(message, completion.choices[0].message)
-
-        # command: str = message["command"].strip()
-        # if not command:
-        #     return self._help_overview(message)
-        # return self._help_command(message, command)
+        command: str = message["command"].strip()
+        if not command:
+            return self._help_overview(message)
+        return self._help_command(message, command)
 
     @staticmethod
     def _format_description(description: str) -> str:
@@ -167,7 +166,7 @@ class Help(PluginCommandMixin, Plugin):
             and subcommand.privilege > Privilege.USER
             else ""
         )
-        out = f"```spoiler {subcommand.name.capitalize()}\n{privilage}\n{subcommand.short_help_msg}\n````text\n{cmd_name} {subcommand.syntax}\n````\n\n"
+        out = f"```spoiler {subcommand.name.replace('_', ' ').title()}\n{privilage}\n{subcommand.short_help_msg}\n````text\n{cmd_name} {subcommand.syntax}\n````\n\n"
         for opt in subcommand.opts:
             out += Help._format_option(opt) + "\n"
         for arg in subcommand.args:

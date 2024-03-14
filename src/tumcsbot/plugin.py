@@ -17,15 +17,20 @@ PluginCommandMixin   Mixin class tailored for interactive commands.
 """
 
 from __future__ import annotations
+import asyncio
 from dataclasses import asdict, dataclass, field
 from enum import Enum
 from inspect import cleandoc
 import json
 import logging
 from abc import ABC, abstractmethod
+import threading
 from typing import Any, Callable, Final, Iterable, Type, final
 
-from tumcsbot.client import AsyncClient
+from pydantic import BaseModel, Field
+from langchain.tools import BaseTool
+
+from tumcsbot.client import AsyncClient, PluginContext
 from tumcsbot.lib import LOGGING_FORMAT, Regex, Response, StrEnum
 from tumcsbot.command_parser import CommandParser
 from tumcsbot.db import DB, TableBase
@@ -104,65 +109,33 @@ class Event:
         return cls(sender, type=EventType.RESTART, dest=dest)
 
 
-@final
-class PluginContext:
-    """All information a plugin may need.
-
-    Parameters:
-    -------
-    zuliprc        The bot's zuliprc in case the plugin need an own
-                   client instance.
-    push_loopback  Method to push an event to the central event queue of
-                   the bot.
-    logging_level  The logging level to be used.
-    """
-
-    def __init__(
-        self,
-        zuliprc: str,
-        push_loopback: Callable[[Event], None],
-        logging_level: Any,
-    ) -> None:
-        self._zuliprc: Final[str] = zuliprc
-        self._push_loopback: Final[Callable[[Event], None]] = push_loopback
-        self._logging_level: Final[Any] = logging_level
-
-    @property
-    def logging_level(self) -> Any:
-        return self._logging_level
-
-    @property
-    def push_loopback(self) -> Callable[[Event], None]:
-        return self._push_loopback
-
-    @property
-    def zuliprc(self) -> str:
-        return self._zuliprc
-
-
-class Plugin(ABC):
+class Plugin(threading.Thread, ABC):
     """Abstract base class for every plugin."""
 
     # List of plugins which have to be loaded before this plugin.
     dependencies: list[str] = []
+
     # List of events this plugin is responsible for.
     events: list[EventType] = [EventType.RESTART, EventType.STOP, EventType.ZULIP]
+
     # List of Zulip events this plugin is responsible for.
     # See https://zulip.com/api/get-events.
     zulip_events: list[str] = []
 
-    # todo: remove plugin_context from __init__
-    def __init__(self, plugin_context: PluginContext, client: AsyncClient) -> None:
+    def __init__(self, plugin_context: PluginContext) -> None:
         """Use _init_plugin for custom init code."""
-
-        # Some declarations.
-        self.plugin_context: PluginContext = plugin_context
-        self.client: AsyncClient = client
+        super().__init__(name=self.plugin_name(), daemon=True)
 
         # Get own logger.
         self.logger: logging.Logger = self.create_logger()
         # todo: needs fix? self.logger.handlers[0].setFormatter(fmt=logging.Formatter(LOGGING_FORMAT))
         self.logger.setLevel(plugin_context.logging_level)
+
+        # Some declarations.
+        self.plugin_context: PluginContext = plugin_context
+        self.client: AsyncClient = AsyncClient(self.plugin_context, insecure=True)
+
+        self.queue = asyncio.Queue()
 
         # Set the running flag.
         self.running: bool = False
@@ -175,6 +148,69 @@ class Plugin(ABC):
 
         Note that this code is called from the worker thread/process.
         """
+    
+    def is_responsible(self, event: Event) -> bool:
+        """Check if the plugin is responsible for the given Zulip event.
+
+        Provide a minimal default implementation for such a
+        responsibility check.
+        """
+        return event.data["type"] in self.zulip_events
+    
+    @abstractmethod
+    async def handle_event(self, event: Event) -> Response | Iterable[Response]:
+        """Process a Zulip event.
+
+        Process the given event and return a Response or an Iterable
+        consisting of Response objects.
+        """
+        
+    
+    async def run_loop(self) -> None:
+        """Run the plugin loop.
+
+        This method is called by the worker thread/process.
+        """
+        """Run the plugin."""
+        try:
+            while self.running:
+                self.logger.debug("Waiting for event")
+                event: Event = await self.queue.get()
+                self.logger.debug("Received event")
+
+                if event.type == EventType.STOP:
+                    self.running = False
+                else:
+                    # default handler
+                    async def handler():
+                        responses = await self.handle_event(event)
+                        await self.client.send_responses(responses)
+                    
+                    asyncio.create_task(handler())
+                self.queue.task_done()
+        except asyncio.CancelledError:
+            self.logger.info("stopping")
+
+    @final
+    def stop(self):
+        self.loop.call_soon_threadsafe(self.loop.stop)
+        for task in asyncio.all_tasks(self.loop):
+            task.cancel()
+    
+    @final
+    def run(self):
+        self.running = True
+        self.loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(self.loop)
+        self.loop.create_task(self.run_loop())
+        self.loop.run_forever()
+        self.loop.close()
+
+    @final
+    def push_event(self, event: Event):
+        def put():
+            self.queue.put_nowait(event)
+        self.loop.call_soon_threadsafe(put)
 
     @final
     @classmethod
@@ -185,33 +221,6 @@ class Plugin(ABC):
     def create_logger(self) -> logging.Logger:
         """Create a logger instance suitable for this plugin type."""
         return logging.getLogger(self.plugin_name())
-
-    @abstractmethod
-    async def handle_zulip_event(self, event: Event) -> Response | Iterable[Response]:
-        """Process a Zulip event.
-
-        Process the given event and return a Response or an Iterable
-        consisting of Response objects.
-        """
-    
-    @final
-    async def handle_event(self, event: Event) -> None:
-        """Process an event.
-
-        Always call the default implementation of this method if you
-        did not receive any custom internal event.
-        """
-        responses: Response | Iterable[Response] = await self.handle_zulip_event(event)
-        await self.client.send_responses(responses)
-
-    def is_responsible(self, event: Event) -> bool:
-        """Check if the plugin is responsible for the given Zulip event.
-
-        Provide a minimal default implementation for such a
-        responsibility check.
-        """
-        return event.data["type"] in self.zulip_events
-
 
 
 class ZulipUserNotFound(Exception):
@@ -390,7 +399,7 @@ class SubCommandConfig:
     name: str | None = None
     args: list[ArgConfig] = field(default_factory=list)
     opts: list[OptConfig] = field(default_factory=list)
-    privilege: Privilege = Privilege.USER
+    privilege: Privilege = field(default_factory=lambda: Privilege.USER)
     description: str | None = None
 
     @staticmethod
@@ -444,7 +453,6 @@ class CommandConfig:
         if self.description is None:
             return "No description available."
         return self.description
-
 
 class PluginCommandMixin(Plugin):
     """Base class tailored for interactive commands.
@@ -504,7 +512,6 @@ class PluginCommandMixin(Plugin):
         """
         return (self.plugin_name(), self.syntax, self.description)
 
-
     async def handle_message(self, message: dict[str, Any]) -> Response | Iterable[Response]:
         """Process message.
 
@@ -545,7 +552,7 @@ class PluginCommandMixin(Plugin):
             self.logger.debug(f"command not found: {command}")
             return Response.command_not_found(message)
 
-    async def handle_zulip_event(self, event: Event) -> Response | Iterable[Response]:
+    async def handle_event(self, event: Event) -> Response | Iterable[Response]:
         """Defaults to assume event to be a message event.
 
         Overwrite if necessary!

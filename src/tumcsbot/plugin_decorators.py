@@ -1,8 +1,13 @@
 from __future__ import annotations
 from functools import wraps
-from typing import AsyncGenerator, Callable, Any, Iterable, Protocol
+import logging
+from typing import AsyncGenerator, Callable, Any, Iterable, Protocol, Type
 from dataclasses import dataclass
 from inspect import cleandoc
+
+from langchain.tools import BaseTool
+from langchain.pydantic_v1 import BaseModel, Field
+
 
 from tumcsbot.command_parser import CommandParser
 from tumcsbot.db import Session
@@ -212,6 +217,35 @@ def privilege(privilege: Privilege) -> command_decorator_type:
         return wrapper
 
     return decorator
+
+
+
+
+def tool_factory(plugin_class_name: str, config: SubCommandConfig, callback: Callable[[Any], Any]) -> Callable[[ZulipUser], Type[BaseTool]]:
+
+    # Dynamically create a Pydantic model for the tool's inputs
+    fields = {arg.name: (arg.type, Field(description=arg.description)) for arg in config.args}
+    model = type(f"{config.name.capitalize()}Input", (BaseModel,), fields)
+
+    async def args_unwrapper(args: model):
+        logging.debug("Unwrapping args: %s", dict(args))
+        return await callback(**dict(args))
+
+
+    # Define the tool class
+    tool_class = type(
+        f"{plugin_class_name.capitalize()}{config.name.capitalize()}Tool",
+        (BaseTool,),
+            {
+                "name": config.name,
+                "description": config.description,
+                "args_schema": model,
+                "_run": lambda self, *args, **kwargs: NotImplementedError(f"{config.name} does not support sync"),
+                "_arun": args_unwrapper,
+            }
+        )
+    return tool_class
+
 
 
 class command:
@@ -426,9 +460,11 @@ class command:
 
         # todo: idk if this is right
         wrapper._tumcsbot_meta = self.meta
+        wrapper._tumcsbot_tool = tool_factory(
+            owner.__name__, self.meta, wrapper
+        )
         setattr(owner, self.name, wrapper)
 
 
 class UserNotPrivilegedException(Exception):
     pass
-
