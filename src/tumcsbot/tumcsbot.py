@@ -19,14 +19,6 @@ import sys
 import threading
 from typing import Any, Iterable, Type
 
-from langchain_openai import ChatOpenAI
-from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
-from langchain.agents.format_scratchpad.openai_tools import (
-    format_to_openai_tool_messages,
-)
-from langchain.agents.output_parsers.openai_tools import OpenAIToolsAgentOutputParser
-from langchain.agents import AgentExecutor
-
 from zulip import Client as ZulipClient
 from tumcsbot import lib
 from tumcsbot.db import DB
@@ -108,11 +100,6 @@ class TumCSBot:
         # Init own Zulip client which also inits the global DB tables for all
         # Zulip client objects.
         self.client = AsyncClient(self.plugin_context, insecure=True)
-
-        self.llm = ChatOpenAI(base_url="http://localhost:1234/v1", api_key="not-needed")
-        self.tools = []
-        self.llm_with_tools = None
-        self.agent = None
         
 
         # Cleanup properly on SIGTERM and SIGINT.
@@ -191,7 +178,6 @@ class TumCSBot:
         """
 
         logging.info("start bot")
-        # agent_executor = AgentExecutor(agent=self.agent, tools=self.tools, verbose=True)
 
         logging.debug("init db")
         await self.init_db()
@@ -229,12 +215,6 @@ class TumCSBot:
                         if plugin.is_responsible(event):
                             logging.debug("push event to plugin %s", plugin.plugin_name())
                             plugin.push_event(event)
-                    
-                    # if event.data["type"] == "message":
-                    #     logging.debug("push event to agent")
-                    #     print('-' * 80)
-                    #     print(await agent_executor.ainvoke({'input': event.data['message']['content']}))
-                    #     print('-' * 80)
 
         except asyncio.CancelledError:
             self.stop_plugins()
@@ -274,38 +254,8 @@ class TumCSBot:
             if plugin_name in self.plugins:
                 raise ValueError(f"plugin {plugin.plugin_name()} appears twice")
             
-            for fun in plugin_class.__dict__.values():
-                tool = getattr(fun, "_tumcsbot_tool", None)
-                if tool is not None:
-                    self.tools.append(tool)
-            
             self.plugins[plugin_name] = plugin
             plugin.start()
-
-        prompt = ChatPromptTemplate.from_messages(
-            [
-                (
-                    "system",
-                    "You are very powerful assistant, but don't know current events",
-                ),
-                ("user", "{input}"),
-                MessagesPlaceholder(variable_name="agent_scratchpad"),
-            ]
-        )
-        # llm stuff: print("#" * 80)
-        # llm stuff: print(self.tools)
-        # llm stuff: self.llm_with_tools = self.llm.bind_tools(self.tools)
-        # llm stuff: self.agent = (
-        # llm stuff:     {
-        # llm stuff:         "input": lambda x: x["input"],
-        # llm stuff:         "agent_scratchpad": lambda x: format_to_openai_tool_messages(
-        # llm stuff:             x["intermediate_steps"]
-        # llm stuff:         ),
-        # llm stuff:     }
-        # llm stuff:     | prompt
-        # llm stuff:     | self.llm_with_tools
-        # llm stuff:     | OpenAIToolsAgentOutputParser()
-        # llm stuff: )
         
     def stop_plugins(self) -> None:
         for plugin in self.plugins.values():

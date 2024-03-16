@@ -166,7 +166,7 @@ class Usergroup(PluginCommandMixin, Plugin):
     @privilege(Privilege.ADMIN)
     @arg("name", str, "The name of the user group")
     @arg("description", str, "The description of the user group.", optional=True)
-    async def creat(
+    async def create(
         self,
         _sender: ZulipUser,
         session: Session,

@@ -5,7 +5,7 @@ from typing import AsyncGenerator, Callable, Any, Iterable, Protocol, Type
 from dataclasses import dataclass
 from inspect import cleandoc
 
-from langchain.tools import BaseTool
+from langchain.tools import StructuredTool
 from langchain.pydantic_v1 import BaseModel, Field
 
 
@@ -229,22 +229,16 @@ def tool_factory(plugin_class_name: str, config: SubCommandConfig, callback: Cal
 
     async def args_unwrapper(args: model):
         logging.debug("Unwrapping args: %s", dict(args))
-        return await callback(**dict(args))
-
+        return "Not implemented"
 
     # Define the tool class
-    tool_class = type(
-        f"{plugin_class_name.capitalize()}{config.name.capitalize()}Tool",
-        (BaseTool,),
-            {
-                "name": config.name,
-                "description": config.description,
-                "args_schema": model,
-                "_run": lambda self, *args, **kwargs: NotImplementedError(f"{config.name} does not support sync"),
-                "_arun": args_unwrapper,
-            }
-        )
-    return tool_class
+    return StructuredTool.from_function(
+        func=lambda query: "Not implemented",
+        coroutine=args_unwrapper,
+        name=f"{plugin_class_name.capitalize()}{config.name.capitalize()}Tool",
+        description=config.description,
+        # args_schema=model,
+    )
 
 
 
@@ -351,7 +345,7 @@ class command:
         )
 
         # replace ourself with the original method
-        outer_self = self
+        outer_self = self                                                                                                                                   
 
         @wraps(self.fn)
         async def wrapper(
@@ -460,9 +454,9 @@ class command:
 
         # todo: idk if this is right
         wrapper._tumcsbot_meta = self.meta
-        wrapper._tumcsbot_tool = tool_factory(
-            owner.__name__, self.meta, wrapper
-        )
+        # wrapper._tumcsbot_tool = tool_factory(
+        #     owner.__name__, self.meta, wrapper
+        # )
         setattr(owner, self.name, wrapper)
 
 

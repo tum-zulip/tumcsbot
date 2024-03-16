@@ -846,6 +846,30 @@ class AsyncClient:
         stream_data: dict[str, Any] = stream_result["stream"]
         return stream_data
     
+    async def mark_stream_as_read(self, stream_id: int) -> dict[str, Any]:
+        """
+        Example usage:
+
+        >>> await client.mark_stream_as_read(42)
+        {'result': 'success', 'msg': ''}
+        """
+        return await self.call_endpoint(
+            url="mark_stream_as_read",
+            method="POST",
+            request={"stream_id": stream_id},
+        )
+    
+    async def update_stream(self, stream_data: dict[str, Any]) -> dict[str, Any]:
+        """
+        See examples/edit-stream for example usage.
+        """
+
+        return await self.call_endpoint(
+            url="streams/{}".format(stream_data["stream_id"]),
+            method="PATCH",
+            request=stream_data,
+        )
+    
     async def start_typing_direct(self, user_ids: int | list[int]) -> dict[str, Any]:
         if isinstance(user_ids, int):
             user_ids = [user_ids]
