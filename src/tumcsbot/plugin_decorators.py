@@ -139,9 +139,7 @@ def arg(
             if privilege is not None:  # and todo: check if option is present
                 # todo: check privilege
                 if not await sender.privileged:
-                    raise UserNotPrivilegedException(
-                        message, privilege, f"{self.plugin_name()} {get_meta(func).name}"
-                    )
+                    raise UserNotPrivilegedException()
 
             if greedy and not optional:
                 if len(getattr(args, name, [])) == 0:
@@ -180,9 +178,7 @@ def opt(
             if privilege is not None:
                 # todo: check privilege
                 if not await sender.privileged:
-                    raise UserNotPrivilegedException(
-                        message, privilege, f"{self.plugin_name()} {get_meta(func).name}"
-                    )
+                    raise UserNotPrivilegedException()
             
             async for response in func(self, sender, session, args, opts, message):
                 yield response
@@ -208,9 +204,7 @@ def privilege(privilege: Privilege) -> command_decorator_type:
         ) -> AsyncGenerator[response_type, None]:
             if privilege is not None:
                 if not await sender.privileged:
-                    raise UserNotPrivilegedException(
-                        message, privilege, f"{self.plugin_name()} {get_meta(func).name}"
-                    )
+                    raise UserNotPrivilegedException()
             async for response in func(self, sender, session, args, opts, message):
                 yield response
 
@@ -418,8 +412,7 @@ class command:
             except StopIteration:
                 pass
             except UserNotPrivilegedException as e:
-                what = f"You don't have sufficient privileges to execute the command `{outer_self.name}`: {str(e)}"
-                return Response.privilege_excpetion(message, what)
+                return Response.privilege_excpetion(message, outer_self.name)
             except ZulipUserNotFound as e:
                 return Response.build_message(
                     message,

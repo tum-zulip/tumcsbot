@@ -477,14 +477,14 @@ class Response:
         )
     
     @classmethod
-    def privilege_excpetion(cls, message: dict[str, Any], desc:str) -> "Response":
+    def privilege_excpetion(cls, message: dict[str, Any], comm:str) -> "Response":
         """The user has not sufficient rights.
 
         Tell the user that they have not sufficient privileges for a
         specified command.
         """
         return cls.build_message(
-            message, cls.excp_general.format(message["sender_full_name"],desc)
+            message, cls.privilege_err_msg_command.format(message["sender_full_name"],comm)
         )
     
     @classmethod
