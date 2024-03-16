@@ -214,7 +214,6 @@ def privilege(privilege: Privilege) -> command_decorator_type:
 
 
 
-
 def tool_factory(plugin_class_name: str, config: SubCommandConfig, callback: Callable[[Any], Any]) -> Callable[[ZulipUser], Type[BaseTool]]:
 
     # Dynamically create a Pydantic model for the tool's inputs
@@ -233,7 +232,6 @@ def tool_factory(plugin_class_name: str, config: SubCommandConfig, callback: Cal
         description=config.description,
         # args_schema=model,
     )
-
 
 
 class command:
@@ -412,7 +410,7 @@ class command:
             except StopIteration:
                 pass
             except UserNotPrivilegedException as e:
-                return Response.privilege_excpetion(message, outer_self.name)
+                return Response.privilege_excpetion(message, f"{self.plugin_name()} {outer_self.name}")
             except ZulipUserNotFound as e:
                 return Response.build_message(
                     message,
