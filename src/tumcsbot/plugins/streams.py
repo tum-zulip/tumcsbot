@@ -102,6 +102,9 @@ class Streams(PluginCommandMixin, Plugin):
 
             if result["result"] != "success":
                 yield PartialError(result["msg"])
+                continue
+
+            yield PartialSuccess(f"Stream {stream} created.")
 
     
     @command
