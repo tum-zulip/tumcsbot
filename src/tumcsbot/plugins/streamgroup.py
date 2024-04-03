@@ -8,27 +8,32 @@ from inspect import cleandoc
 import re
 from sqlite3 import IntegrityError
 from typing import cast, Any, Callable, Iterable
-from sqlalchemy import Column, String, Integer, ForeignKey, PrimaryKeyConstraint, UniqueConstraint
-from sqlalchemy.orm import relationship
+from sqlalchemy import Column, String, Integer, ForeignKey, UniqueConstraint
+from sqlalchemy.orm import relationship, Mapped
+from zulip import ZulipStream
 
-from tumcsbot.lib import stream_name_match, Regex, Response
-from tumcsbot.plugin import Event, PluginCommandMixin, PluginProcess
-from tumcsbot.command_parser import CommandParser
-from tumcsbot.db import DB, TableBase
+from tumcsbot.lib.response import Response
+from tumcsbot.plugin import Event, Plugin, PluginCommandMixin
+from tumcsbot.lib.command_parser import CommandParser
+from tumcsbot.lib.db import DB, TableBase
 from tumcsbot.plugin_decorators import *
+from tumcsbot.plugins.usergroup import UserGroup
+from tumcsbot.plugins.usergroup import Usergroup
 
-class Group(TableBase):
-    __tablename__ = 'Groups'
+class StreamGroup(TableBase):
+    __tablename__ = 'StreamGroups'
 
-    Id = Column(String, primary_key=True)
-    Emoji = Column(String, nullable=False, unique=True)
-    Streams = Column(String, nullable=False)
+    StreamGroupId = Column(String, primary_key=True)
+    StreamGroupEmote = Column(String, nullable=False, unique=True)
+    
+    steams = relationship("Stream", back_populates="StreamGroupMember")
+    usergroup: Mapped[UserGroup] = relationship(ondelete='CASCADE')
 
-class GroupUser(TableBase):
-    __tablename__ = 'GroupUsers'
+class StreamGroupMember(TableBase):
+    __tablename__ = 'StreamGroupMembers'
 
-    UserId = Column(Integer, primary_key=True)
-    GroupId = Column(String, ForeignKey('Groups.Id', ondelete='CASCADE'), primary_key=True)
+    StreamGroupId = Column(String, ForeignKey('StreamGroups.StreamGroupId', ondelete='CASCADE'), primary_key=True)
+    Stream = Column(ZulipStream, primary_key=True)
     
 
 class GroupClaim(TableBase):
@@ -36,7 +41,7 @@ class GroupClaim(TableBase):
 
     MessageId = Column(Integer, primary_key=True)
     GroupId = Column(String, ForeignKey('Groups.Id', ondelete='CASCADE'), primary_key=True)
-    
+
 
 class GroupClaimAll(TableBase):
     # todo: why is this necessary?
@@ -47,7 +52,7 @@ class GroupClaimAll(TableBase):
     # Define the constraint to ensure MessageId is unique across all GroupClaims tables
     UniqueConstraint('MessageId', name='uq_group_claims_all_message_id')
 
-class Group(PluginCommandMixin, Plugin):
+class Streamgroup(PluginCommandMixin, Plugin):
     zulip_events = ["message", "reaction", "stream"]
     syntax = cleandoc(
         """
@@ -217,7 +222,6 @@ class Group(PluginCommandMixin, Plugin):
 
         # Init some usefule constants.
         self._get_emoji: re.Pattern[str] = re.compile(r"\s*:?([^:]+):?\s*")
-        self.client_id: int = self.client.id
         # (removing trailing 'api/' from host url).
         self.message_link: str = (
             "[{0}](" + self.client.base_url[:-4] + "#narrow/id/{0})"
@@ -378,7 +382,7 @@ class Group(PluginCommandMixin, Plugin):
             or (
                 event.data["type"] == "reaction"
                 and event.data["op"] in ["add", "remove"]
-                and event.data["user_id"] != self.client_id
+                and event.data["user_id"] != self.client.id
             )
             or (event.data["type"] == "stream" and event.data["op"] == "create")
         )
