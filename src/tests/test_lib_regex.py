@@ -5,7 +5,7 @@
 
 import unittest
 
-from tumcsbot.lib import Regex
+from tumcsbot.lib.response import Regex
 
 
 class RegexTest(unittest.TestCase):

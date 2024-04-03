@@ -4,56 +4,47 @@
 # TUM CS Bot - https://github.com/ro-i/tumcsbot
 
 from typing import AsyncGenerator, Any
-from tumcsbot.db import Session
+from tumcsbot.lib.db import Session
 
-from tumcsbot.lib import Regex, Response
-from tumcsbot.command_parser import CommandParser
-from tumcsbot.plugin import PluginCommandMixin, Plugin, Privilege, ZulipUser
-from tumcsbot.plugin_decorators import (
+from tumcsbot.lib.response import Response
+from tumcsbot.lib.regex import Regex
+from tumcsbot.lib.types import (
+    Privilege,
+    PartialError,
+    PartialSuccess,
     DMError,
     DMResponse,
+    ZulipStream,
+    response_type,
+)
+from tumcsbot.lib.command_parser import CommandParser
+from tumcsbot.plugin import PluginCommandMixin, Plugin, ZulipUser
+from tumcsbot.plugin_decorators import (
     command,
     privilege,
     arg,
-    response_type,
-    PartialError,
-    PartialSuccess,
 )
 
 
 class Subscribe(PluginCommandMixin, Plugin):
     """
-    Subscribe all subscribers of the given streams or users to the destination stream.
+    Subscribe users to a stream.
     ---
-    If the destination stream does not exist yet, it will be \
-    automatically created (with an empty description).
-    The stream names may be of the form `<stream_name>` or \
-    `#**<stream_name>**` (autocompleted stream name).
-    The user names may be of the form `<user_name>`, \
-    `@**<user_name>**`, `@_**<user_name>**`, \
-    `@**<user_name>|<user_id>**`, `@_**<user_name>|<user_id>**` \
-    (autocompleted user names, possibly with the user id (an int)).
+    If the destination stream does not exist yet, it will be automatically created (with an empty description).
+    The stream names may be of the form `#**<stream_name>**` (autocompleted stream name).
+    The user names may be of the form `@**<user_name>**`, `@_**<user_name>**`, `@**<user_name>|<user_id>**`, `@_**<user_name>|<user_id>**` (autocompleted user names, possibly with the user id (an int)).
 
-    **Stream or user names containing whitespace need to be quoted.**
-    Note that the bot must have the permissions to invite users to \
-    the destination stream. Also note that there may exist multiple \
-    users with the same name and **all** of them will be subscribed \
-    if you do not provide a user id for an ambiguous user name. If \
-    you use Zulip's autocomplete feature for user names, the user \
-    id is automatically added if neccessary.
-
-    ````text
-    subscribe streams "destination stream" "#**test stream**" mystream
-    subscribe user_emails "destination stream" "foo@bar.com" "user42@zulip.org"
-    ````
+    Note that the bot must have the permissions to invite users to the destination stream.
+    Also note that there may exist multiple users with the same name and **all** of them will be subscribed if you do not provide a user id for an ambiguous user name.
+    If you use Zulip's autocomplete feature for user names, the user id is automatically added if neccessary.
     """
 
     @command
     @privilege(Privilege.ADMIN)
     @arg(
-        "dest_stream", Regex.get_stream_name, description="The destination stream name."
+        "dest_stream", ZulipStream, description="The destination stream name."
     )
-    @arg("streams", Regex.get_stream_name, description="The stream names.", greedy=True)
+    @arg("streams", ZulipStream, description="The stream names.", greedy=True)
     async def streams(
         self,
         _sender: ZulipUser,
@@ -65,9 +56,11 @@ class Subscribe(PluginCommandMixin, Plugin):
         """
         Subscribe all subscribers of the given streams to the destination stream.
         """
-        for stream in args.streams:
+        streams: list[ZulipStream] = args.streams
+        dest_stream: ZulipStream = args.dest_stream
+        for stream in streams:
             if not await self.client.subscribe_all_from_stream_to_stream(
-                stream, args.dest_stream, None
+                stream.name, dest_stream.name, None
             ):
                 yield PartialError(f"Failed to subscribe stream {stream}.")
             else:
@@ -76,7 +69,7 @@ class Subscribe(PluginCommandMixin, Plugin):
     @command
     @privilege(Privilege.ADMIN)
     @arg(
-        "dest_stream", Regex.get_stream_name, description="The destination stream name."
+        "dest_stream", ZulipStream, description="The destination stream name."
     )
     @arg(
         "users",
@@ -93,19 +86,21 @@ class Subscribe(PluginCommandMixin, Plugin):
         _message: dict[str, Any],
     ) -> AsyncGenerator[response_type, None]:
         """
-        Subscribe all users with the specified names to the destination stream.
+        Subscribe given users to the destination stream.
         """
         # First, get all the ids of the users whose ids we do not already know.
-        user_ids: list[int] = [await u.id for u in args.users]
+        users: list[ZulipUser] = args.users
+        user_ids: list[int] = [user.id for user in users]
+        dest_stream: ZulipStream = args.dest_stream
 
-        if not self.client.subscribe_users(user_ids, args.dest_stream):
+        if not self.client.subscribe_users(user_ids, dest_stream.name):
             raise DMError("Failed to subscribe all users.")
         yield DMResponse("Subscribed users.")
 
     @command
     @privilege(Privilege.ADMIN)
     @arg(
-        "dest_stream", Regex.get_stream_name, description="The destination stream name."
+        "dest_stream", ZulipStream, description="The destination stream name."
     )
     @arg("user_emails", str, description="The user email addresses.", greedy=True)
     async def user_emails(
@@ -125,11 +120,13 @@ class Subscribe(PluginCommandMixin, Plugin):
         user_ids: list[int] | None = await self.client.get_user_ids_from_emails(
             args.user_emails
         )
+        dest_stream: ZulipStream = args.dest_stream
+
         if user_ids is None:
             raise DMError("Failed to get user ids from emails.")
 
         if not await self.client.subscribe_users(
-            user_ids, args.dest_stream, allow_private_streams=True
+            user_ids, dest_stream.name, allow_private_streams=True
         ):
             raise DMError("Failed to subscribe all users.")
 
@@ -138,7 +135,7 @@ class Subscribe(PluginCommandMixin, Plugin):
     @command
     @privilege(Privilege.ADMIN)
     @arg(
-        "dest_stream", Regex.get_stream_name, description="The destination stream name."
+        "dest_stream", ZulipStream, description="The destination stream name."
     )
     async def all_users(
         self,

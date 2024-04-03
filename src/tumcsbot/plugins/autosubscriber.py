@@ -13,28 +13,27 @@ receive events for all public streams.
 [1] https://zulip.com/api/register-queue#parameter-all_public_streams
 """
 
+import asyncio
 from typing import Iterable
-from sqlalchemy import Column, Boolean, String
 
-from tumcsbot.lib import Response
+from tumcsbot.lib.response import Response
 from tumcsbot.plugin import Event,Plugin
-from tumcsbot.db import DB, TableBase
+from tumcsbot.lib.db import DB
+
+from tumcsbot.tumcsbot import PlublicStreams
 
 
 class AutoSubscriber(Plugin):
-    zulip_events = ["stream"]
-    _insert_sql: str = "insert or ignore into PublicStreams values (?, 0)"
-    _select_sql: str = "select StreamName, Subscribed from PublicStreams"
-    _subscribe_sql: str = "update PublicStreams set Subscribed = 1 where StreamName = ?"
-    _remove_sql: str = "delete from PublicStreams where StreamName = ?"
-
+    """Keep the bot subscribed to all public streams."""
+    
     def _init_plugin(self) -> None:
         self._db: DB = DB()
         # Ensure that we are subscribed to all existing streams.
-        # todo: for stream_name, subscribed in self._db.execute(self._select_sql):
-        # todo:     if subscribed == 1:
-        # todo:         continue
-        # todo:     self._handle_stream(stream_name, False)
+        with DB.session() as session:
+            streams = session.query(PlublicStreams).all()
+            for stream in streams:
+                if stream.Subscribed != 1:
+                    asyncio.run(self._handle_stream(stream.StreamName, False))
 
     def is_responsible(self, event: Event) -> bool:
         return super().is_responsible(event) and (
@@ -43,27 +42,29 @@ class AutoSubscriber(Plugin):
             or event.data["op"] == "delete"
         )
 
-    def handle_event(self, event: Event) -> Response | Iterable[Response]:
+    async def handle_event(self, event: Event) -> Response | Iterable[Response]:
         if event.data["op"] == "create":
             for stream in event.data["streams"]:
-                self._handle_stream(stream["name"], stream["invite_only"])
+                await self._handle_stream(stream["name"], stream["invite_only"])
+
         elif event.data["op"] == "delete":
             for stream in event.data["streams"]:
                 self._remove_stream_from_table(stream["name"])
+
         elif event.data["op"] == "update":
             if event.data["property"] == "invite_only":
-                self._handle_stream(event.data["name"], event.data["value"])
+                await self._handle_stream(event.data["name"], event.data["value"])
             elif event.data[
                 "property"
             ] == "name" and not self.client.private_stream_exists(event.data["name"]):
                 # Remove the previous stream name from the database.
                 self._remove_stream_from_table(event.data["name"])
                 # Add the new stream name.
-                self._handle_stream(event.data["value"], False)
+                await self._handle_stream(event.data["value"], False)
 
         return Response.none()
 
-    def _handle_stream(self, stream_name: str, private: bool) -> None:
+    async def _handle_stream(self, stream_name: str, private: bool) -> None:
         """Do the actual subscribing.
 
         Additionally, keep the list of public streams in the database
@@ -72,23 +73,28 @@ class AutoSubscriber(Plugin):
         if private:
             self._remove_stream_from_table(stream_name)
             return
-
+        
         try:
-            self._db.execute(self._insert_sql, stream_name, commit=True)
+            with DB.session() as session:
+                session.merge(PlublicStreams(StreamName=stream_name, Subscribed=0))
+                session.commit()
+
+                if await self.client.subscribe_users([self.client.id], stream_name):
+                    session.query(PlublicStreams).filter_by(StreamName=stream_name).update(
+                        {PlublicStreams.Subscribed: 1}
+                    )
+                    session.commit()
+                    self.logger.info("subscribed to %s", stream_name)
+                else:
+                    self.logger.warning("could not subscribe to %s", stream_name)
         except Exception as e:
             self.logger.exception(e)
-
-        if self.client.subscribe_users([self.client.id], stream_name):
-            try:
-                self._db.execute(self._subscribe_sql, stream_name, commit=True)
-            except Exception as e:
-                self.logger.exception(e)
-        else:
-            self.logger.warning("could not subscribe to %s", stream_name)
 
     def _remove_stream_from_table(self, stream_name: str) -> None:
         """Remove the given stream name from the PublicStreams table."""
         try:
-            self._db.execute(self._remove_sql, stream_name, commit=True)
+            with DB.session() as session:
+                session.query(PlublicStreams).filter_by(StreamName=stream_name).delete()
+                session.commit()
         except Exception as e:
             self.logger.exception(e)

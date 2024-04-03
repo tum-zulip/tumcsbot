@@ -10,22 +10,89 @@ Provide also an interactive command so administrators are able to
 change the alert words and specify the emojis to use for the reactions.
 """
 
+from enum import Enum
 from inspect import cleandoc
 from typing import Any, Iterable, Callable
 
-from tumcsbot.lib import Response, Regex
-from tumcsbot.command_parser import CommandParser
-from tumcsbot.db import DB
-from tumcsbot.plugin import PluginCommandMixin,Plugin
-from tumcsbot.plugins.moderation_reaction_handler import ModerationReactionHandler
+from sqlalchemy import Column, ForeignKey, Integer, String
+from sqlalchemy.orm import relationship, Mapped
+import yaml
+
+from tumcsbot.lib.response import Response
+from tumcsbot.lib.regex import Regex
+from tumcsbot.lib.command_parser import CommandParser
+from tumcsbot.lib.db import TableBase, serialize_model
+from tumcsbot.lib.types import ZulipStream
+from tumcsbot.plugin import PluginCommandMixin, Plugin
+from tumcsbot.plugin_decorators import *
+from tumcsbot.plugins.usergroup import UserGroup, UserGroupMember, Usergroup
+
+# from tumcsbot.plugins.moderation_reaction_handler import ModerationReactionHandler
+
+
+class ReactionAction(TableBase):
+    __tablename__ = "ReactionAction"
+
+    ReactionActionId = Column(Integer, primary_key=True, autoincrement=True)
+    Action = Column(String, nullable=False)
+    Data = Column(String)
+
+    reaction = Column(Integer, ForeignKey("ReactionConfig.id", ondelete="CASCADE"))
+
+
+class ReactionConfig(TableBase):
+    __tablename__ = "ReactionConfig"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    emote = Column(String, unique=True, nullable=False)
+    ModerationConfigId = Column(
+        Integer, ForeignKey("ModerationConfig.ModerationConfigId", ondelete="CASCADE")
+    )
+
+    actions: Mapped[list[ReactionAction]] = relationship()
+
+
+class GroupAuthorization(TableBase):
+    __tablename__ = "GroupAuthorization"
+
+    GroupId = Column(
+        Integer, ForeignKey(UserGroup.GroupId, ondelete="CASCADE"), primary_key=True
+    )
+    ModerationConfigId = Column(
+        Integer, ForeignKey("ModerationConfig.ModerationConfigId", ondelete="CASCADE"), primary_key=True
+    )
+
+    group: Mapped[UserGroup] = relationship()
+
+
+class StreamAuthorization(TableBase):
+    __tablename__ = "StreamAuthorization"
+
+    Stream = Column(ZulipStream, primary_key=True)
+    ModerationConfigId = Column(
+        Integer, ForeignKey("ModerationConfig.ModerationConfigId", ondelete="CASCADE"), primary_key=True
+    )
+
+
+class ModerationConfig(TableBase):
+    __tablename__ = "ModerationConfig"
+
+    ModerationConfigId = Column(Integer, primary_key=True, autoincrement=True)
+    ModerationConfigName = Column(String, nullable=False, unique=True)
+
+    streams: Mapped[list[StreamAuthorization]] = relationship()
+    groups: Mapped[list[GroupAuthorization]] = relationship()
+    reactions: Mapped[list[ReactionConfig]] = relationship()
+
+
+class ReactionActionType(Enum):
+    DM = 1
+    DELETE = 2
+    RESPOND = 2
 
 
 class Moderate(PluginCommandMixin, Plugin):
-    _actions = {
-        "dm": "sends a message to the author",
-        "delete": "deletes the message",
-        "respond": "respons to the message",
-    }
+
     # pylint: disable=line-too-long
     _default_config: list[tuple[str, str, str | None, str]] = [
         (
@@ -188,19 +255,6 @@ class Moderate(PluginCommandMixin, Plugin):
     ]
     # pylint: enable=line-too-long
 
-    _list_reaction_sql: str = "select * from ReactionConfig"
-    _insert_reaction_sql: str = (
-        "insert or ignore into ReactionConfig values (?, ?, ?, ?, ?)"
-    )
-    _delete_reaction_sql: str = "delete from ReactionConfig where "
-
-    _list_authorized_streams_sql: str = "select a.StreamId from GroupAuthorization a, UserGroupMembers m where a.GroupId = m.GroupId and m.UserId = ?"
-    _list_authorization_sql: str = "select * from GroupAuthorization"
-    _insert_authorization_sql: str = (
-        "insert or ignore into GroupAuthorization values (?, ?)"
-    )
-    _delete_authorization_sql: str = "delete from GroupAuthorization where "
-
     @staticmethod
     def parse_action(s: str) -> str:
         if s in Moderate._actions:
@@ -213,28 +267,6 @@ class Moderate(PluginCommandMixin, Plugin):
             return Moderate.parse_action(s)
         except:
             return str(int(s))
-
-    def _init_plugin(self) -> None:
-        # Get own database connection.
-        self._db: DB = DB()
-        # Check for database table.
-        self._db.checkout_table(
-            "ReactionConfig",
-            "(UserId integer not null, Emote text not null, Action text, Message text, Description text)",
-        )
-
-        self._db.checkout_table(
-            "GroupAuthorization",
-            "(GroupId integer not null, StreamId integer not null, primary key(GroupId, StreamId))",
-        )
-        # self._db.checkout_table(
-        #     "UserGroups",
-        #     "(GroupId integer primary key, UGroup text unique)",
-        # )
-        # self._db.checkout_table(
-        #     "UserGroupMembers",
-        #     "(GroupId integer not null, UserId integer not null, primary key (GroupId, UserId))",
-        # )
 
         # pylint: disable=line-too-long
         self.command_parser: CommandParser = CommandParser()
@@ -297,7 +329,7 @@ class Moderate(PluginCommandMixin, Plugin):
             },
             # todo: description=cleandoc(
             # todo:     """
-            # todo:     
+            # todo:
             # todo:     Remove reactions from a configuration
             # todo:     - `user` : the user the reaction should be removed from. Defaults to the sender of the command
             # todo:     - `reaction` : the reaction that should be affected. Defaults to all reactions
@@ -354,102 +386,80 @@ class Moderate(PluginCommandMixin, Plugin):
 
         self.update_plugin_usage()
 
-    def handle_message(self, message: dict[str, Any]) -> Response | Iterable[Response]:
-        result: tuple[str, CommandParser.Opts, CommandParser.Args] | None
-        _: list[tuple[Any, ...]]
-
-        # Get command and parameters.
-        result = self.command_parser.parse(message["command"])
-        self.logger.debug(result)
-        if result is None:
-            return Response.command_not_found(message)
-        command, opts, args = result
-
-        if command in self.command_parser.commands:
-            func: Callable[
-                [dict[str, Any], CommandParser.Args, CommandParser.Opts],
-                Response | Iterable[Response],
-            ] = getattr(self, "_" + command)
-            return func(message, args, opts)
-
-        return Response.command_not_found(message)
-
-    def _list(
+    @command(name="list")
+    @arg(
+        "user",
+        ZulipUser,
+        optional=True,
+        description="The user for which the config should be displayed. Defaults to the sender of the command",
+    )
+    @opt(
+        "a",
+        "all",
+        privilege=Privilege.ADMIN,
+        description="Option to display configuration for all users",
+    )
+    @opt(
+        "v",
+        "verbose",
+        description="Additionaly show the actions taken for each reaction",
+    )
+    async def _list(
         self,
-        message: dict[str, Any],
+        sender: ZulipUser,
+        session: Session,
         args: CommandParser.Args,
         opts: CommandParser.Opts,
-    ) -> Response | Iterable[Response]:
-        user_id: int | None
-        uid: int
+        message: dict[str, Any],
+    ) -> AsyncGenerator[response_type, None]:
+        user: ZulipUser
 
         if args.user is not None:
-            user_id = self.client.get_user_id_by_name(args.user)
-            if user_id is None:
-                return Response.build_message(
-                    message, f"User not found: {args.user}", msg_type="private"
-                )
-            uid = user_id
+            user = args.user
         else:
-            uid = message["sender_id"]
-            user_result = self.client.get_user_by_id(uid)
-            if user_result["result"] != "success":
-                return Response.build_message(
-                    message, f"User with id {uid} not found.", msg_type="private"
-                )
-            args.user = f"@_**{user_result['user']['full_name']}|{user_result['user']['user_id']}**"
+            user = sender
 
-        if not self.client.user_is_privileged(message["sender_id"]) and (
-            message["sender_id"] != uid or opts.all or opts.a
-        ):
-            return Response.privilege_err(message)
-
-        if self.client.user_is_privileged(message["sender_id"]) and (
-            opts.all or opts.a
-        ):
-            responses = [
-                response
-                for user_id, config in self.get_config_dict().items()
-                for response in self.format_config(
-                    message, user_id, config, opts.v or opts.verbose
-                )
-            ]
-            if not opts.verbose and not opts.v:
-                responses.append(
-                    Response.build_message(
-                        message, "*hint: use option -v to see detailed description*"
-                    )
-                )
-
-            return responses
-
-        cfg = self.get_config_dict()
-
-        if uid not in cfg:
-            return Response.build_message(
-                message, f"{args.user} does not have any reaction configuration"
+        if not user.isPrivileged and sender.id != user.id:
+            raise UserNotPrivilegedException(
+                "You need to be privileged to view the moderation configuration of other users."
             )
 
-        if cfg:
-            responses_single = self.format_config(
-                message, uid, cfg[uid], opts.v or opts.verbose
+        content = ""
+        if opts.a:
+            cfgs = session.query(ModerationConfig).all()
+        else:
+            cfgs = (
+                session.query(ModerationConfig)
+                .join(GroupAuthorization)
+                .join(UserGroup)
+                .filter(UserGroup._members.any(UserGroupMember.User == user))
+                .all()
             )
-            if not opts.verbose and not opts.v:
-                responses_single.append(
-                    Response.build_message(
-                        message, "*hint: use option -v to see detailed description*"
-                    )
-                )
-            return responses_single
 
-        return Response.privilege_err(message)
+        content = "---\n".join(
+            [await Moderate.format_config(c, verbose=opts.v) for c in cfgs]
+        )
+
+        if not cfgs:
+            if opts.a:
+                raise DMError("No moderation configuration found")
+
+            raise DMError(
+                f"No moderation configuration found for {user.mention_silent}"
+            )
+
+        if not opts.v:
+            content += "---\n*hint: use option -v to see detailed description*"
+        yield DMResponse(content)
 
     def _add(
         self,
-        message: dict[str, Any],
+        sender: ZulipUser,
+        session: Session,
         args: CommandParser.Args,
-        _: CommandParser.Opts,
-    ) -> Response | Iterable[Response]:
+        opts: CommandParser.Opts,
+        message: dict[str, Any],
+    ) -> AsyncGenerator[response_type, None]:
         user_id: int | None
         uid: int
         description: str
@@ -501,406 +511,308 @@ class Moderate(PluginCommandMixin, Plugin):
         )
         return Response.ok(message)
 
-    def _defaults(
+    @command
+    @privilege(Privilege.ADMIN)
+    @arg("name", str, description="The name of the configuration")
+    async def create(
         self,
-        message: dict[str, Any],
+        _sender: ZulipUser,
+        session: Session,
         args: CommandParser.Args,
-        _: CommandParser.Opts,
-    ) -> Response | Iterable[Response]:
-        responses = []
-        uid = message["sender_id"]
-        user_result = self.client.get_user_by_id(uid)
-        if user_result["result"] != "success":
-            return Response.build_message(
-                message,
-                f"Error: User with id {uid} not found.",
-                msg_type="private",
+        _opts: CommandParser.Opts,
+        _message: dict[str, Any],
+    ) -> AsyncGenerator[response_type, None]:
+        """
+        Create a new moderation configuration
+        """
+        if (
+            session.query(ModerationConfig)
+            .filter(ModerationConfig.ModerationConfigName == args.name)
+            .count()
+            > 0
+        ):
+            raise DMError(
+                f"Error: Configuration with name '{args.name}' already exists"
             )
-        sender_user_name = (
-            f"@_**{user_result['user']['full_name']}|{user_result['user']['user_id']}**"
+
+        session.add(ModerationConfig(name=args.name))
+        session.commit()
+        yield DMResponse(f"Configuration '{args.name}' created")
+
+    @command
+    async def defaults(
+        self,
+        _sender: ZulipUser,
+        session: Session,
+        _args: CommandParser.Args,
+        _opts: CommandParser.Opts,
+        _message: dict[str, Any],
+    ) -> AsyncGenerator[response_type, None]:
+
+        emotes = set([e for e, _, _, _ in self._default_config])
+        session.query(ModerationConfig).filter(
+            ModerationConfig.ModerationConfigName == "default"
+        ).delete()
+        session.merge(
+            ModerationConfig(
+                name="default",
+                reactions=[
+                    ReactionConfig(
+                        emote=emote_str,
+                        actions=[
+                            ReactionAction(action=action_str, data=msg_str)
+                            for inner_emote, action_str, msg_str, _ in self._default_config
+                            if inner_emote == emote_str
+                        ],
+                    )
+                    for emote_str in emotes
+                ],
+            )
         )
+        session.commit()
+        yield DMResponse("Default reactions set")
 
-        if len(args.users) == 0:
-            args.users.append(sender_user_name)
-
-        for user in args.users:
-            user_id = self.client.get_user_id_by_name(user)
-
-            if user_id is None:
-                responses.append(
-                    Response.build_message(
-                        message, f"User not found: {user}", msg_type="private"
-                    )
-                )
-                continue
-
-            if user_id != message["sender_id"] and not self.client.user_is_privileged(
-                message["sender_id"]
-            ):
-                responses.append(
-                    Response.build_message(
-                        message,
-                        f"You are not privileged to edit the reaction config for {user}",
-                        msg_type="private",
-                    )
-                )
-                continue
-
-            for emote_str, action_str, msg_str, desc in self._default_config:
-                db_cmd = (
-                    self._delete_reaction_sql
-                    + f" Emote = '{emote_str}' and UserId = {user_id}"
-                )
-                self._db.execute(db_cmd, commit=True)
-
-            reactions: set[str] = set()
-            for emote_str, action_str, msg_str, desc in self._default_config:
-                self._db.execute(
-                    self._insert_reaction_sql,
-                    user_id,
-                    emote_str,
-                    action_str,
-                    msg_str,
-                    desc,
-                    commit=True,
-                )
-                reactions.add(emote_str)
-
-            reaction_str = " \n".join(
-                [
-                    f" - {emote}: {self.reaction_description(user_id, emote)}"
-                    for emote in reactions
-                ]
-            )
-            responses.append(
-                Response.build_message(
-                    message=None,
-                    content=f"Hey,\nthe following reactions have been updated for you by {sender_user_name}:\n{reaction_str}\nThese reactions have the above described effect in streams you are authorized.\n\n*hint: use the moderate command for more information*",
-                    msg_type="private",
-                    to=[user_id],
-                )
-            )
-
-        responses.append(Response.ok(message))
-        return responses
-
-    def _authorize(
+    @command
+    @privilege(Privilege.ADMIN)
+    @arg(
+        "moderation_config",
+        ModerationConfig.ModerationConfigName,
+        description="The name of the moderation configuration",
+    )
+    @opt(
+        "g",
+        "group",
+        UserGroup.GroupName,
+        description="The group that should be granted moderation rights",
+    )
+    @opt(
+        "s",
+        "stream",
+        ZulipStream,
+        description="The streams that the moderation configuration is applicable to should be able to moderate",
+    )
+    async def authorize(
         self,
-        message: dict[str, Any],
+        sender: ZulipUser,
+        session: Session,
         args: CommandParser.Args,
-        _: CommandParser.Opts,
-    ) -> Response | Iterable[Response]:
-        if not self.client.user_is_privileged(message["sender_id"]):
-            return Response.privilege_err(message)
+        opts: CommandParser.Opts,
+        message: dict[str, Any],
+    ) -> AsyncGenerator[response_type, None]:
+        moderation_config: ModerationConfig = args.moderation_config
+        group: UserGroup | None = opts.group
+        stream: ZulipStream | None = opts.stream
 
-        res = []
-        gid_opt = self.get_group_id_by_name(args.group)
-        if gid_opt is None or gid_opt not in [g["id"] for g in self.get_groups()]:
-            return Response.build_message(
-                message, f"Error: No such group: {args.group}", msg_type="private"
+        if not group and not stream:
+            raise DMError("Error: At least a stream or a group must be specified.")
+
+        if group and stream:
+            raise DMError(
+                "Error: Either a group or streams must be specified, not both."
             )
-        gid: int = gid_opt
-        successful_streams = []
-        for stream in args.streams:
-            stream_id = self.client.get_stream_id_by_name(stream)
 
-            if stream_id is None:
-                res.append(
-                    Response.build_message(
-                        message,
-                        f"Error: Stream not found: {stream}",
-                        msg_type="private",
-                    )
+        if group:
+            session.merge(
+                GroupAuthorization(
+                    GroupId=group.GroupId, ModerationConfigId=moderation_config.id
                 )
-                continue
-            self._db.execute(
-                self._insert_authorization_sql, gid, stream_id, commit=True
             )
-            successful_streams.append(stream)
-
-        members = self.get_group_members(gid)
-        if members is None:
-            res.append(
-                Response.build_message(
-                    message,
-                    f"Error: Could net get group members from group: {args.group}",
-                    msg_type="private",
+            session.commit()
+            for member in group.members:
+                yield DMMessage(
+                    member,
+                    f"Hey,\nthe group '{group.GroupName}' you are a member of has been granted moderation rights for `{moderation_config.name}`.\n*hint: use the moderate command for more information*",
                 )
+            yield DMResponse(
+                f"Notified members of group '{group.GroupName}' about the new moderation rights."
             )
         else:
-            streams_str = ", ".join(successful_streams)
-            for member in members:
-                res.append(
-                    Response.build_message(
-                        message=None,
-                        content=f"Hey,\nthe group '{args.group}' you are a member of has been granted moderation rights for the following streams:\n[{streams_str}]\n\n*hint: use the moderate command for more information*",
-                        msg_type="private",
-                        to=[member],
-                    )
+            session.merge(
+                StreamAuthorization(
+                    Stream=stream, ModerationConfigId=moderation_config.id
                 )
-
-        if len(res) == 0:
-            res.append(Response.ok(message))
-        return res
-
-    def _revoke(
-        self,
-        message: dict[str, Any],
-        args: CommandParser.Args,
-        _: CommandParser.Args,
-    ) -> Response | Iterable[Response]:
-        db_filters = []
-        responses = []
-
-        if not self.client.user_is_privileged(message["sender_id"]):
-            return Response.privilege_err(message)
-
-        if not args.stream and not args.group:
-            return Response.build_message(
-                message,
-                "Error: At least a stream or a group must be specified.",
-                msg_type="private",
             )
 
-        if args.stream is not None:
-            stream_id = self.client.get_stream_id_by_name(args.stream)
-            if stream_id is None:
-                return Response.build_message(
-                    message,
-                    f"Error: Stream not found: {args.stream}",
-                    msg_type="private",
+            member: UserGroupMember
+            for member in group.members:
+                yield DMMessage(
+                    member,
+                    f"Hey,\nthe group '{group.GroupName}' you are a member of has been granted moderation rights for `{moderation_config.name}`.\n*hint: use the moderate command for more information*",
                 )
-            db_filters.append(f"StreamId = '{stream_id}'")
 
-        if args.group is not None:
-            group_id = self.get_group_id_by_name(args.group)
-            if group_id is None:
-                return Response.build_message(
-                    message,
-                    f"Error: Group not found: {args.group}",
-                    msg_type="private",
-                )
-            db_filters.append(f"GroupId = '{group_id}'")
-
-            members = self.get_group_members(group_id)
-            if members is None:
-                responses.append(
-                    Response.build_message(
-                        message,
-                        f"Error: Could net get group members from group: {args.group}",
-                        msg_type="private",
-                    )
-                )
-            else:
-                stream_str = (
-                    " for the stream " + args.stream if args.stream is not None else ""
-                )
-                for member in members:
-                    responses.append(
-                        Response.build_message(
-                            message=None,
-                            content=f"Hey,\nmoderation rights of the group {args.group} you are a member of has been withdrawn{stream_str}\n\n*hint: use the moderate command for more information*",
-                            msg_type="private",
-                            to=[member],
-                        )
-                    )
-
-        db_cmd = self._delete_authorization_sql + " and ".join(db_filters)
-        self.logger.debug(db_cmd)
-        self._db.execute(db_cmd, commit=True)
-        responses.append(Response.ok(message))
-        return responses
-
-    def _remove(
-        self,
-        message: dict[str, Any],
-        args: CommandParser.Args,
-        _: CommandParser.Opts,
-    ) -> Response | Iterable[Response]:
-        user_id = message["sender_id"]
-        db_filters = []
-        end_str = ""
-
-        if message["sender_id"] != user_id and not self.client.user_is_privileged(
-            message["sender_id"]
-        ):
-            return Response.privilege_err(message)
-
-        if args.action and not args.reaction:
-            return Response.build_message(
-                message, "Error: Missing argument: reaction", msg_type="private"
+            session.commit()
+            yield DMResponse(
+                f"Group '{group.GroupName}' has been granted moderation rights for {moderation_config.name}."
             )
 
-        if args.user is not None:
-            user_id = self.client.get_user_id_by_name(args.user)
-            if user_id is None:
-                return Response.build_message(
-                    message, f"Error: User not found: {args.user}", msg_type="private"
-                )
-            db_filters.append(f"UserId = {user_id}")
-
-        if args.reaction is not None:
-            db_filters.append(f"Emote = '{args.reaction}'")
-
-            end_str = ""
-            if args.action is not None:
-                end_str = f"and Action = '{args.action}'"
-                try:
-                    idx = int(args.action)
-                    end_str = f"LIMIT {idx}-1,1"
-                except:
-                    pass
-
-        db_cmd = self._delete_reaction_sql + " and ".join(db_filters) + end_str
-        self.logger.debug(db_cmd)
-        self._db.execute(db_cmd, commit=True)
-        return Response.ok(message)
-
-    def get_config_dict(self) -> dict[int, dict[str, list[dict[str, str]]]]:
-        dict_result: dict[int, dict[str, list[dict[str, str]]]] = {}
-        db_result = self._db.execute(self._list_reaction_sql)
-        for user_id, _, _, _, _ in db_result:
-            dict_result[user_id] = {}
-
-        for user_id, emote, _, _, _ in db_result:
-            dict_result[user_id][emote] = []
-
-        for user_id, emote, action, msg, desc in db_result:
-            if msg:
-                dict_result[user_id][emote].append(
-                    {"action": action, "msg": msg, "description": desc}
-                )
-            else:
-                dict_result[user_id][emote].append(
-                    {"action": action, "description": desc}
-                )
-
-        return dict_result
-
-    def format_config(
+    @command
+    @privilege(Privilege.ADMIN)
+    @arg(
+        "moderation_config", ModerationConfig.ModerationConfigName, description="The name of the moderation configuration"
+    )
+    @opt("g", "group", UserGroup.GroupName, description="The group that should no longer be granted moderation rights")
+    @opt("s", "stream", ZulipStream, description="The stream that should no longer be able to be moderated")
+    async def revoke(
         self,
+        sender: ZulipUser,
+        session: Session,
+        args: CommandParser.Args,
+        opts: CommandParser.Opts,
         message: dict[str, Any],
-        user_id: int,
-        cfg: dict[str, list[dict[str, str]]],
-        verbose: bool = False,
-    ) -> list[Response]:
-        responses = []
-        user_result = self.client.get_user_by_id(user_id)
-        if user_result["result"] != "success":
-            return [
-                Response.build_message(
-                    message, f"User with id {user_id} not found.", msg_type="private"
+    ) -> AsyncGenerator[response_type, None]:
+        config: ModerationConfig = args.moderation_config
+
+
+        if opts.stream:
+            stream: ZulipStream = opts.stream
+
+            if not config.streams.any(StreamAuthorization.Stream == stream):
+                raise DMError(
+                    f"Error: Stream '{stream.name}' does not have moderation rights for {config.ModerationConfigName}"
                 )
-            ]
-        user_name = (
-            f"@_**{user_result['user']['full_name']}|{user_result['user']['user_id']}**"
+
+            session.query(StreamAuthorization).filter(
+                StreamAuthorization.ModerationConfigId == config.ModerationConfigId
+            ).filter(StreamAuthorization.Stream == stream).delete()
+            session.commit()
+            yield DMResponse(
+                f"Stream '{stream}' has been revoked moderation rights for {config.ModerationConfigName} and the members have been notified."
+            )
+        
+        else:
+            group: UserGroup = opts.group
+
+            if not config.groups.any(GroupAuthorization.GroupId == group.GroupId):
+                raise DMError(
+                    f"Error: Group '{group.GroupName}' does not have moderation rights for {config.ModerationConfigName}"
+                )
+
+            session.query(GroupAuthorization).filter(
+                GroupAuthorization.ModerationConfigId == config.ModerationConfigId
+            ).filter(GroupAuthorization.GroupId == group.GroupId).delete()
+            session.commit()
+            yield DMResponse(
+                f"Group '{group.GroupName}' has been revoked moderation rights for {config.ModerationConfigName} and the members have been notified."
+            )
+
+
+    @command
+    @privilege(Privilege.ADMIN)
+    @arg("name", ModerationConfig.ModerationConfigName, description="The name of the configuration")
+    @arg("emote", Regex.get_reaction_emoji, description="The emote that should trigger the reaction")
+    @arg("configuration", str, description="The configuration for the reaction as a yaml-style code block.", greedy=True)
+    async def configure_reaction(
+        self,
+        _sender: ZulipUser,
+        session: Session,
+        _args: CommandParser.Args,
+        _opts: CommandParser.Opts,
+        _message: dict[str, Any],
+    ) -> AsyncGenerator[response_type, None]:
+        """
+        Configure a reaction.
+        ---
+        the configuration should be a yaml-style code block with the following structure:
+        ```yaml
+        - <action>: [data]
+        # ...
+        # ...
+        # ...
+        ```
+        where `<action>` is one of the following actions:
+        - `dm` : send a dm to the author
+        - `delete` : delete the message
+        - `respond` : respond to the message
+        and `[data]` is the message that should be sent.
+
+        Here is an example configuration:
+        ```yaml
+        - dm: >
+            Your question has already been asked elsewhere and was therefore deleted.
+        - delete: null
+        ```
+        """
+        pass
+
+    @command
+    @privilege(Privilege.ADMIN)
+    async def export(
+        self,
+        _sender: ZulipUser,
+        session: Session,
+        _args: CommandParser.Args,
+        _opts: CommandParser.Opts,
+        _message: dict[str, Any],
+    ) -> AsyncGenerator[response_type, None]:
+        """
+        Export all user groups as yaml.
+        """
+        configs = []
+        for c in session.query(ModerationConfig).all():
+            try:
+                dict_repr = {
+                    "name": c.name,
+                    "streams": [serialize_model(s) for s in c.streams],
+                    "groups": [g.group.GroupName for g in c.groups],
+                    "reactions": [serialize_model(r) for r in c.reactions],
+                }
+                configs.append(dict_repr)
+            except Exception as e:
+                yield PartialError(f"Could not serialize group {c.name}: {str(e)}")
+                self.logger.exception(e)
+                continue
+            yield PartialSuccess(f"Exported group {c.name}")
+        yield DMResponse(
+            "```yaml\n"
+            + yaml.dump(configs, allow_unicode=True, sort_keys=False)
+            + "\n```"
         )
-        msg = f"## Configuration for {user_name}\n"
 
-        streams = []
-        for stream_id in map(
-            lambda x: x[0], self._db.execute(self._list_authorized_streams_sql, user_id)
-        ):
-            stream = self.client.get_stream_by_id(stream_id)
-            if stream is None:
-                responses.append(
-                    Response.build_message(
-                        message, f"Error: Stream with id {stream_id} not found."
-                    )
-                )
-            else:
-                streams.append(f"#**{stream['name']}**")
-
-        msg += "**Authorized streams:**\n[" + ", ".join(streams) + "]"
-        msg += "\n**Configured reactions**"
+    @staticmethod
+    async def format_reactions(
+        reactions: list[ReactionConfig], verbose: bool = False
+    ) -> str:
         if verbose:
-            for emote, actions in cfg.items():
-                msg += f"\n---\n**{emote}**\n"
-                for a in actions:
-                    if "msg" in a:
-                        msg += f" - `{a['action']}`\n```text\n{a['msg'].replace('```', '````')}\n```\n"
-                    else:
-                        msg += f" - `{a['action']}`\n\n"
+            msg = "\nEmote | Reaction\n"
+            msg += "---- | ----\n"
+            for r in reactions:
+                actions = ",".join([f"[{a.Action}]`{a.Data}`" for a in r.actions])
+                msg += f"{r.emote} | {actions}\n"
+            msg += "\n"
         else:
-            msg += (
-                " \n".join(
-                    [
-                        f" - {emote}: {self.reaction_description(user_id, emote)}"
-                        for emote in cfg.keys()
-                    ]
-                )
-                + "\n"
-            )
+            emotes = [r.emote for r in reactions]
+            if len(emotes) == 0:
+                msg = "*No reactions configured*\n"
+            else:
+                msg = ", ".join(emotes) + "\n"
+        return msg
 
-        responses.append(Response.build_message(message, msg))
-        return responses
+    @staticmethod
+    async def format_authorizations(
+        authorizations: list[GroupAuthorization],
+        verbose: bool = False,
+    ) -> str:
+        msg = ""
+        if len(authorizations) == 0:
+            return "*No authorizations configured*\n"
+        else:
+            for g in authorizations:
+                msg += f" - {g.group.GroupName}\n"
+                if verbose:
+                    members = [m for m in g.group.members]
+                    for m in members:
+                        await m
+                    msg += "    " + ", ".join([m.mention_silent for m in members]) 
+        return msg
 
-    def reaction_description(self, user_id: int, reaction: str) -> str:
-        return " and ".join(
-            [e["description"] for e in self.get_config_dict()[user_id][reaction]]
-        )
-
-    # TODO: replacement for zulip usergroups. Rreplace as soon as api allows bot requests for usergroups
-    def get_groups(self) -> list[dict[str, Any]]:
-        res_groups = self._db.execute("select * from UserGroups")
-        if res_groups is None:
-            return []
-
-        groups: list[dict[str, Any]] = []
-        for group_id, group_name in res_groups:
-            memers_res = self._db.execute(
-                "select m.UserId from UserGroups g, UserGroupMembers m where m.GroupId = ?",
-                group_id,
-            )
-            members: list[int] = []
-            if memers_res is not None:
-                members = [t[0] for t in memers_res]
-            groups.append({"id": group_id, "name": group_name, "members": members})
-
-        return groups
-
-    def get_group_id_by_name(self, group_name: str) -> int | None:
-        res = self._db.execute(
-            "select GroupId from UserGroups where UGroup = ? LIMIT 1", group_name
-        )
-        if not res or len(res) == 0:
-            return None
-        i: int = res[0][0]
-        return i
-
-    def group_id_by_identifier(self, identifier: int | str) -> int | None:
-        if isinstance(identifier, int):
-            return int(identifier)
-        res = self._db.execute(
-            "select GroupId from UserGroups where UGroup = ? LIMIT 1", identifier
-        )
-        if not res or len(res) == 0:
-            return None
-        i: int = res[0][0]
-        return i
-
-    def get_group_by_identifier(self, identifier: int | str) -> dict[str, Any] | None:
-        gid = self.group_id_by_identifier(identifier)
-        if gid is None:
-            return None
-        res_name = self._db.execute(
-            "select UGroup from UserGroups where GroupId = ? LIMIT 1", gid
-        )
-        res_members = self._db.execute(
-            "select UserId from UserGroupMembers where GroupId = ?", gid
-        )
-        if res_members is None or res_name is None or len(res_name) == 0:
-            return None
-        g: dict[str, Any] = {
-            "id": gid,
-            "name": res_name[0][0],
-            "members": [t[0] for t in res_members],
-        }
-        return g
-
-    def get_group_members(self, identifier: int | str) -> list[int]:
-        g = self.get_group_by_identifier(identifier)
-        if g is None:
-            return []
-        members: list[int] = g["members"]
-        return members
+    @staticmethod
+    async def format_config(
+        cfg: ModerationConfig,
+        verbose: bool = False,
+    ) -> str:
+        msg = f"## Configuration for {cfg.ModerationConfigName}\n"
+        msg += "**Configured reactions**\n"
+        msg += await Moderate.format_reactions(cfg.reactions, verbose)
+        msg += "**Authorized groups:**\n"
+        msg += await Moderate.format_authorizations(cfg.groups, verbose)
+        return msg

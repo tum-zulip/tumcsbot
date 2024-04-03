@@ -18,23 +18,23 @@ PluginCommandMixin   Mixin class tailored for interactive commands.
 
 from __future__ import annotations
 import asyncio
-from dataclasses import asdict, dataclass, field
-from enum import Enum
+from dataclasses import asdict
 from inspect import cleandoc
 import json
 import logging
 from abc import ABC, abstractmethod
 import threading
-from typing import Any, Callable, Final, Iterable, Type, final
+from typing import Any, Callable, Iterable, Type, final
 
-from pydantic import BaseModel, Field
-from langchain.tools import BaseTool
 
-from tumcsbot.client import AsyncClient, PluginContext
-from tumcsbot.lib import LOGGING_FORMAT, Regex, Response, StrEnum
-from tumcsbot.command_parser import CommandParser
-from tumcsbot.db import DB, TableBase
+from tumcsbot.lib.client import AsyncClient, PluginContext
+from tumcsbot.lib.response import Response, StrEnum
+from tumcsbot.lib.command_parser import CommandParser
+from tumcsbot.lib.db import DB, TableBase
+
 from sqlalchemy import Column, String
+
+from tumcsbot.lib.types import AsncClientMixin, CommandConfig, ZulipUser
 
 
 class PluginTable(TableBase):
@@ -50,9 +50,10 @@ class PluginTable(TableBase):
 class EventType(StrEnum):
     # todo: GET_USAGE = "get_usage"
     # todo: RET_USAGE = "ret_usage"
+    START = "start"
     STOP = "stop"
-    ZULIP = "zulip"
     RESTART = "restart"
+    ZULIP = "zulip"
 
 
 @final
@@ -107,6 +108,10 @@ class Event:
     @classmethod
     def restart_event(cls, sender: str, dest: str | None = None) -> Event:
         return cls(sender, type=EventType.RESTART, dest=dest)
+    
+    @classmethod
+    def start_event(cls, sender: str, dest: str | None = None) -> Event:
+        return cls(sender, type=EventType.START, dest=dest)
 
 
 class Plugin(threading.Thread, ABC):
@@ -122,7 +127,7 @@ class Plugin(threading.Thread, ABC):
     # See https://zulip.com/api/get-events.
     zulip_events: list[str] = []
 
-    def __init__(self, plugin_context: PluginContext) -> None:
+    def __init__(self, plugin_context: PluginContext, client: AsyncClient | None = None) -> None:
         """Use _init_plugin for custom init code."""
         super().__init__(name=self.plugin_name(), daemon=True)
 
@@ -133,7 +138,7 @@ class Plugin(threading.Thread, ABC):
 
         # Some declarations.
         self.plugin_context: PluginContext = plugin_context
-        self.client: AsyncClient = AsyncClient(self.plugin_context, insecure=True)
+        self.client: AsyncClient = AsyncClient(self.plugin_context) if client is None else client
 
         self.queue = asyncio.Queue()
 
@@ -189,13 +194,15 @@ class Plugin(threading.Thread, ABC):
                     asyncio.create_task(handler())
                 self.queue.task_done()
         except asyncio.CancelledError:
-            self.logger.info("stopping")
+            self.logger.info("loop cancelled")
 
     @final
     def stop(self):
-        self.loop.call_soon_threadsafe(self.loop.stop)
+        self.running = False
         for task in asyncio.all_tasks(self.loop):
             task.cancel()
+        self.loop.call_soon_threadsafe(self.loop.stop)
+
     
     @final
     def run(self):
@@ -222,237 +229,6 @@ class Plugin(threading.Thread, ABC):
         """Create a logger instance suitable for this plugin type."""
         return logging.getLogger(self.plugin_name())
 
-
-class ZulipUserNotFound(Exception):
-    pass
-
-
-class ZulipUser:
-    # todo: are there probles with threads?
-    _client: AsyncClient | None = None
-
-    @classmethod
-    def set_client(cls, client: AsyncClient) -> None:
-        cls._client = client
-
-    def __init__(self, identifier: str | int) -> None:
-        self._id: int | None = None
-        self._name: str | None = None
-
-        if isinstance(identifier, int):
-            self._id = identifier
-            return
-
-        if isinstance(identifier, str):
-            uname = Regex.get_user_name(identifier)
-            if uname is None:
-                raise ZulipUserNotFound(
-                    f"Invalid user identifier `{identifier}`, use the same format as in the Zulip UI. (`@**<username>**`)"
-                )
-            self._name: str | int = uname
-
-    def __repr__(self) -> str:
-        return f"ZulipUser({self._id}, {self._name})"
-
-    @property
-    def client(self) -> AsyncClient:
-        if ZulipUser._client is None:
-            raise ValueError("Client not set for ZulipUser.")
-        return ZulipUser._client
-
-    @property
-    async def id(self) -> int:
-        if self._id is not None:
-            return self._id
-
-        result = await self.client.get_user_id_by_name(await self.mention)
-        if result is None:
-            raise ZulipUserNotFound(f"User {await self.mention_silent} could be not found.")
-        self._id = result
-        return result
-
-    @property
-    async def name(self) -> str:
-        if self._name is not None:
-            return self._name
-
-        result = await self.client.get_user_by_id(self._id)
-        if result["result"] != "success":
-            raise ZulipUserNotFound(f"User with id {self._id} could be not found.")
-        self._name = result["user"]["full_name"]
-        return self._name
-
-    @property
-    async def mention(self) -> str:
-        return f"@**{await self.name}**"
-
-    @property
-    async def mention_silent(self) -> str:
-        return f"@_**{await self.name}**"
-
-    @property
-    async def privileged(self) -> bool:
-        return await self.client.user_is_privileged(await self.id)
-
-
-class Privilege(Enum):
-    USER = 1
-    MODERATOR = 2
-    ADMIN = 3
-
-    def __ge__(self, other: object) -> bool:
-        if not isinstance(other, Privilege):
-            raise TypeError(f"cannot compare {type(self)} with {type(other)}")
-        return self.value >= other.value
-
-    def __gt__(self, other: object) -> bool:
-        if not isinstance(other, Privilege):
-            raise TypeError(f"cannot compare {type(self)} with {type(other)}")
-        return self.value > other.value
-
-    def __le__(self, other: object) -> bool:
-        if not isinstance(other, Privilege):
-            raise TypeError(f"cannot compare {type(self)} with {type(other)}")
-        return self.value <= other.value
-
-    def __lt__(self, other: object) -> bool:
-        if not isinstance(other, Privilege):
-            raise TypeError(f"cannot compare {type(self)} with {type(other)}")
-        return self.value < other.value
-
-    def __eq__(self, other: object) -> bool:
-        if not isinstance(other, Privilege):
-            raise TypeError(f"cannot compare {type(self)} with {type(other)}")
-        return self.value == other.value
-
-    @staticmethod
-    def from_str(s: str | None) -> Privilege | None:
-        if s is None:
-            return None
-        s = s.lower().split(".")[1]
-        if s == "user":
-            return Privilege.USER
-        if s == "moderator":
-            return Privilege.MODERATOR
-        if s == "admin":
-            return Privilege.ADMIN
-        raise ValueError(f"no privilege level for {s}")
-
-
-@dataclass
-class ArgConfig:
-    name: str
-    type: Callable[[Any], Any]
-    description: str | None = None
-    privilege: Privilege | None = None
-    greedy: bool = False
-    optional: bool = False
-
-    @property
-    def syntax(self) -> str:
-        lbr, rbr = ("[", "]") if self.optional else ("<", ">")
-        greedy = "..." if self.greedy else ""
-        return lbr + self.name + greedy + rbr
-
-    @staticmethod
-    def from_dict(d: dict[str, Any]) -> "ArgConfig":
-        return ArgConfig(
-            name=d["name"],
-            type=d["type"],
-            description=d["description"],
-            privilege=Privilege.from_str(d["privilege"]),
-            greedy=d["greedy"],
-            optional=d["optional"],
-        )
-
-
-@dataclass
-class OptConfig:
-    opt: str
-    long_opt: str | None = None
-    type: Callable[[Any], Any] | None = None
-    description: str | None = None
-    privilege: Privilege | None = None
-
-    @property
-    def syntax(self):
-        try:
-            type_name = self.type.__name__
-        except AttributeError:
-            type_name = "arg"
-        type = " <" + type_name + ">" if self.type is not None else ""
-        return "[-" + self.opt + type + "]"
-
-    @staticmethod
-    def from_dict(d: dict[str, Any]) -> "OptConfig":
-        return OptConfig(
-            opt=d["opt"],
-            long_opt=d["long_opt"],
-            type=d["type"],
-            description=d["description"],
-            privilege=Privilege.from_str(d["privilege"]),
-        )
-
-
-@dataclass
-class SubCommandConfig:
-    name: str | None = None
-    args: list[ArgConfig] = field(default_factory=list)
-    opts: list[OptConfig] = field(default_factory=list)
-    privilege: Privilege = field(default_factory=lambda: Privilege.USER)
-    description: str | None = None
-
-    @staticmethod
-    def from_dict(d: dict[str, Any]) -> "SubCommandConfig":
-        return SubCommandConfig(
-            name=d["name"],
-            args=[ArgConfig.from_dict(arg) for arg in d["args"]],
-            opts=[OptConfig.from_dict(opt) for opt in d["opts"]],
-            privilege=Privilege.from_str(d["privilege"]),
-            description=d["description"],
-        )
-
-    @property
-    def syntax(self) -> str:
-        if self.name is None:
-            raise ValueError("Name of command is not set.")
-
-        args = [arg.syntax for arg in self.args]
-        opts = [opt.syntax for opt in self.opts]
-        if len(opts + args) > 0:
-            return self.name + " " + " ".join(opts + args)
-        return self.name
-
-    @property
-    def short_help_msg(self) -> str:
-        if self.description is None:
-            return "No description available."
-        return self.description
-
-
-@dataclass
-class CommandConfig:
-    name: str | None = None
-    subcommands: list[SubCommandConfig] = field(default_factory=list)
-    description: str | None = None
-
-    @staticmethod
-    def from_dict(d: dict[str, Any]) -> "CommandConfig":
-        return CommandConfig(
-            name=d["name"],
-            subcommands=[SubCommandConfig.from_dict(sub) for sub in d["subcommands"]],
-            description=d["description"],
-        )
-
-    @property
-    def syntax(self) -> str:
-        return "\n or ".join([self.name + " " + sub.syntax for sub in self.subcommands])
-
-    @property
-    def short_help_msg(self) -> str:
-        if self.description is None:
-            return "No description available."
-        return self.description
 
 class PluginCommandMixin(Plugin):
     """Base class tailored for interactive commands.
@@ -521,12 +297,12 @@ class PluginCommandMixin(Plugin):
         result: tuple[str, CommandParser.Opts, CommandParser.Args] | None
         command_parser: CommandParser = self.__class__._tumcs_bot_command_parser
         # Get command and parameters.
-
         try:
             result = command_parser.parse(message["command"])
         except CommandParser.IllegalCommandParserState as e:
             self.logger.exception(e)
-            return Response.build_message(message, str(e))
+            cause = (": " + str(e.__cause__)) if e.__cause__ else ""
+            return Response.build_message(message, str(e) + cause)
 
         if result is None:
             return Response.command_not_found(message)
@@ -543,9 +319,12 @@ class PluginCommandMixin(Plugin):
                 ],
                 Response | Iterable[Response],
             ] = getattr(self, command)
+            AsncClientMixin.set_client(self.client)
+            sender = ZulipUser(id=message["sender_id"], name=message["sender_full_name"])
+            await sender
             with DB.session() as session:
                 result = await func(
-                    ZulipUser(message["sender_id"]), session, args, opts, message
+                    sender, session, args, opts, message
                 )
             return result
         else:

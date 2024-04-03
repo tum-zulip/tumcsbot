@@ -3,7 +3,7 @@ from argparse import Namespace
 
 import regex
 
-from tumcsbot.lib import Regex
+from tumcsbot.lib.regex import Regex
 
 
 class CommandParser:
@@ -275,6 +275,8 @@ class CommandParser:
             return ({}, tokens)
 
         skip_next_token = False
+        import logging
+        logging.debug(f"Tokens: {tokens}")
         for index in range(len(tokens)):
             if skip_next_token:
                 skip_next_token = False
@@ -289,6 +291,8 @@ class CommandParser:
                 opt = token[1]
             else:
                 opt = token[2:]
+
+            logging.debug(f"Opt: {opt}")
 
             if not opt in opts:
                 # Invalid option.

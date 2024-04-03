@@ -7,19 +7,23 @@ from inspect import cleandoc
 import json
 from typing import Any, Iterable
 
-from tumcsbot.lib import Response, get_classes_from_path
+from tumcsbot.lib.response import Response
 from tumcsbot.plugin import (
-    ArgConfig,
     CommandConfig,
-    OptConfig,
-    SubCommandConfig,
     PluginCommandMixin,
     Plugin,
     PluginTable,
-    Privilege,
 )
-from tumcsbot.db import DB
+from tumcsbot.lib.types import (
+    Privilege,
+    ArgConfig,
+    OptConfig,
+    SubCommandConfig,
+    CommandConfig,
+)
+from tumcsbot.lib.db import DB
 from tumcsbot.plugin_decorators import DMError
+from tumcsbot.lib.utils import get_classes_from_path
 
 HELP_TEMPLATE = cleandoc(
     """
@@ -52,22 +56,6 @@ class Help(PluginCommandMixin, Plugin):
     async def handle_message(
         self, message: dict[str, Any]
     ) -> Response | Iterable[Response]:
-        # Example: reuse your existing OpenAI setup
-        # Point to the local server
-        # client = OpenAI(base_url="http://localhost:1234/v1", api_key="not-needed")
-        # self.logger.info("Sending message to OpenAI")
-        # async with self.client.typing_direct(message["sender_id"]):
-        #     # Example: create a completion using the local model (the default model for the organization
-        #     completion = client.chat.completions.create(
-        #         model="local-model", # this field is currently unused
-        #         messages=[
-        #           {"role": "system", "content": "You are a helpful assistant. You are a bot on the messenger plattform Zulip, the main communication channel for many students at the TUM."},
-        #           {"role": "user", "content": message['content']}
-        #         ],
-        #         temperature=0.7,
-        #     )
-        #     return Response.build_message(message, completion.choices[0].message.content)
-
         command: str = message["command"].strip()
         if not command:
             return self._help_overview(message)
@@ -96,7 +84,11 @@ class Help(PluginCommandMixin, Plugin):
         # todo: privilage level
         with DB.session() as session:
             if command is not None:
-                plugins = [c for c in session.query(PluginTable).filter_by(name=command).all() if c is not None]
+                plugins = [
+                    c
+                    for c in session.query(PluginTable).filter_by(name=command).all()
+                    if c is not None
+                ]
             else:
                 plugins = session.query(PluginTable).all()
 

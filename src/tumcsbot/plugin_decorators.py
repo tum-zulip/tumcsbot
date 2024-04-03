@@ -5,100 +5,34 @@ from typing import AsyncGenerator, Callable, Any, Iterable, Protocol, Type
 from dataclasses import dataclass
 from inspect import cleandoc
 
-from langchain.tools import StructuredTool
-from langchain.pydantic_v1 import BaseModel, Field
+import sqlalchemy
 
 
-from tumcsbot.command_parser import CommandParser
-from tumcsbot.db import Session
-from tumcsbot.lib import Response
-from tumcsbot.plugin import (
-    ArgConfig,
-    CommandConfig,
-    SubCommandConfig,
-    OptConfig,
-    PluginCommandMixin,
-    Privilege,
+from tumcsbot.lib.command_parser import CommandParser
+from tumcsbot.lib.db import Session
+from tumcsbot.lib.response import Response
+from tumcsbot.plugin import PluginCommandMixin
+from tumcsbot.lib.types import (
     ZulipUser,
+    Privilege,
+    response_type,
+    SubCommandConfig,
+    ArgConfig,
+    OptConfig,
+    CommandConfig,
+    command_func_type,
+    command_decorator_type,
+    DMError,
+    UserNotPrivilegedException,
     ZulipUserNotFound,
+    DMMessage,
+    DMResponse,
+    InlineResponse,
+    ReactionResponse,
+    PartialSuccess,
+    PartialError,
 )
 
-class DMError(Exception):
-    pass
-
-
-@dataclass
-class DMResponse:
-    """
-    Responds with a direct message to the sender.
-    """
-
-    message: str
-
-
-@dataclass
-class DMMessage:
-    """
-    Responds with a direct message to the sender.
-    """
-
-    to: ZulipUser
-    message: str
-
-
-@dataclass
-class InlineResponse:
-    """
-    Responds with an inline message to the sender.
-    """
-
-    message: str
-
-
-@dataclass
-class ReactionResponse:
-    """
-    Reacts with an emote message to the sender.
-    """
-
-    emote: str
-
-
-@dataclass
-class PartialSuccess:
-    """
-    Indicates that the command was successful for a specific element dentoed by info.
-    Can be used multiple times with yield.
-    """
-
-    info: str
-
-
-@dataclass
-class PartialError:
-    """
-    Indicates that the command was not successful for a specific element dentoed by info.
-    Can be used multiple times with yield.
-    """
-
-    info: str
-
-
-response_type = DMResponse | DMMessage | InlineResponse | ReactionResponse | PartialSuccess | PartialError | Response
-
-command_func_type = Callable[
-    [
-        Any,
-        ZulipUser,
-        Any,
-        CommandParser.Args,
-        CommandParser.Opts,
-        dict[str, Any],
-    ],
-    AsyncGenerator[response_type, None],
-]
-
-command_decorator_type = Callable[[command_func_type], command_func_type]
 
 def get_meta(func: Any) -> SubCommandConfig:
     if not hasattr(func, "__tumsbot_plugin_meta__"):
@@ -110,6 +44,18 @@ def get_meta(func: Any) -> SubCommandConfig:
     return func.__tumsbot_plugin_meta__
 
 
+def to_python_type(type) -> Any:
+    """Convert a SQLAlchemy InstrumentedAttribute (Column Type) to a Python type or return the original type if it is not a SQLAlchemy Column type."""
+    if isinstance(type, sqlalchemy.orm.InstrumentedAttribute):
+        columns = type.property.columns
+        if len(columns) != 1:
+            raise ValueError(f"Expected exactly one column, got {len(columns)}")
+        
+        column = columns[0]
+        return column.type.python_type
+        
+    return type
+
 def arg(
     name: str,
     type: Callable[[Any], Any],
@@ -118,13 +64,14 @@ def arg(
     greedy: bool = False,
     optional: bool = False,
 ) -> command_decorator_type:
-    if greedy and optional:
-        raise ValueError("An argument cannot be both greedy and optional")
-
     def decorator(func: command_func_type) -> command_func_type:
         meta = get_meta(func)
+        if greedy and meta.args:
+            raise ValueError("Greedy argument must be the last argument.")
+
+        python_type = to_python_type(type)
         meta.args.insert(
-            0, ArgConfig(name, type, description, privilege, greedy, optional)
+            0, ArgConfig(name, python_type, description, privilege, greedy, optional)
         )
 
         @wraps(func)
@@ -137,8 +84,7 @@ def arg(
             message: dict[str, Any],
         ) -> AsyncGenerator[response_type, None]:
             if privilege is not None:  # and todo: check if option is present
-                # todo: check privilege
-                if not await sender.privileged:
+                if not await sender.isPrivileged:
                     raise UserNotPrivilegedException()
 
             if greedy and not optional:
@@ -147,6 +93,28 @@ def arg(
                     raise DMError(
                         f"Error: At least one argument is required for `{name}`.",
                     )
+                        
+            async def handle_argument(value):
+                if isinstance(type, sqlalchemy.orm.InstrumentedAttribute):
+                    obj = session.query(type.class_).filter(type == value).first()
+                    if obj is None:
+                        raise DMError(f"Uuups, it looks like i could not find any {type.class_.__name__} associated with `{value}` :botsad:")
+                else:
+                    obj = value
+                
+                if hasattr(obj.__class__, "__await__"):
+                    await obj
+                return obj
+            
+            if greedy:
+                result = []
+                for value in getattr(args, name):
+                    result.append(await handle_argument(value))
+            else:
+                result = await handle_argument(getattr(args, name))
+            setattr(args, name, result)
+            
+            # todo: does yield from work here?
             async for response in func(self, sender, session, args, opts, message):
                 yield response
 
@@ -175,11 +143,25 @@ def opt(
             opts: CommandParser.Opts,
             message: dict[str, Any],
         ) -> AsyncGenerator[response_type, None]:
-            if privilege is not None:
-                # todo: check privilege
-                if not await sender.privileged:
-                    raise UserNotPrivilegedException()
+            if privilege is not None and getattr(opts, opt, None):
+                if not sender.isPrivileged:
+                    raise UserNotPrivilegedException(
+                        f"Option `-{opt}` requires privilege *{privilege.name}*"
+                    )
+
+            opt_value = getattr(opts, opt, None)
+            long_opt_value = None
+            if long_opt:
+                long_opt_value = getattr(opts, long_opt, None)
+
+            if opt_value and long_opt_value:
+                raise DMError(f"Error: Cannot use both short and long options for `{opt}`")
             
+            if opt_value:
+                setattr(opts, long_opt, opt_value)
+            elif long_opt:
+                setattr(opts, opt, long_opt_value)            
+
             async for response in func(self, sender, session, args, opts, message):
                 yield response
 
@@ -203,8 +185,10 @@ def privilege(privilege: Privilege) -> command_decorator_type:
             message: dict[str, Any],
         ) -> AsyncGenerator[response_type, None]:
             if privilege is not None:
-                if not await sender.privileged:
-                    raise UserNotPrivilegedException()
+                if not sender.isPrivileged:
+                    raise UserNotPrivilegedException(
+                        f"You need to have *{privilege.name}* privilege to run this command."
+                    )
             async for response in func(self, sender, session, args, opts, message):
                 yield response
 
@@ -213,25 +197,24 @@ def privilege(privilege: Privilege) -> command_decorator_type:
     return decorator
 
 
-
-def tool_factory(plugin_class_name: str, config: SubCommandConfig, callback: Callable[[Any], Any]) -> Callable[[ZulipUser], Type[BaseTool]]:
-
-    # Dynamically create a Pydantic model for the tool's inputs
-    fields = {arg.name: (arg.type, Field(description=arg.description)) for arg in config.args}
-    model = type(f"{config.name.capitalize()}Input", (BaseModel,), fields)
-
-    async def args_unwrapper(args: model):
-        logging.debug("Unwrapping args: %s", dict(args))
-        return "Not implemented"
-
-    # Define the tool class
-    return StructuredTool.from_function(
-        func=lambda query: "Not implemented",
-        coroutine=args_unwrapper,
-        name=f"{plugin_class_name.capitalize()}{config.name.capitalize()}Tool",
-        description=config.description,
-        # args_schema=model,
-    )
+# todo: def tool_factory(plugin_class_name: str, config: SubCommandConfig, callback: Callable[[Any], Any]) -> Callable[[ZulipUser], Type[BaseTool]]:
+# todo:
+# todo:     # Dynamically create a Pydantic model for the tool's inputs
+# todo:     fields = {arg.name: (arg.type, Field(description=arg.description)) for arg in config.args}
+# todo:     model = type(f"{config.name.capitalize()}Input", (BaseModel,), fields)
+# todo:
+# todo:     async def args_unwrapper(args: model):
+# todo:         logging.debug("Unwrapping args: %s", dict(args))
+# todo:         return "Not implemented"
+# todo:
+# todo:     # Define the tool class
+# todo:     return StructuredTool.from_function(
+# todo:         func=lambda query: "Not implemented",
+# todo:         coroutine=args_unwrapper,
+# todo:         name=f"{plugin_class_name.capitalize()}{config.name.capitalize()}Tool",
+# todo:         description=config.description,
+# todo:         # args_schema=model,
+# todo:     )
 
 
 class command:
@@ -240,7 +223,7 @@ class command:
         self._name = name
 
         if name is None and fn is None:
-            raise ValueError("name or function must be provided") 
+            raise ValueError("name or function must be provided")
 
         if name is None:
             self._name = fn.__name__
@@ -249,7 +232,7 @@ class command:
         self.fn = fn
         self.fn.__name__ = self.name
         return self
-    
+
     @property
     def name(self) -> str:
         if self._name is None:
@@ -337,7 +320,7 @@ class command:
         )
 
         # replace ourself with the original method
-        outer_self = self                                                                                                                                   
+        outer_self = self
 
         @wraps(self.fn)
         async def wrapper(
@@ -348,20 +331,16 @@ class command:
             opts: CommandParser.Opts,
             message: dict[str, Any],
         ) -> list[Response] | Iterable[Response] | Response:
-            ZulipUser.set_client(self.client)
             self.logger.debug(
-                "%s is calling `%s %s` with args %s and opts %s",
-                message["sender_full_name"],
-                self.plugin_name(),
-                outer_self.name,
-                args,
-                opts,
+                "Calling %s with %s and %s", self.plugin_name(), opts, args
             )
             responses = []
             successful = []
             errors = []
             try:
-                async for response in outer_self.fn(self, sender, session, args, opts, message):
+                async for response in outer_self.fn(
+                    self, sender, session, args, opts, message
+                ):
                     self.logger.debug("Collected Response: %s", response)
                     if isinstance(response, DMResponse):
                         self.logger.debug("Collected DMResponse: %s", response.message)
@@ -372,7 +351,9 @@ class command:
                             )
                         )
                     elif isinstance(response, InlineResponse):
-                        self.logger.debug("Collected InlineResponse: %s", response.message)
+                        self.logger.debug(
+                            "Collected InlineResponse: %s", response.message
+                        )
                         responses.append(
                             Response.build_message(
                                 message,
@@ -380,7 +361,9 @@ class command:
                             )
                         )
                     elif isinstance(response, ReactionResponse):
-                        self.logger.debug("Collected ReactionResponse: %s", response.emote)
+                        self.logger.debug(
+                            "Collected ReactionResponse: %s", response.emote
+                        )
                         responses.append(
                             Response.build_reaction(
                                 message,
@@ -389,14 +372,17 @@ class command:
                         )
                     elif isinstance(response, DMMessage):
                         self.logger.debug(
-                            "Collected DMMessage: %s to %s", response.message, response.to
+                            "Collected DMMessage: %s to %s",
+                            response.message,
+                            response.to,
                         )
+                        await response.to
                         responses.append(
                             Response.build_message(
                                 None,
                                 content=response.message,
                                 msg_type="private",
-                                to=[await response.to.id],
+                                to=[response.to.id],
                             )
                         )
                     elif isinstance(response, PartialSuccess):
@@ -410,7 +396,9 @@ class command:
             except StopIteration:
                 pass
             except UserNotPrivilegedException as e:
-                return Response.privilege_excpetion(message, f"{self.plugin_name()} {outer_self.name}")
+                return Response.privilege_excpetion(
+                    message, f"{self.plugin_name()} {outer_self.name}", str(e)
+                )
             except ZulipUserNotFound as e:
                 return Response.build_message(
                     message,
@@ -423,33 +411,33 @@ class command:
                 )
 
             if len(errors) > 0:
-                responses.append(
-                    Response.build_message(
-                        message,
-                        "Error: "
-                        + ", ".join(errors)
-                        + "\nSuccess: "
-                        + ", ".join(successful),
-                    )
-                )
+                # Handling multiple errors
+                if len(errors) > 1:
+                    error_message = "Multiple errors occurred: " + ", ".join(errors)
+                else:
+                    # Handling a single error
+                    error_message = f"An error occurred: {errors[0]}"
+
+                if len(successful) > 0:
+                    error_message + "\nHowever, the following were successful: " + ", ".join(
+                        successful
+                    ),
+
+                # This case covers both multiple errors with no success, and a single error with no success
+                responses.append(Response.build_message(message, error_message))
+
             elif len(responses) == 0 and len(successful) > 0:
                 responses.append(Response.ok(message))
             elif len(responses) == 0:
                 responses.append(
                     Response.build_message(
                         message,
-                        "Looks like there's nothing for me to do.",  # todo this is wrong
+                        "It looks like there's nothing for me to do.",  # Corrected response for clarity
                     )
                 )
             return responses
 
         # todo: idk if this is right
         wrapper._tumcsbot_meta = self.meta
-        # wrapper._tumcsbot_tool = tool_factory(
-        #     owner.__name__, self.meta, wrapper
-        # )
         setattr(owner, self.name, wrapper)
 
-
-class UserNotPrivilegedException(Exception):
-    pass

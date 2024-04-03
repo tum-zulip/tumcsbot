@@ -20,15 +20,17 @@ import threading
 from typing import Any, Iterable, Type
 
 from zulip import Client as ZulipClient
-from tumcsbot import lib
-from tumcsbot.db import DB
-from tumcsbot.client import AsyncClient, PlublicStreams, PluginContext
+from tumcsbot.lib import response
+from tumcsbot.lib import utils
+from tumcsbot.lib.db import DB
+from tumcsbot.lib.client import AsyncClient, PlublicStreams, PluginContext
 from tumcsbot.plugin import (
     Event,
     Plugin,
     EventType,
     get_zulip_events_from_plugins,
 )
+from tumcsbot.lib.utils import LOGGING_FORMAT
 
 
 class EventQueue(asyncio.Queue[Event]):
@@ -68,7 +70,7 @@ class TumCSBot:
 
         logging.basicConfig(
             # todo: change sys.stdout
-            format=lib.LOGGING_FORMAT,
+            format=LOGGING_FORMAT,
             level=logging_level,
             stream=sys.stdout,  # filename=logfile if logfile else sys.stdout
         )
@@ -99,21 +101,25 @@ class TumCSBot:
 
         # Init own Zulip client which also inits the global DB tables for all
         # Zulip client objects.
-        self.client = AsyncClient(self.plugin_context, insecure=True)
+        self.client = AsyncClient(self.plugin_context)
         
+        asyncio.run(self.init_db())
+
+        self.event_listener: asyncio.Task | None = None
 
         # Cleanup properly on SIGTERM and SIGINT.
         for s in [signal.SIGINT, signal.SIGTERM]:
-            self.loop.add_signal_handler(s, lambda s=s: self.loop.create_task(self.stop()))
+            self.loop.add_signal_handler(s, self.stop)
 
         # Get the plugin classes and start the plugins in correct dependency order.
-        plugin_classes: Iterable[Type[Plugin]] = lib.get_classes_from_path(
+        plugin_classes: Iterable[Type[Plugin]] = utils.get_classes_from_path(
             "tumcsbot.plugins", Plugin  # type: ignore
         )
         self.start_plugins(plugin_classes, zuliprc, logging_level)
 
         # Get events to listen for.
         self.events = get_zulip_events_from_plugins(plugin_classes)
+
 
     def run(self) -> None:
         """Run the bot."""
@@ -122,9 +128,9 @@ class TumCSBot:
             self.loop.create_task(self.run_loop())
             self.loop.run_forever()
         finally:
-            logging.info("stop main loop")
+            logging.info("stopped main loop")
+            self.loop.stop()
             self.loop.close()
-
 
     def clear_queue(self) -> None:
         """Clear the event queue."""
@@ -132,28 +138,17 @@ class TumCSBot:
             self.event_queue.get_nowait()
             self.event_queue.task_done()
         
-    async def stop(self) -> None:
-        """Stop the main loop"""
-
-        if not self.stopped:
-            logging.debug("clear queue: %s events dropped", self.event_queue.qsize())
-            self.clear_queue()
-
-            tasks = [t for t in asyncio.all_tasks() if t is not asyncio.current_task()]
-            logging.debug("cancel %s tasks", len(tasks))
-            [task.cancel() for task in tasks]
-
-            logging.debug("stop client")
-            self.client.stop()
-
-            logging.debug("wait for tasks to finish")
-            await asyncio.gather(*tasks, return_exceptions=True)
-            self.loop.stop()
-
-            self.stopped = True
+    def stop_plugins(self)-> None:
+        for plugin in self.plugins.values():
+                plugin.stop()
+                plugin.join()
+                self.plugins_stopped[plugin.plugin_name()] = plugin
+            
+        self.plugins.clear()
 
     async def _event_listener(self) -> None:
         logging.debug("waiting for events ...")
+
         async for event_data in self.client.events():
             logging.debug("received event data %s", str(event_data))
             await self.event_queue.put(Event(sender="_root", type=EventType.ZULIP, data=event_data))
@@ -162,13 +157,22 @@ class TumCSBot:
     async def init_db(self) -> None:
         """Initialize some tables of the database."""
 
-        stream_names = await self.get_public_stream_names(use_db=False)
+        stream_names = await self.client.get_public_stream_names(use_db=False)
         with DB.session() as session:
             for entry in session.query(PlublicStreams).all():
                 if not str(entry.StreamName) in stream_names:
                     session.delete(entry)
+            for stream in stream_names:
+                if not session.query(PlublicStreams).filter_by(StreamName=stream).first():
+                    session.add(PlublicStreams(StreamName=stream, Subscribed=0))
             session.commit()
 
+    def stop(self) -> None:
+        self.stopped = True
+        
+        # hack to stop long polling
+        self.client.trigger_dummy_event()
+ 
 
     async def run_loop(self) -> None:
         """Run the central event queue.
@@ -179,11 +183,8 @@ class TumCSBot:
 
         logging.info("start bot")
 
-        logging.debug("init db")
-        await self.init_db()
-
         logging.debug("start event listener, listening on events: %s", str(self.events))
-        self.loop.create_task(self._event_listener())
+        self.event_listener = self.loop.create_task(self._event_listener())
         
         logging.debug("start central queue")
         # todo: limit queue size
@@ -216,20 +217,29 @@ class TumCSBot:
                             logging.debug("push event to plugin %s", plugin.plugin_name())
                             plugin.push_event(event)
 
-        except asyncio.CancelledError:
-            self.stop_plugins()
+        except asyncio.exceptions.CancelledError:
+            pass
 
-        logging.debug("graceful exit")
-    
-    async def init_db(self) -> None:
-        """Initialize some tables of the database."""
+        logging.info("stoping bot")
 
-        stream_names = await self.client.get_public_stream_names(use_db=False)
-        with DB.session() as session:
-            for entry in session.query(PlublicStreams).all():
-                if not str(entry.StreamName) in stream_names:
-                    session.delete(entry)
-            session.commit()
+        if self.event_listener:
+            self.event_listener.cancel()
+        
+        # interrupt long polling again for cancelation to take effect
+        self.client.trigger_dummy_event()
+        
+        logging.debug("clear queue: %s events dropped", self.event_queue.qsize())
+        self.clear_queue()
+
+        logging.debug("stop plugins")
+        self.stop_plugins()
+
+        tasks = [t for t in asyncio.all_tasks() if t is not asyncio.current_task()]
+        logging.debug("tasks: %s", str(tasks))
+        logging.debug("waiting for tasks to finish ...")
+        await asyncio.gather(*tasks, return_exceptions=True)
+
+        self.loop.stop()
 
     def start_plugins(
         self, plugin_classes: Iterable[Type[Plugin]], zuliprc: str, logging_level: int
@@ -249,6 +259,7 @@ class TumCSBot:
 
             plugin: Plugin = plugin_class(
                 self.plugin_context,
+                client=self.client,
             )
 
             if plugin_name in self.plugins:
@@ -257,12 +268,7 @@ class TumCSBot:
             self.plugins[plugin_name] = plugin
             plugin.start()
         
-    def stop_plugins(self) -> None:
-        for plugin in self.plugins.values():
-            plugin.stop()
-            plugin.join()
-            self.plugins_stopped[plugin.plugin_name()] = plugin
-        self.plugins.clear()
+
 
     def zulip_event_preprocess(self, event: dict[str, Any]) -> dict[str, Any]:
         """Preprocess a Zulip event dictionary.

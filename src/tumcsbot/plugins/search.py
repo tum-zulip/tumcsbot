@@ -5,9 +5,9 @@
 
 import urllib.parse
 from typing import Any, AsyncGenerator
-from tumcsbot.db import Session
+from tumcsbot.lib.db import Session
 
-from tumcsbot.command_parser import CommandParser
+from tumcsbot.lib.command_parser import CommandParser
 from tumcsbot.plugin import PluginCommandMixin, Plugin, ZulipUser
 from tumcsbot.plugin_decorators import command, arg, response_type, DMResponse
 

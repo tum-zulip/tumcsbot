@@ -9,52 +9,64 @@ from typing import Any, Iterable
 from tumcsbot.lib import Response
 from tumcsbot.command_parser import CommandParser
 from tumcsbot.plugin import Event, PluginCommandMixin,Plugin
+from tumcsbot.plugin_decorators import *
 
 
 class Plugin(PluginCommandMixin, Plugin):
-    syntax = cleandoc(
+    """
+    Manage plugins.
+    """
+
+    @command
+    @privilege(Privilege.ADMIN)
+    @arg("plugin", str, description="The plugin to load.")
+    async def load(self,
+        sender: ZulipUser,
+        session: Session,
+        args: CommandParser.Args,
+        opts: CommandParser.Opts,
+        message: dict[str, Any],
+    ) -> AsyncGenerator[response_type, None]:
         """
-        plugin (reload|start|stop) <plugin>
+        load a plugin.
         """
-    )
-    description = cleandoc(
+        self.plugin_context.push_loopback(
+            Event.start_event(self.plugin_name(), args.plugin)
+        )
+        yield Response.ok(message)
+    
+    @command
+    @privilege(Privilege.ADMIN)
+    @arg("plugin", str, description="The plugin to unload.")
+    async def unload(self,
+        sender: ZulipUser,
+        session: Session,
+        args: CommandParser.Args,
+        opts: CommandParser.Opts,
+        message: dict[str, Any],
+    ) -> AsyncGenerator[response_type, None]:
         """
-        [administrator/moderator rights needed]
+        unload a plugin.
         """
-    )
-
-    def _init_plugin(self) -> None:
-        super()._init_plugin()
-        self.command_parser: CommandParser = CommandParser()
-        self.command_parser.add_subcommand("reload", args={"plugin": str})
-        self.command_parser.add_subcommand("start", args={"plugin": str})
-        self.command_parser.add_subcommand("stop", args={"plugin": str})
-
-    def handle_message(self, message: dict[str, Any]) -> Response | Iterable[Response]:
-        result: tuple[str, CommandParser.Opts, CommandParser.Args] | None
-
-        if not self.client.user_is_privileged(message["sender_id"]):
-            return Response.privilege_err(message)
-
-        result = self.command_parser.parse(message["command"])
-        if result is None:
-            return Response.command_not_found(message)
-        command, _, args = result
-
-        if command == "reload":
-            self.plugin_context.push_loopback(
-                Event.reload_event(self.plugin_name(), args.plugin)
-            )
-            return Response.ok(message)
-        if command == "start":
-            self.plugin_context.push_loopback(
-                Event.start_event(self.plugin_name(), args.plugin)
-            )
-            return Response.ok(message)
-        if command == "stop":
-            self.plugin_context.push_loopback(
-                Event.stop_event(self.plugin_name(), args.plugin)
-            )
-            return Response.ok(message)
-
-        return Response.command_not_found(message)
+        self.plugin_context.push_loopback(
+            Event.stop_event(self.plugin_name(), args.plugin)
+        )
+        yield Response.ok(message)
+    
+    @command
+    @privilege(Privilege.ADMIN)
+    @arg("plugin", str, description="The plugin to reload.")
+    async def reload(self,
+        sender: ZulipUser,
+        session: Session,
+        args: CommandParser.Args,
+        opts: CommandParser.Opts,
+        message: dict[str, Any],
+    ) -> AsyncGenerator[response_type, None]:
+        """
+        reload a plugin.
+        """
+        self.plugin_context.push_loopback(
+            Event.restart_event(self.plugin_name(), args.plugin)
+        )
+        yield Response.ok(message)

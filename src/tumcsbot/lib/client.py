@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
+from __future__ import annotations
 
 # See LICENSE file for copyright and license details.
 # TUM CS Bot - https://github.com/ro-i/tumcsbot
 
 """Wrapper around Zulip's Client class."""
-from __future__ import annotations
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
@@ -15,12 +15,14 @@ from collections.abc import Iterable as IterableClass
 from typing import AsyncGenerator, Callable, cast, Any, IO, Iterable, Final, final
 from anyio import Event
 from sqlalchemy import Boolean, Column, String
-import urllib3
+from urllib.parse import quote
 
 from zulip import Client as ZulipClient
-from tumcsbot.db import DB, TableBase
+from tumcsbot.lib.db import DB, TableBase
 
-from tumcsbot.lib import stream_names_equal, Response, MessageType, Regex
+from tumcsbot.lib.response import Response, MessageType
+from tumcsbot.lib.regex import Regex
+from tumcsbot.lib.utils import stream_names_equal, ttl_cache
 
 @final
 @dataclass
@@ -49,6 +51,7 @@ class PlublicStreams(TableBase):
     StreamName = Column(String, primary_key=True)
     Subscribed = Column(Boolean, nullable=False)
 
+TTL: int = 10
 class AsyncClient:
     """Wrapper around zulip.Client.
 
@@ -88,23 +91,17 @@ class AsyncClient:
         self.ping: str = plugin_context.bot_mention
         self.ping_len: int = len(self.ping)
         self.register_params: dict[str, Any] = {}
-        self._client: ZulipClient = ZulipClient(*args, config_file=plugin_context.zuliprc, **kwargs)
+        self._client: ZulipClient = ZulipClient(*args, config_file=plugin_context.zuliprc, insecure=True ,**kwargs)
         self._executor = ThreadPoolExecutor()
-        self.stopped = Event()
     
     @property
     def base_url(self) -> str:
         return self._client.base_url
     
 
-    def stop(self) -> None:
-        self.stopped.set()
-        asyncio.get_running_loop().call_soon_threadsafe(self.stopped.set)
-
-        # interrupt long polling
-        self._client.set_typing_status({'op': 'stop', 'to': [self.id]})
-        self._executor.shutdown(cancel_futures=True)
-
+    def as_sync(self):
+        return self._client
+    
 
     async def call_endpoint(
         self,
@@ -124,15 +121,16 @@ class AsyncClient:
         loop = asyncio.get_running_loop()
 
         while True:
-            result = await loop.run_in_executor(
-                self._executor,
-                lambda: self._client.call_endpoint(
-                    url, method, request, longpolling, files, timeout
-                ),
-            )
-            
-            if self.stopped.is_set():
-                raise asyncio.CancelledError
+            try:
+                result = await loop.run_in_executor(
+                    self._executor,
+                    lambda: self._client.call_endpoint(
+                        url, method, request, longpolling, files, timeout
+                    ),
+                )
+            except asyncio.CancelledError as e:
+                self._executor.shutdown(cancel_futures=True)
+                raise e
             
             if not (
                 result["result"] == "error"
@@ -161,6 +159,7 @@ class AsyncClient:
             request=request,
         )
 
+    @ttl_cache(TTL)
     async def get_streams(self, **request: Any) -> dict[str, Any]:
         """
         See examples/get-public-streams for example usage.
@@ -239,6 +238,7 @@ class AsyncClient:
 
                 yield event  # yield the next relevant event
 
+    @ttl_cache(TTL)
     async def get_messages(self, message_filters: dict[str, Any]) -> dict[str, Any]:
         """Override zulip.Client.get_messages.
 
@@ -251,6 +251,7 @@ class AsyncClient:
             url="messages", method="GET", request=message_filters
         )
 
+    @ttl_cache(TTL)
     async def get_public_stream_names(self, use_db: bool = True) -> list[str]:
         """Get the names of all public streams.
 
@@ -282,6 +283,7 @@ class AsyncClient:
             logging.exception(e)
             return await without_db()
 
+    @ttl_cache(TTL)
     async def get_raw_message(
         self, message_id: int, apply_markdown: bool = True
     ) -> dict[str, Any]:
@@ -292,6 +294,7 @@ class AsyncClient:
             request={"apply_markdown": apply_markdown},
         )
 
+    @ttl_cache(TTL)
     async def get_streams_from_regex(self, regex: str) -> list[str]:
         """Get the names of all public streams matching a regex.
 
@@ -315,6 +318,7 @@ class AsyncClient:
             if pat.fullmatch(stream_name)
         ]
 
+    @ttl_cache(TTL)
     async def get_stream_name(self, stream_id: int) -> str | None:
         """Get stream name for provided stream id.
 
@@ -331,6 +335,7 @@ class AsyncClient:
 
         return None
 
+    @ttl_cache(TTL)
     async def get_user_by_id(self, user_id: int, **request: Any) -> dict[str, Any]:
         """
         Example usage:
@@ -344,12 +349,14 @@ class AsyncClient:
             request=request,
         )
 
+    @ttl_cache(TTL)
     async def get_user_ids_from_active_status(
         self, active: bool = True
     ) -> list[int] | None:
         """Get all user ids which are (de)activated."""
         return await self.get_user_ids_from_attribute("is_active", [active])
 
+    @ttl_cache(TTL)
     async def get_user_ids_from_attribute(
         self, attribute: str, values: Iterable[Any], case_sensitive: bool = True
     ) -> list[int] | None:
@@ -382,6 +389,7 @@ class AsyncClient:
             )
         ]
 
+    @ttl_cache(TTL)
     async def get_user_ids_from_display_names(
         self, display_names: Iterable[str]
     ) -> list[int] | None:
@@ -394,6 +402,7 @@ class AsyncClient:
         """
         return await self.get_user_ids_from_attribute("full_name", display_names)
 
+    @ttl_cache(TTL)
     async def get_user_ids_from_emails(self, emails: Iterable[str]) -> list[int] | None:
         """Get the user id from a user email address.
 
@@ -403,6 +412,7 @@ class AsyncClient:
             "delivery_email", emails, case_sensitive=False
         )
 
+    @ttl_cache(TTL)
     async def get_users(self, request: dict[str, Any] | None = None) -> dict[str, Any]:
         """Override method from parent class."""
         # Try to minimize the network traffic.
@@ -417,6 +427,7 @@ class AsyncClient:
     async def delete_message(self, message_id: int) -> dict[str, Any]:
         return await self.call_endpoint(url=f"messages/{message_id}", method="DELETE")
     
+    @ttl_cache(TTL)
     async def get_profile(
         self, request: dict[str, Any] | None = None
     ) -> dict[str, Any]:
@@ -588,11 +599,12 @@ class AsyncClient:
         for response in responses:
             await self.send_responses(response)
 
+    @ttl_cache(TTL)
     async def get_stream_id(self, stream: str) -> dict[str, Any]:
         """
         Example usage: await client.get_stream_id('devel')
         """
-        stream_encoded = urllib3.parse.quote(stream, safe="")
+        stream_encoded = quote(stream, safe="")
         url = f"get_stream_id?stream={stream_encoded}"
         return await self.call_endpoint(
             url=url,
@@ -600,6 +612,7 @@ class AsyncClient:
             request=None,
         )
 
+    @ttl_cache(TTL)
     async def get_subscribers(self, **request: Any) -> dict[str, Any]:
         """
         Example usage: await client.get_subscribers(stream='devel')
@@ -668,12 +681,12 @@ class AsyncClient:
 
         Return true on success or false otherwise.
         """
-        return await self.subscribe_users_multiple_streams(
+        return (await self.subscribe_users_multiple_streams(
             user_ids=user_ids,
             streams=[(stream_name, description)],
             allow_private_streams=allow_private_streams,
             filter_active=filter_active,
-        )[0]
+        ))[0]
 
     async def add_subscriptions(
         self, streams: Iterable[dict[str, Any]], **kwargs: Any
@@ -793,6 +806,7 @@ class AsyncClient:
             or (allow_moderator and user["role"] == 300)
         )
 
+    @ttl_cache(TTL)
     async def get_user_id_by_name(self, username: str) -> int | None:
         request = {
             "content": username,
@@ -807,6 +821,7 @@ class AsyncClient:
             return None
         return int(match.groupdict()["id"])
 
+    @ttl_cache(TTL)
     async def get_stream_id_by_name(self, stream_name: str) -> int | None:
         request = {
             "content": stream_name,
@@ -821,6 +836,7 @@ class AsyncClient:
             return None
         return int(match.groupdict()["id"])
 
+    @ttl_cache(TTL)
     async def get_group_id_by_name(self, group_name: str) -> int | None:
         request = {
             "content": group_name,
@@ -835,6 +851,7 @@ class AsyncClient:
             return None
         return int(match.groupdict()["id"])
 
+    @ttl_cache(TTL)
     async def get_stream_by_id(self, stream_id: int) -> dict[str, Any] | None:
         stream_result = await self.call_endpoint(
             url=f"/streams/{stream_id}", method="GET"
@@ -903,3 +920,13 @@ class AsyncClient:
             yield
         finally:
             await self.stop_typing_direct(user_ids)
+
+    def trigger_dummy_event(self) -> None:
+        request = {
+            "op": "stop",
+            "to": [self.id],
+        }
+        self._client.call_endpoint(
+            url="typing",
+            request=request,
+        )

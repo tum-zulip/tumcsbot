@@ -7,9 +7,9 @@ from typing import Any, AsyncGenerator
 from sqlalchemy import Column, String
 import sqlalchemy
 
-from tumcsbot.command_parser import CommandParser
-from tumcsbot.db import Session, TableBase
-from tumcsbot.plugin import PluginCommandMixin, Plugin, Privilege, ZulipUser
+from tumcsbot.lib.command_parser import CommandParser
+from tumcsbot.lib.db import Session, TableBase
+from tumcsbot.plugin import PluginCommandMixin, Plugin, ZulipUser
 from tumcsbot.plugin_decorators import (
     command,
     privilege,
@@ -18,6 +18,7 @@ from tumcsbot.plugin_decorators import (
     DMResponse,
     DMError,
 )
+from tumcsbot.lib.types import Privilege, response_type, ZulipUser
 
 
 class Messages(TableBase):

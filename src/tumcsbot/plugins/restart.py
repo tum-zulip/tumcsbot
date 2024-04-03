@@ -5,7 +5,7 @@
 
 from typing import Any, Iterable
 
-from tumcsbot.lib import Response, is_bot_owner
+from tumcsbot.lib.response import Response
 from tumcsbot.plugin import Event, PluginCommandMixin,Plugin
 
 
@@ -14,9 +14,10 @@ class Restart(PluginCommandMixin, Plugin):
     description = "Restart the bot.\n[only bot owner]"
 
     async def handle_message(self, message: dict[str, Any]) -> Response | Iterable[Response]:
-        if not is_bot_owner(message["sender_id"]):
-            return Response.privilege_err(message)
+        # todo: if not Conf.is_bot_owner(message["sender_id"]):
+        # todo:     return Response.privilege_err(message)
 
         await self.plugin_context.push_loopback(Event.restart_event(sender='restart'))
+        await self.client.stop_typing_direct(message["sender_id"]) # trigger some event for eventloop to process
 
         return Response.none()

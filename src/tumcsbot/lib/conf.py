@@ -1,6 +1,6 @@
 from sqlalchemy import Column, String
 
-from tumcsbot.db import TableBase, DB
+from tumcsbot.lib.db import TableBase, DB
 
 class ConfigTable(TableBase):
     __tablename__ = "Conf"
@@ -40,7 +40,6 @@ class Conf:
             session.commit()
 
     @staticmethod
-    def is_bot_owner(user_id: int, db: DB | None = None) -> bool:
+    def is_bot_owner(user_id: int) -> bool:
         """Checks whether the given user id belongs to the bot owner."""
-        conf: Conf = Conf(db=db)
-        return conf.get("bot_owner") == str(user_id)
+        return Conf.get("bot_owner") == str(user_id)

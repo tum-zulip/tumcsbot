@@ -27,19 +27,16 @@ class Group(TableBase):
 class GroupUser(TableBase):
     __tablename__ = 'GroupUsers'
 
-    UserId = Column(Integer, nullable=False)
-    GroupId = Column(String, ForeignKey('Groups.Id', ondelete='CASCADE'), nullable=False)
+    UserId = Column(Integer, primary_key=True)
+    GroupId = Column(String, ForeignKey('Groups.Id', ondelete='CASCADE'), primary_key=True)
     
-    __table_args__ = (PrimaryKeyConstraint('UserId', 'GroupId'),)
 
 class GroupClaim(TableBase):
     __tablename__ = 'GroupClaims'
 
-    MessageId = Column(Integer, nullable=False)
-    GroupId = Column(String, ForeignKey('Groups.Id', ondelete='CASCADE'), nullable=False)
+    MessageId = Column(Integer, primary_key=True)
+    GroupId = Column(String, ForeignKey('Groups.Id', ondelete='CASCADE'), primary_key=True)
     
-    # Define primary key constraint
-    __table_args__ = (PrimaryKeyConstraint('MessageId', 'GroupId'),)
 
 class GroupClaimAll(TableBase):
     # todo: why is this necessary?

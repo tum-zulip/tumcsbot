@@ -12,7 +12,7 @@ change the alert words and specify the emojis to use for the reactions.
 
 from typing import Any, Iterable, Callable
 
-from tumcsbot.lib import DB, Response
+from tumcsbot.lib.response import DB, Response
 from tumcsbot.plugin import Event,Plugin
 
 import urllib
@@ -83,13 +83,12 @@ class ModerationReactionHandler(Plugin):
             "(GroupId integer not null, UserId integer not null, primary key (GroupId, UserId))",
         )
 
-        self.client_id: int = self.client.id
 
     def is_responsible(self, event: Event) -> bool:
         return super().is_responsible(event) or (
             event.data["type"] == "reaction"
             and event.data["op"] == "add"
-            and event.data["user_id"] != self.client_id
+            and event.data["user_id"] != self.client.id
         )
 
     def handle_event(self, event: Event) -> Response | Iterable[Response]:

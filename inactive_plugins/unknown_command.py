@@ -6,7 +6,7 @@
 from inspect import cleandoc
 from typing import Any, Final, Iterable, cast
 
-from tumcsbot.lib import DB, Response, get_classes_from_path
+from tumcsbot.lib.response import DB, Response, get_classes_from_path
 from tumcsbot.plugin import Event,Plugin, Plugin
 
 from openai import OpenAI

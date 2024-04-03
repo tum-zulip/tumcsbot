@@ -6,8 +6,8 @@
 import logging
 from typing import Any, Iterable
 
-from tumcsbot.lib import Response
-from tumcsbot.conf import Conf
+from tumcsbot.lib.response import Response
+from tumcsbot.lib.conf import Conf
 from tumcsbot.plugin import PluginCommandMixin,Plugin
 
 

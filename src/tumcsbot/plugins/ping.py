@@ -5,7 +5,7 @@
 
 from typing import Iterable
 
-from tumcsbot.lib import Response
+from tumcsbot.lib.response import Response
 from tumcsbot.plugin import Event,Plugin
 
 
