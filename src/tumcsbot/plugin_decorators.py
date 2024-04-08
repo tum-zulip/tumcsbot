@@ -97,7 +97,7 @@ def arg(
             async def handle_argument(value):
                 if isinstance(type, sqlalchemy.orm.InstrumentedAttribute):
                     obj = session.query(type.class_).filter(type == value).first()
-                    if obj is None:
+                    if not optional and obj is None:
                         raise DMError(f"Uuups, it looks like i could not find any {type.class_.__name__} associated with `{value}` :botsad:")
                 else:
                     obj = value
@@ -400,11 +400,13 @@ class command:
                     message, f"{self.plugin_name()} {outer_self.name}", str(e)
                 )
             except ZulipUserNotFound as e:
+                self.logger.exception(e)
                 return Response.build_message(
                     message,
                     f"Error: {e}",
                 )
             except DMError as e:
+                self.logger.exception(e)
                 return Response.build_message(
                     message,
                     str(e),

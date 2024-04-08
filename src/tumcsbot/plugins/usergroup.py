@@ -55,6 +55,11 @@ class UserGroup(TableBase):
     @hybrid_property
     def members(self) -> list[ZulipUser]:
         return [member.User for member in self._members]
+    
+    _streamgroup = relationship(
+        "StreamGroup",
+        back_populates="_usergroup"
+    )
 
 
 class UserGroupMember(TableBase):
@@ -374,7 +379,9 @@ class Usergroup(PluginCommandMixin, Plugin):
 
     @staticmethod
     def add_user_to_group(session: Session, user: ZulipUser, group: UserGroup) -> None:
-        if user in group.members:
+        user_ids:list[int] = Usergroup.get_user_ids_for_group(session,group)
+
+        if user.id in user_ids:
             raise DMError(
                 f"{user.mention_silent} is already in usergroup '{group.GroupName}'"
             )
@@ -396,6 +403,20 @@ class Usergroup(PluginCommandMixin, Plugin):
             .filter(UserGroupMember.User == user)
             .all()
         )
+    
+    @staticmethod
+    def get_user_ids_for_group(session:Session, group:UserGroup) -> list[int]:
+        users: list[int] = []
+        for s in session.query(UserGroupMember).filter(UserGroupMember.GroupId==group.GroupId).all():
+            users.append(s.User.id)
+        return users
+    
+    @staticmethod
+    def get_users_for_group(session:Session, group:UserGroup) -> list[ZulipUser]:
+        users: list[ZulipUser] = []
+        for s in session.query(UserGroupMember).filter(UserGroupMember.GroupId==group.GroupId).all():
+            users.append(s.User)
+        return users
     
     @command
     async def test(

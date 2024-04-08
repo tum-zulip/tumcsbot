@@ -427,6 +427,10 @@ class AsyncClient:
     async def delete_message(self, message_id: int) -> dict[str, Any]:
         return await self.call_endpoint(url=f"messages/{message_id}", method="DELETE")
     
+    async def get_message_by_id(self, message_id: int) -> dict[str, Any]:
+        result : dict[str, Any] = await self.call_endpoint(url=f"messages/{message_id}", method="GET")
+        return result["message"]
+    
     @ttl_cache(TTL)
     async def get_profile(
         self, request: dict[str, Any] | None = None
@@ -696,6 +700,17 @@ class AsyncClient:
         return await self.call_endpoint(
             url="users/me/subscriptions",
             request=request,
+        )
+    
+    async def remove_subscriptions(
+        self, id:int, streams: Iterable[dict[str, Any]]
+    ) -> dict[str, Any]:
+        request = dict(subscriptions=streams, principals=[id])
+
+        return await self.call_endpoint(
+            url="users/me/subscriptions",
+            method="DELETE",
+            request=request
         )
 
     async def subscribe_users_multiple_streams(

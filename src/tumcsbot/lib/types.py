@@ -301,19 +301,24 @@ class ZulipStream(
                 raise ZulipStreamNotFound(f"Stream {self.mention} could be not found.")
             self._id = result
         if self._name is None:
-            result = await self.client.get_user_by_id(self._id)
-            if result["result"] != "success":
-                raise ZulipUserNotFound(
-                    f"User with id {self._id} could be not found: {result}"
+            result = await self.client.get_stream_by_id(self._id)
+            if result==None:
+                raise ZulipStreamNotFound(
+                    f"Stream with id {self._id} could be not found: {result}"
                 )
-            self._name = result["stream"]["name"]
+            self._name = result["name"]
 
     def __await__(self):
         return self.__ainit__().__await__()
 
     def __yaml__(self):
         return {"name": self.name}
-
+    
+    #def __eq__(self, other):
+    #    if not isinstance(other, ZulipStream):
+    #        raise ValueError("Can only compare two ZulipStreams")
+    #    return self.id == other.id
+#
     @staticmethod
     def get_db_value(value):
         if isinstance(value, ZulipStream):
