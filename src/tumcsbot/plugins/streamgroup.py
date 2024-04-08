@@ -108,6 +108,46 @@ class Streamgroup(PluginCommandMixin, Plugin):
         if event.data["type"] == "stream":
             return await self.handle_stream_event(event.data)
         return await self.handle_message(event.data["message"])
+    
+    def handle_reaction_event(
+        self, event: dict[str, Any]
+    ) -> Response | Iterable[Response]:
+        group_id: str | None = self._get_group_id_from_emoji_event(
+            event["message_id"], event["emoji_name"]
+        )
+
+        if group_id is None:
+            return Response.none()
+        if event["op"] == "add":
+            return self._subscribe(event["user_id"], group_id)
+        if event["op"] == "remove":
+            return self._unsubscribe(
+                event["user_id"], group_id, message=None, with_streams=True
+            )
+
+        return Response.none()
+
+    def handle_stream_event(
+        self, event: dict[str, Any]
+    ) -> Response | Iterable[Response]:
+        for stream in event["streams"]:
+            # Get all the groups this stream belongs to.
+            group_ids: list[str] = self._get_group_ids_from_stream(stream["name"])
+            # Get all user ids to subscribe to this new stream ...
+            user_ids: list[int] = self._get_group_subscribers(group_ids)
+            # ... and subscribe them.
+            self.client.subscribe_users(user_ids, stream["name"])
+
+        return Response.none()
+    
+
+    @staticmethod
+    def _get_group_id_from_emoji_event(sender:ZulipUser,session:Session,emoji:str):
+        sg:StreamGroup | None = session.query(StreamGroup).filter(StreamGroup.StreamGroupEmote==emoji).one_or_none() 
+    
+
+
+
 
     @command(name="list")
     @privilege(Privilege.USER)
