@@ -102,6 +102,13 @@ class Streamgroup(PluginCommandMixin, Plugin):
     Manage SteamGroups.
     """
 
+    async def handle_event(self, event: Event) -> Response | Iterable[Response]:
+        if event.type == "reaction":
+            return await self.handle_reaction_event(event.data)
+        if event.data["type"] == "stream":
+            return await self.handle_stream_event(event.data)
+        return await self.handle_message(event.data["message"])
+
     @command(name="list")
     @privilege(Privilege.USER)
     @opt("a",long_opt="all",description="Display all existing Streamgroups.")
