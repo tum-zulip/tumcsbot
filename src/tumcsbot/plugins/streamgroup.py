@@ -101,6 +101,9 @@ class Streamgroup(PluginCommandMixin, Plugin):
     """
     Manage SteamGroups.
     """
+# ========================================================================================================================
+#       EVENT HANDLER
+# ========================================================================================================================
 
     async def handle_event(self, event: Event) -> Response | Iterable[Response]:
         if event.type == "reaction":
@@ -109,45 +112,40 @@ class Streamgroup(PluginCommandMixin, Plugin):
             return await self.handle_stream_event(event.data)
         return await self.handle_message(event.data["message"])
     
-    def handle_reaction_event(
+    async def handle_reaction_event(
         self, event: dict[str, Any]
-    ) -> Response | Iterable[Response]:
-        group_id: str | None = self._get_group_id_from_emoji_event(
+     ) -> Response | Iterable[Response]:
+        group_id: str | None = Streamgroup._get_group_id_from_emoji_event(
             event["message_id"], event["emoji_name"]
         )
 
         if group_id is None:
             return Response.none()
-        if event["op"] == "add":
-            return self._subscribe(event["user_id"], group_id)
-        if event["op"] == "remove":
-            return self._unsubscribe(
-                event["user_id"], group_id, message=None, with_streams=True
-            )
+        if Streamgroup._message_is_claimed(event["message_id"]) and event["op"] == "add":
+            await self._subscribe(event["user_id"], group_id)
+        if Streamgroup._message_is_claimed(event["message_id"]) and event["op"] == "remove":
+            await self._unsubscribe(event["user_id"], group_id)
 
         return Response.none()
 
-    def handle_stream_event(
+    async def handle_stream_event(
         self, event: dict[str, Any]
-    ) -> Response | Iterable[Response]:
+     ) -> Response | Iterable[Response]:
         for stream in event["streams"]:
             # Get all the groups this stream belongs to.
             group_ids: list[str] = self._get_group_ids_from_stream(stream["name"])
             # Get all user ids to subscribe to this new stream ...
             user_ids: list[int] = self._get_group_subscribers(group_ids)
             # ... and subscribe them.
-            self.client.subscribe_users(user_ids, stream["name"])
+            sender:ZulipUser = ZulipUser(event["uder_id"])
+            await sender
+            sender.client.subscribe_users(user_ids, stream["name"])
 
-        return Response.none()
-    
+        return Response.none()    
 
-    @staticmethod
-    def _get_group_id_from_emoji_event(sender:ZulipUser,session:Session,emoji:str):
-        sg:StreamGroup | None = session.query(StreamGroup).filter(StreamGroup.StreamGroupEmote==emoji).one_or_none() 
-    
-
-
-
+# ========================================================================================================================
+#       SUBCOMMANDS
+# ========================================================================================================================
 
     @command(name="list")
     @privilege(Privilege.USER)
@@ -705,7 +703,11 @@ class Streamgroup(PluginCommandMixin, Plugin):
         yield DMResponse(f"Unannounced message in Stream #**{name}**.")
     
 
-    # =============== CLASS METHODS =============================================================================
+
+# ========================================================================================================================
+#       CLASS METHODS
+# ========================================================================================================================
+
     @staticmethod
     def _create_group(session: Session, id: int, emote:str) -> None:
         """
@@ -725,7 +727,7 @@ class Streamgroup(PluginCommandMixin, Plugin):
             session.query(StreamGroup).filter(StreamGroup.StreamGroupId == id).first()
             is not None
         ):
-            raise DMError(f"Streamgroup '{id}' already exists")
+            raise DMError(f"Streamgroup `{id}` already exists")
 
         ugroup:UserGroup = Streamgroup._create_usergroup(session,id)
         group = StreamGroup(StreamGroupId=id,StreamGroupEmote=emote,UserGroupId=ugroup.GroupId)
@@ -734,7 +736,7 @@ class Streamgroup(PluginCommandMixin, Plugin):
             session.commit()
         except sqlalchemy.exc.IntegrityError as e:
             session.rollback()
-            raise DMError(f"Could not create Streamgroup '{id}'. {str(e)}") from e
+            raise DMError(f"Could not create Streamgroup `{id}`.") from e
 
     @staticmethod
     def _create_usergroup(session:Session, id:int) -> UserGroup:
@@ -746,7 +748,7 @@ class Streamgroup(PluginCommandMixin, Plugin):
             session.commit()
         except sqlalchemy.exc.IntegrityError as e:
             session.rollback()
-            raise DMError(f"Could not create usergroup '{name}'. {str(e)}") from e
+            raise DMError(f"Could not create usergroup '{name}'.") from e
         
         return group
 
@@ -772,7 +774,7 @@ class Streamgroup(PluginCommandMixin, Plugin):
             session.commit()
         except sqlalchemy.exc.IntegrityError as e:
             session.rollback()
-            raise DMError(f"Could not delete Streamgroup '{group.StreamGroupId}'. {str(e)}") from e
+            raise DMError(f"Could not delete Streamgroup `{group.StreamGroupId}`.") from e
         
 
     @staticmethod
@@ -792,6 +794,8 @@ class Streamgroup(PluginCommandMixin, Plugin):
         Returns:
             None
         """
+
+        failed: list[str] = []
         for stream_reg in stream_patterns:
             streams:list[str] = await sender.client.get_streams_from_regex(stream_reg)
 
@@ -807,7 +811,11 @@ class Streamgroup(PluginCommandMixin, Plugin):
                     session.commit()
                 except sqlalchemy.exc.IntegrityError as e:
                     session.rollback()
-                    raise DMError(f"Could not delete stream #**{stream.name}** from Streamgroup '{group.StreamGroupId}'. {str(e)}")
+                    failed.append(f"#**{stream.name}**")
+        
+        if failed:
+            s : str = " ".join(failed)
+            raise DMError(f"Could not delete streams(s) {s} from Streamgroup `{group.StreamGroupId}`.")
                 
     @staticmethod
     async def _add_streams(session: Session, sender:ZulipUser, group:StreamGroup,stream_patterns:list[str]):
@@ -826,22 +834,79 @@ class Streamgroup(PluginCommandMixin, Plugin):
         Returns:
             None
         """
-        
+
+        failed: list[str] = []
+        streams: list[str] = []
         for stream_reg in stream_patterns:
-            streams:list[str] = await sender.client.get_streams_from_regex(stream_reg)
+            s:list[str] = await sender.client.get_streams_from_regex(stream_reg)
+            streams.extend(s)
 
-            for s in streams:
-                stream:ZulipStream = ZulipStream(f"#**{s}**")
-                await stream
+        for s in streams:
+            stream:ZulipStream = ZulipStream(f"#**{s}**")
+            await stream
 
-                if session.query(StreamGroupMember).filter(StreamGroupMember.StreamGroupId==group.StreamGroupId).filter(StreamGroupMember.Stream == stream).first():
-                    continue
-                try:
-                    session.add(StreamGroupMember(StreamGroupId=group.StreamGroupId,Stream=stream))
-                    session.commit()
-                except sqlalchemy.exc.IntegrityError as e:
-                    session.rollback()
-                    raise DMError( f"Could not add stream #**{s}** to Streamgroup '{group.StreamGroupId}'.")
+            if session.query(StreamGroupMember).filter(StreamGroupMember.StreamGroupId==group.StreamGroupId).filter(StreamGroupMember.Stream == stream).first():
+                continue
+            try:
+                session.add(StreamGroupMember(StreamGroupId=group.StreamGroupId,Stream=stream))
+                session.commit()
+            except sqlalchemy.exc.IntegrityError as e:
+                session.rollback()
+                failed.append(f"#**{stream.name}**")
+                
+        if failed:
+            s : str = " ".join(failed)
+            raise DMError(f"Could not add stream(s) {s} to Streamgroup `{group.StreamGroupId}`.")
+        
+    @staticmethod
+    async def _subscribe(user_id:int,group_id:str):
+        """
+        Subscribe a single user to a StreamGroup.
+
+        Args:
+            user_id: The id of the user.
+            group_id: The id of the Streamgroup
+
+        Returns:
+            None
+        """
+        with DB.session() as session:
+            group: StreamGroup = session.query(StreamGroup).filter(StreamGroup.StreamGroupId==group_id).one()
+            members: UserGroup = Streamgroup._get_usergroup(session,group)
+            sender:ZulipUser = ZulipUser(user_id)
+            await sender
+            stream_names: list[str] = await Streamgroup._get_stream_names(session, sender, group)
+
+            streams: list[(str,None)] = [
+                (stream_name, None) for stream_name in stream_names
+            ]
+
+            await sender.client.subscribe_users_multiple_streams(user_id,streams)
+
+            Usergroup.add_user_to_group(session, sender, members)
+
+    @staticmethod
+    async def _unsubscribe(user_id:int,group_id:str):
+        """
+        Unsubscribe a single user to a StreamGroup.
+
+        Args:
+            user_id: The id of the user.
+            group_id: The id of the Streamgroup
+
+        Returns:
+            None
+        """
+        with DB.session() as session:
+            group: StreamGroup = session.query(StreamGroup).filter(StreamGroup.StreamGroupId==group_id).one()
+            members: UserGroup = Streamgroup._get_usergroup(session,group)
+            sender:ZulipUser = ZulipUser(user_id)
+            stream_names: list[str] = await Streamgroup._get_stream_names(session, sender, group)
+           
+            Usergroup.remove_user_from_group(session, sender, members)
+
+           
+            await sender.client.remove_subscriptions(user_id, stream_names)
 
     @staticmethod
     async def _claim(group:StreamGroup|None, session:Session, message_id:int, all=False):
@@ -866,13 +931,13 @@ class Streamgroup(PluginCommandMixin, Plugin):
         
         if not all:
             if session.query(GroupClaim).filter(GroupClaim.MessageId==message_id).filter(GroupClaim.GroupId==group.StreamGroupId).first():
-                raise DMError(f"Message already claimed by Streamgroup {group.StreamGroupId}.")
+                raise DMError(f"Message already claimed by Streamgroup `{group.StreamGroupId}`.")
             try: 
                 session.add(GroupClaim(MessageId=message_id,GroupId=group.StreamGroupId))
                 session.commit()
             except sqlalchemy.exc.IntegrityError as e:
                 session.rollback()
-                raise DMError(f"Could not claim message '{message_id}' for Streamgroup `{group.StreamGroupId}`. {str(e)}")
+                raise DMError(f"Could not claim message '{message_id}' for Streamgroup `{group.StreamGroupId}`.")
         else:
             if session.query(GroupClaimAll).filter(GroupClaimAll.MessageId==message_id).first():
                 raise DMError("Message already claimed by all Streamgroups.")
@@ -881,7 +946,7 @@ class Streamgroup(PluginCommandMixin, Plugin):
                 session.commit()
             except sqlalchemy.exc.IntegrityError as e:
                 session.rollback()
-                raise DMError(f"Could not claim message '{message_id}'. {str(e)}")
+                raise DMError(f"Could not claim message '{message_id}'.")
 
     @staticmethod
     async def _unclaim(group:StreamGroup,session:Session,message_id:int,all:bool=False):
@@ -908,7 +973,7 @@ class Streamgroup(PluginCommandMixin, Plugin):
                 session.commit()
             except sqlalchemy.exc.IntegrityError as e:
                 session.rollback()
-                raise DMError(f"Could not unclaim message {message_id} in Streamgroup `{group.StreamGroupId}`.") from e
+                raise DMError(f"Could not unclaim message '{message_id}' in Streamgroup `{group.StreamGroupId}`.") from e
         else:
             # delete msg from claim_all_db
             try: 
@@ -916,7 +981,7 @@ class Streamgroup(PluginCommandMixin, Plugin):
                 session.commit()
             except sqlalchemy.exc.IntegrityError as e:
                 session.rollback()
-                raise DMError(f"Could not unclaim message '{message_id}'. {str(e)}")
+                raise DMError(f"Could not unclaim message '{message_id}'.")
             
             # delete msg from claim_db of every stream
             for g in session.query(StreamGroup).all():
@@ -926,7 +991,7 @@ class Streamgroup(PluginCommandMixin, Plugin):
                         session.commit()
                     except sqlalchemy.exc.IntegrityError as e:
                         session.rollback()
-                        DMResponse(f"Could not unclaim message {message_id} in Streamgroup `{g.StreamGroupId}`.")
+                        DMResponse(f"Could not unclaim message '{message_id}' in Streamgroup `{g.StreamGroupId}`.")
 
     @staticmethod
     async def _announce(sender:ZulipUser, session:Session, message):
@@ -980,54 +1045,48 @@ class Streamgroup(PluginCommandMixin, Plugin):
            await sender.client.send_response(
                Response.build_reaction( botMessage, emoji=emoji )
            )
-           
-                
-    
+
     @staticmethod
     def _build_announcement_message(session:Session) -> str:
             _announcement_msg_table_row_fmt: str = "%s | :%s:"
             _announcement_msg: str = cleandoc(
-        """
-        Hi! :smile:
+                """
+                Hi! :smile:
+                I have the pleasure to announce some stream groups here.
+                You may subscribe to a stream group in order to be automatically \
+                subscribed to all streams belonging to that group. Also, you \
+                will be kept updated when new streams are added to the group.
+                Just react to this message with the emoji of the stream group \
+                you like to subscribe to. Remove your emoji to unsubscribe \
+                from this group. (1)
 
-        I have the pleasure to announce some stream groups here.
-        You may subscribe to a stream group in order to be automatically \
-        subscribed to all streams belonging to that group. Also, you \
-        will be kept updated when new streams are added to the group.
-        Just react to this message with the emoji of the stream group \
-        you like to subscribe to. Remove your emoji to unsubscribe \
-        from this group. (1)
-
-        stream group | emoji
-        ------------ | -----
-        {}
+                stream group | emoji
+                ------------ | -----
+                {}
 
 
-        *to be continued*
+                *to be continued*
 
-        In case the emojis do not work for you, you may write me a PM:
-        - `group subscribe <group_id>`
-        - `group unsubscribe <group_id>`
-
-        
-        Have a nice day! :sunglasses:
-
-        (1) Note that this will also unsubscribe you from the existing \
-        streams of this group. If you only want to cancel the \
-        subscription without being unsubscribed from existing streams, \
-        just write me a PM:
-        - `group unsubscribe -k <group_id>`
-        """
-    )
-
+                In case the emojis do not work for you, you may write me a PM:
+                - `group subscribe <group_id>`
+                - `group unsubscribe <group_id>`
+                
+                Have a nice day! :sunglasses:
+                
+                (1) Note that this will also unsubscribe you from the existing \
+                streams of this group. If you only want to cancel the \
+                subscription without being unsubscribed from existing streams, \
+                just write me a PM:
+                - `group unsubscribe -k <group_id>`
+                """
+            )
             table: str = "\n".join(
                 _announcement_msg_table_row_fmt % (group.StreamGroupId, group.StreamGroupEmote)
                 for group in session.query(StreamGroup).all()
             )
-
             # Send own message.
             return _announcement_msg.format(table)
-
+                      
     @staticmethod
     async def _unannounce(sender:ZulipUser, session:Session, message_id:int|None):
         """
@@ -1045,13 +1104,13 @@ class Streamgroup(PluginCommandMixin, Plugin):
         """
 
         if session.query(GroupClaimAll).filter(GroupClaimAll.MessageId == message_id).first() is None:
-            raise DMError(f"Message {message_id} is not yet claimed.")
+            raise DMError(f"Message '{message_id}' is not yet claimed.")
         try:
             session.query(GroupClaimAll).filter(GroupClaimAll.MessageId == message_id).delete()
             session.commit()
         except sqlalchemy.exc.IntegrityError as e:
             session.rollback()
-            raise DMError(f"Could not unclaim message {message_id}.") from e
+            raise DMError(f"Could not unclaim message '{message_id}'.") from e
         
         await sender.client.delete_message(message_id)
 
@@ -1100,21 +1159,72 @@ class Streamgroup(PluginCommandMixin, Plugin):
         for group in groups:
             await Streamgroup._fix(sender,session,group)
     
+
+# ========================================================================================================================
+#       HELPER METHODS
+# ========================================================================================================================
+   
+    @staticmethod
+    def _get_group_id_from_emoji_event(emoji:str) -> str:
+        result: str | None
+        with DB.session() as session:
+            sg:StreamGroup | None = session.query(StreamGroup).filter(StreamGroup.StreamGroupEmote==emoji).one_or_none()
+            result = sg.UserGroupId 
+        return result
+    
+    @staticmethod
+    def _get_group_ids_from_stream(name:str) -> list[str]:
+        result : set[str]
+        with DB.session() as session:
+            result = {
+                sg.StreamGroupId for sg in session.query(StreamGroupMember).filter(StreamGroupMember.Stream.name==name).all()
+            }
+        return list(result)
+    
+    @staticmethod
+    def _get_group_subscribers(groups:list[str]) -> list[int]:
+        result : list[int] = []
+        with DB.session() as session:
+            for g_id in groups:
+                u_group : UserGroup = Streamgroup._get_usergroup_by_id(g_id)
+                res : list[int] = Usergroup.get_user_ids_for_group(session,u_group)
+                result.extend(res)
+        return result
+
+    @staticmethod
+    def _message_is_claimed(id:int) -> bool:
+        claimedByOne:bool 
+        claimedByAll:bool 
+        with DB.session() as session:
+            claimedByOne = session.query(GroupClaim).filter(GroupClaim.MessageId==id).first() is not None
+            claimedByAll = session.query(GroupClaimAll).filter(GroupClaimAll.MessageId==id).first() is not None
+        return claimedByOne or claimedByAll
     
     @staticmethod
     async def _get_stream_names(session:Session, sender:ZulipUser, group:StreamGroup) -> list[str]:
         streams: list[str] = []
+        failed: list[str] = []
         for s in session.query(StreamGroupMember).filter(StreamGroupMember.StreamGroupId==group.StreamGroupId).all():
             result = await sender.client.get_stream_by_id(s.Stream.id)
             if result==None:
-                raise DMError(f"Stream with id {s.Stream.id} could be not found.")
+                failed.append(f"`{s.Stream.id}`")
             name:str = result["name"]
             streams.append(name)
+
+        if failed:
+            f:str = " ".join(failed)
+            raise DMError(f"Stream(s) with id(s) {f} could be not found.")
         return streams
     
     @staticmethod
     def _get_usergroup(session:Session, group:StreamGroup) -> UserGroup:
         s: StreamGroup = session.query(StreamGroup).filter(StreamGroup.StreamGroupId==group.StreamGroupId).one()
+        id:int = s.UserGroupId
+        return session.query(UserGroup).filter(UserGroup.GroupId==id).one()
+    
+    @staticmethod
+    def _get_usergroup_by_id(session:Session, group_id:StreamGroup) -> UserGroup:
+        s: StreamGroup = session.query(StreamGroup).filter(StreamGroup.StreamGroupId==group_id).one()
         id:int = s.UserGroupId
         return session.query(UserGroup).filter(UserGroup.GroupId==id).one()
     
