@@ -24,7 +24,7 @@ import json
 import logging
 from abc import ABC, abstractmethod
 import threading
-from typing import Any, Callable, Iterable, Type, final
+from typing import Any, Callable, Iterable, Type, TypeVar, final
 
 
 from tumcsbot.lib.client import AsyncClient, PluginContext
@@ -113,6 +113,7 @@ class Event:
     def start_event(cls, sender: str, dest: str | None = None) -> Event:
         return cls(sender, type=EventType.START, dest=dest)
 
+T = TypeVar("T")
 
 class Plugin(threading.Thread, ABC):
     """Abstract base class for every plugin."""
@@ -127,7 +128,7 @@ class Plugin(threading.Thread, ABC):
     # See https://zulip.com/api/get-events.
     zulip_events: list[str] = []
 
-    def __init__(self, plugin_context: PluginContext, client: AsyncClient | None = None) -> None:
+    def __init__(self, bot, plugin_context: PluginContext, client: AsyncClient | None = None) -> None:
         """Use _init_plugin for custom init code."""
         super().__init__(name=self.plugin_name(), daemon=True)
 
@@ -145,6 +146,10 @@ class Plugin(threading.Thread, ABC):
         # Set the running flag.
         self.running: bool = False
 
+        self.bot = bot
+
+        self.call_ctx = {}
+
         # call custom init code
         self._init_plugin()
 
@@ -153,6 +158,14 @@ class Plugin(threading.Thread, ABC):
 
         Note that this code is called from the worker thread/process.
         """
+
+    async def invoke_other_cmd(self, _fn, sender: ZulipUser, session: Any, message: dict[str, Any] | None = None, **kwargs):
+        # split bound method into class and method
+        invoker = _fn.invoke
+        async for result in invoker(sender, session, message, **kwargs):
+            yield result
+
+
     
     def is_responsible(self, event: Event) -> bool:
         """Check if the plugin is responsible for the given Zulip event.

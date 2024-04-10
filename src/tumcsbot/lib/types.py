@@ -486,17 +486,21 @@ class SubCommandConfig:
             privilege=Privilege.from_str(d["privilege"]),
             description=d["description"],
         )
-
-    @property
-    def syntax(self) -> str:
+    
+    def syntax_for(self, privilege: Privilege) -> str:
         if self.name is None:
             raise ValueError("Name of command is not set.")
+        
+        args = [arg.syntax for arg in self.args if not arg.privilege or arg.privilege <= privilege]
+        opts = [opt.syntax for opt in self.opts if not opt.privilege or opt.privilege <= privilege]
 
-        args = [arg.syntax for arg in self.args]
-        opts = [opt.syntax for opt in self.opts]
         if len(opts + args) > 0:
             return self.name + " " + " ".join(opts + args)
         return self.name
+
+    @property
+    def syntax(self) -> str:
+        return self.syntax_for(Privilege.ADMIN)
 
     @property
     def short_help_msg(self) -> str:
@@ -518,10 +522,16 @@ class CommandConfig:
             subcommands=[SubCommandConfig.from_dict(sub) for sub in d["subcommands"]],
             description=d["description"],
         )
+    
+    def syntax_for(self, privilege: Privilege) -> str:
+        if self.name is None:
+            raise ValueError("Name of command is not set.")
+        
+        return "\n or ".join([self.name + " " + sub.syntax_for(privilege) for sub in self.subcommands if not sub.privilege or sub.privilege <= privilege])
 
     @property
     def syntax(self) -> str:
-        return "\n or ".join([self.name + " " + sub.syntax for sub in self.subcommands])
+        return self.syntax_for(Privilege.ADMIN)
 
     @property
     def short_help_msg(self) -> str:

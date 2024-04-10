@@ -17,7 +17,7 @@ import signal
 from graphlib import TopologicalSorter
 import sys
 import threading
-from typing import Any, Iterable, Type
+from typing import Any, Iterable, Type, TypeVar
 
 from zulip import Client as ZulipClient
 from tumcsbot.lib import response
@@ -36,6 +36,7 @@ from tumcsbot.lib.utils import LOGGING_FORMAT
 class EventQueue(asyncio.Queue[Event]):
     pass
 
+T = TypeVar("T")
 
 class TumCSBot:
     """Main Bot class.
@@ -258,6 +259,7 @@ class TumCSBot:
             plugin_class = plugin_class_dict[plugin_name]
 
             plugin: Plugin = plugin_class(
+                self,
                 self.plugin_context,
                 client=self.client,
             )
@@ -268,7 +270,8 @@ class TumCSBot:
             self.plugins[plugin_name] = plugin
             plugin.start()
         
-
+    def get_plugin_instance(self, _ty: Type[T]) -> T:
+        return self.plugins[_ty.plugin_name()]  # type: ignore
 
     def zulip_event_preprocess(self, event: dict[str, Any]) -> dict[str, Any]:
         """Preprocess a Zulip event dictionary.

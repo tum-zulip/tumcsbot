@@ -34,8 +34,7 @@ HELP_TEMPLATE = cleandoc(
     So in order to preserve arguments containing whitespace characters from splitting, they need to be quoted. \
     Special strings such as regexes containing backslash sequences may require single quotes instead of double quotes.
 
-    Currently, I understand the following commands:
-
+    Currently, you can use the following commands:
     {}
 
     Have a nice day! :-)
@@ -57,9 +56,10 @@ class Help(PluginCommandMixin, Plugin):
         self, message: dict[str, Any]
     ) -> Response | Iterable[Response]:
         command: str = message["command"].strip()
+        privileged = await self.client.user_is_privileged(message["sender_id"])
         if not command:
-            return self._help_overview(message)
-        return self._help_command(message, command)
+            return self._help_overview(message, privileged)
+        return self._help_command(message, command, privileged)
 
     @staticmethod
     def _format_description(description: str) -> str:
@@ -75,7 +75,7 @@ class Help(PluginCommandMixin, Plugin):
 
     @staticmethod
     def _get_help_info(
-        command: str | None = None, privilige: Privilege = Privilege.USER
+        command: str | None = None, privilege: Privilege = Privilege.USER
     ) -> list[CommandConfig]:
         """Get help information from each command.
 
@@ -101,9 +101,8 @@ class Help(PluginCommandMixin, Plugin):
         return sorted(result, key=lambda c: c.name)
 
     def _help_command(
-        self, message: dict[str, Any], command: str
+        self, message: dict[str, Any], command: str, privileged: bool = False
     ) -> Response | Iterable[Response]:
-
         result = Help._get_help_info(command)
         if len(result) == 0:
             raise DMError(f"Command '{command}' not found.")
@@ -119,12 +118,15 @@ class Help(PluginCommandMixin, Plugin):
             msg += PRIVILAGE_MSG + "\n"
 
         msg += "\n" + cmd.short_help_msg
+        CommandConfig
 
-        msg += f"\n```text\n{cmd.syntax}\n```\n\n"
+        msg += f"\n```text\n{cmd.syntax_for(Privilege.ADMIN if privileged else Privilege.USER)}\n```\n\n"
 
         msg += "## Subcommands:\n" if cmd.subcommands else ""
         for sub in cmd.subcommands:
-            msg += Help._format_subcommand(cmd.name, sub)
+            if not privileged and sub.privilege != Privilege.USER:
+                continue
+            msg += Help._format_subcommand(cmd.name, sub, privileged)
 
         return Response.build_message(
             message, content=msg, msg_type="private", to=message["sender_email"]
@@ -151,25 +153,47 @@ class Help(PluginCommandMixin, Plugin):
         return f"- `{argument.name}`\t{argument.description}{greedy}{privilage}"
 
     @staticmethod
-    def _format_subcommand(cmd_name: str, subcommand: SubCommandConfig) -> str:
+    def _format_subcommand(
+        cmd_name: str, subcommand: SubCommandConfig, privileged: bool = False
+    ) -> str:
         privilage = (
             " " + PRIVILAGE_MSG + "\n"
             if subcommand.privilege is not None
             and subcommand.privilege > Privilege.USER
             else ""
         )
-        out = f"```spoiler {subcommand.name.replace('_', ' ').title()}\n{privilage}\n{subcommand.short_help_msg}\n````text\n{cmd_name} {subcommand.syntax}\n````\n\n"
+        out = f"""
+```spoiler {subcommand.name.replace('_', ' ').title()}
+{privilage}
+{subcommand.short_help_msg}\n
+````text\n
+{cmd_name} {subcommand.syntax_for(Privilege.USER if not privileged else Privilege.ADMIN)}
+````\n
+"""    
         for opt in subcommand.opts:
+            if not privileged and opt.privilege and opt.privilege != Privilege.USER:
+                continue
             out += Help._format_option(opt) + "\n"
         for arg in subcommand.args:
+            if not privileged and arg.privilege and arg.privilege != Privilege.USER:
+                continue
             out += Help._format_argument(arg) + "\n"
         out += "```\n"
         return out
 
-    def _help_overview(self, message: dict[str, Any]) -> Response | Iterable[Response]:
+    def _help_overview(
+        self, message: dict[str, Any], privileged: bool = False
+    ) -> Response | Iterable[Response]:
         # Get the command names.
+        commands = Help._get_help_info()
+
         help_message: str = "\n".join(
-            map(lambda cfg: "- " + cfg.name, Help._get_help_info())
+            [
+                " - " + cmd.name
+                for cmd in commands
+                if privileged
+                or any(subcmd.privilege == Privilege.USER for subcmd in cmd.subcommands)
+            ]
         )
 
         return Response.build_message(

@@ -417,19 +417,4 @@ class Usergroup(PluginCommandMixin, Plugin):
         for s in session.query(UserGroupMember).filter(UserGroupMember.GroupId==group.GroupId).all():
             users.append(s.User)
         return users
-    
-    @command
-    async def test(
-        self,
-        sender: ZulipUser,
-        session: Session,
-        _args: CommandParser.Args,
-        _opts: CommandParser.Opts,
-        _message: dict[str, Any],
-    ) -> AsyncGenerator[response_type, None]:
-        import tumcsbot.plugins.userinput as ui
-        result = await ui.UserInput.confirm(sender, "Are you sure?")
-        if result:
-            yield DMResponse("Confirmed")
-        else:
-            yield DMResponse("Not confirmed")
+

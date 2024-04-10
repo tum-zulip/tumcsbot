@@ -1,4 +1,5 @@
 from __future__ import annotations
+from argparse import Namespace
 from functools import wraps
 import logging
 from typing import AsyncGenerator, Callable, Any, Iterable, Protocol, Type
@@ -56,6 +57,34 @@ def to_python_type(type) -> Any:
         
     return type
 
+async def process_arg(name: str, greedy: bool, optional: bool,  type: Any, args: CommandParser.Args, session: Session):
+    if greedy and not optional:
+        if len(getattr(args, name, [])) == 0:
+            # todo: better error message
+            raise DMError(
+                f"Error: At least one argument is required for `{name}`.",
+            )
+        
+    async def handle_argument(value):
+        if isinstance(type, sqlalchemy.orm.InstrumentedAttribute):
+            obj = session.query(type.class_).filter(type == value).first()
+            if not optional and obj is None:
+                raise DMError(f"Uuups, it looks like i could not find any {type.class_.__name__} associated with `{value}` :botsad:")
+        else:
+            obj = value
+        
+        if hasattr(obj.__class__, "__await__"):
+            await obj
+        return obj
+    
+    if greedy:
+        result = []
+        for value in getattr(args, name):
+            result.append(await handle_argument(value))
+    else:
+        result = await handle_argument(getattr(args, name))
+    setattr(args, name, result)
+
 def arg(
     name: str,
     type: Callable[[Any], Any],
@@ -87,32 +116,7 @@ def arg(
                 if not await sender.isPrivileged:
                     raise UserNotPrivilegedException()
 
-            if greedy and not optional:
-                if len(getattr(args, name, [])) == 0:
-                    # todo: better error message
-                    raise DMError(
-                        f"Error: At least one argument is required for `{name}`.",
-                    )
-                        
-            async def handle_argument(value):
-                if isinstance(type, sqlalchemy.orm.InstrumentedAttribute):
-                    obj = session.query(type.class_).filter(type == value).first()
-                    if not optional and obj is None:
-                        raise DMError(f"Uuups, it looks like i could not find any {type.class_.__name__} associated with `{value}` :botsad:")
-                else:
-                    obj = value
-                
-                if hasattr(obj.__class__, "__await__"):
-                    await obj
-                return obj
-            
-            if greedy:
-                result = []
-                for value in getattr(args, name):
-                    result.append(await handle_argument(value))
-            else:
-                result = await handle_argument(getattr(args, name))
-            setattr(args, name, result)
+            await process_arg(name, greedy, optional, type, args, session)
             
             # todo: does yield from work here?
             async for response in func(self, sender, session, args, opts, message):
@@ -132,7 +136,8 @@ def opt(
 ) -> command_decorator_type:
     def decorator(func: command_func_type) -> command_func_type:
         meta = get_meta(func)
-        meta.opts.insert(0, OptConfig(opt, long_opt, type, description, privilege))
+        python_type = to_python_type(type)
+        meta.opts.insert(0, OptConfig(opt, long_opt, python_type, description, privilege))
 
         @wraps(func)
         async def wrapper(
@@ -160,7 +165,12 @@ def opt(
             if opt_value:
                 setattr(opts, long_opt, opt_value)
             elif long_opt:
-                setattr(opts, opt, long_opt_value)            
+                setattr(opts, opt, long_opt_value)      
+
+            if type and opt_value:
+                await process_arg(opt, False, False, type, opts, session)
+
+            setattr(opts, long_opt, getattr(opts, opt, None)) 
 
             async for response in func(self, sender, session, args, opts, message):
                 yield response
@@ -439,7 +449,20 @@ class command:
                 )
             return responses
 
+
+
+        async def invoke(sender, session, message, **kwargs):
+            args_ns = Namespace(**{arg.name: kwargs.get(arg.name) for arg in self.meta.args})
+            opts_names = zip([opt.opt for opt in self.meta.opts], [opt.long_opt for opt in self.meta.opts if opt.long_opt])
+            opts_dict = {s: kwargs.get(s) or kwargs.get(l) for s, l in opts_names}
+            opts_dict.update({l: kwargs.get(l) or kwargs.get(s) for s, l in opts_names})
+            opts_ns = Namespace(**opts_dict)
+            async for response in outer_self.fn(self, sender, session, args_ns, opts_ns, message):
+                yield response
+        
         # todo: idk if this is right
         wrapper._tumcsbot_meta = self.meta
+        wrapper.invoke = invoke
+        wrapper.__parent_class__ = owner
         setattr(owner, self.name, wrapper)
 

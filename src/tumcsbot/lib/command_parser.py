@@ -305,7 +305,7 @@ class CommandParser:
                     optarg: str | None
                     if token.startswith("-") and not token.startswith("--"):
                         optarg = token[2:]
-                    else:
+                    if not optarg:
                         optarg = tokens[index + 1] if index + 1 < len(tokens) else None
                         skip_next_token = True
                     result[opt] = converter(optarg)
