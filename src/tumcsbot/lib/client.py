@@ -30,7 +30,6 @@ from tumcsbot.lib.regex import Regex
 from tumcsbot.lib.utils import stream_names_equal
 
 
-
 @final
 @dataclass
 class PluginContext:
@@ -234,7 +233,7 @@ class AsyncClient:
             if "error" in res["result"]:
                 # Handle various error cases, including server errors and bad event queue ids
                 logging.error(
-                    "Server returned error: %s", res.get('msg', 'Unknown error')
+                    "Server returned error: %s", res.get("msg", "Unknown error")
                 )
                 if res.get("code") == "BAD_EVENT_QUEUE_ID":
                     queue_id = (
@@ -503,12 +502,9 @@ class AsyncClient:
             narrow = []
 
         logging.debug("event_types: %s, narrow: %s", str(event_types), str(narrow))
-        request = {
-            event_types: event_types,
-            narrow: narrow,
-            **self.register_params,
-            **kwargs,
-        }
+        request = request = dict(
+            event_types=event_types, narrow=narrow, **self.register_params, **kwargs
+        )
 
         return await self.call_endpoint(
             url="register",
