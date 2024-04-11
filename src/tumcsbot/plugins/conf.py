@@ -31,7 +31,7 @@ class ConfPlugin(PluginCommandMixin, Plugin):
     async def _list(
         self,
         _sender: ZulipUser,
-        session: Session,
+        _session: Session,
         args: CommandParser.Args,
         _opts: CommandParser.Opts,
         _message: dict[str, Any],

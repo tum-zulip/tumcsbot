@@ -22,7 +22,7 @@ from tumcsbot.plugin_decorators import *
 from tumcsbot.plugins.usergroup import UserGroup
 from tumcsbot.plugins.usergroup import Usergroup
 
-class StreamGroup(TableBase):
+class StreamGroup(TableBase): # type: ignore
     __tablename__ = 'StreamGroups'
 
     StreamGroupId = Column(String, primary_key=True)
@@ -36,21 +36,21 @@ class StreamGroup(TableBase):
         return [member.Stream for member in self._streams]
 
 
-class StreamGroupMember(TableBase):
+class StreamGroupMember(TableBase): # type: ignore
     __tablename__ = 'StreamGroupMembers'
 
     StreamGroupId = Column(String, ForeignKey('StreamGroups.StreamGroupId', ondelete='CASCADE'), primary_key=True)
     Stream = Column(ZulipStream, primary_key=True)
     
 
-class GroupClaim(TableBase):
+class GroupClaim(TableBase): # type: ignore
     __tablename__ = 'GroupClaims'
 
     MessageId = Column(Integer, primary_key=True)
     GroupId = Column(String, ForeignKey('Groups.Id', ondelete='CASCADE'), primary_key=True)
 
 
-class GroupClaimAll(TableBase):
+class GroupClaimAll(TableBase): # type: ignore
     # todo: why is this necessary?
     __tablename__ = 'GroupClaimsAll'
 

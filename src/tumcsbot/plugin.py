@@ -34,10 +34,10 @@ from tumcsbot.lib.db import DB, TableBase
 
 from sqlalchemy import Column, String
 
-from tumcsbot.lib.types import AsncClientMixin, CommandConfig, ZulipUser
+from tumcsbot.lib.types import AsyncClientMixin, CommandConfig, ZulipUser
 
 
-class PluginTable(TableBase):
+class PluginTable(TableBase): # type: ignore
     __tablename__ = "Plugins"
 
     name = Column(String, primary_key=True)
@@ -332,7 +332,7 @@ class PluginCommandMixin(Plugin):
                 ],
                 Response | Iterable[Response],
             ] = getattr(self, command)
-            AsncClientMixin.set_client(self.client)
+            AsyncClientMixin.set_client(self.client)
             sender = ZulipUser(id=message["sender_id"], name=message["sender_full_name"])
             await sender
             with DB.session() as session:

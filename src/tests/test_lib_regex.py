@@ -5,30 +5,31 @@
 
 import unittest
 
-from tumcsbot.lib.response import Regex
+from tumcsbot.lib.regex import Regex
 
 
 class RegexTest(unittest.TestCase):
     emoji_names: list[tuple[str, str | None]] = [
-        ("test", "test"),
+        # emoji names like this are no longer supported: ("test", "test"),
         (":test:", "test"),
         (":tes:t:", None),
         ("test:", None),
         (":test", None),
     ]
     stream_names: list[tuple[str, str | None]] = [
-        ("test", "test"),
-        ("abc def", "abc def"),
-        ('!/"§$& - ("!~EÜ', '!/"§$& - ("!~EÜ'),
+        # stream names like this are no longer supported:  ("test", "test"),
+        # stream names like this are no longer supported:  ("abc def", "abc def"),
+        ('#**!/"§$& - ("!~EÜ**', '!/"§$& - ("!~EÜ'),
+        ('!/"§$& - ("!~EÜ', None),
         ("#**test**", "test"),
-        ("#*test*", "#*test*"),
-        ("#**test*", "#**test*"),
-        ("#*test**", "#*test**"),
+        ("#*test*", None),
+        ("#**test*", None),
+        ("#*test**", None),
     ]
     user_names: list[tuple[str, str | None]] = [
-        ("John Doe", "John Doe"),
-        ("John", "John"),
-        ("John Multiple Doe", "John Multiple Doe"),
+        # usernames like this are no longer supported: ("John Doe", "John Doe"),
+        # usernames like this are no longer supported: ("John", "John"),
+        # usernames like this are no longer supported: ("John Multiple Doe", "John Multiple Doe"),
         ("@**John**", "John"),
         ("@_**John Doe**", "John Doe"),
         ("@*John*", None),

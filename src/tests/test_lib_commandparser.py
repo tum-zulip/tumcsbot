@@ -7,7 +7,7 @@ import unittest
 
 from typing import cast, Any
 
-from tumcsbot.command_parser import CommandParser
+from tumcsbot.lib.command_parser import CommandParser
 
 
 class CommandParserTest(unittest.TestCase):

@@ -13,7 +13,7 @@ change the alert words and specify the emojis to use for the reactions.
 # TODO: replacement for zulip usergroups. Replace as soon as api allows bot requests for usergroups
 
 import logging
-from typing import Any, AsyncGenerator, Iterable
+from typing import Any, AsyncGenerator
 from sqlalchemy import Column, Integer, String, ForeignKey
 import sqlalchemy
 from sqlalchemy.orm import relationship, Mapped
@@ -33,12 +33,11 @@ from tumcsbot.lib.types import (
     UserNotPrivilegedException,
     response_type,
     ZulipUser,
-    YAMLSerializableMixin,
 )
 from tumcsbot.plugin_decorators import arg, command, opt, privilege
 
 
-class UserGroup(TableBase):
+class UserGroup(TableBase): # type: ignore
     """Represents a user group in the system."""
 
     __tablename__ = "UserGroups"
@@ -62,7 +61,7 @@ class UserGroup(TableBase):
     )
 
 
-class UserGroupMember(TableBase):
+class UserGroupMember(TableBase): # type: ignore
     """Represents a user group member in the system."""
 
     __tablename__ = "UserGroupMembers"

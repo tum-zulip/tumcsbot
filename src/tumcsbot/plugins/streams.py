@@ -5,11 +5,11 @@
 
 from typing import Any
 from tumcsbot.lib.command_parser import CommandParser
-from tumcsbot.lib.types import ZulipStream
 from tumcsbot.lib.utils import split
 from tumcsbot.plugin import PluginCommandMixin, Plugin
-from tumcsbot.plugin_decorators import *
+from tumcsbot.plugin_decorators import command, arg, privilege, opt
 from tumcsbot.lib.regex import Regex
+from tumcsbot.lib.types import Privilege, PartialError, PartialSuccess, ZulipUser
 
 
 class Streams(PluginCommandMixin, Plugin):
@@ -134,10 +134,10 @@ class Streams(PluginCommandMixin, Plugin):
     async def rename(
         self,
         sender: ZulipUser,
-        session,
+        _session,
         args: CommandParser.Args,
-        opts: CommandParser.Opts,
-        message: dict[str, Any],
+        _opts: CommandParser.Opts,
+        _message: dict[str, Any],
     ):
 
         for old, new in args.stream_tuples:

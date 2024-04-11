@@ -13,8 +13,10 @@ from tumcsbot.lib.utils import get_classes_from_path
 
 TableBase = sqlalchemy.orm.declarative_base()
 
+
 class Session(sqlalchemy.orm.Session):
     pass
+
 
 class DB:
     """Simple wrapper class to conveniently access a sqlite database."""
@@ -35,7 +37,7 @@ class DB:
         if not isabs(path):
             raise ValueError("path to database is not absolute")
         DB._path = path
-        DB._engine = create_engine('sqlite:///' + path)
+        DB._engine = create_engine("sqlite:///" + path)
 
     @staticmethod
     def path() -> str:
@@ -43,12 +45,14 @@ class DB:
         if not DB._path:
             raise ValueError("database path not set. Did you forget to call set_path?")
         return DB._path
-    
+
     @staticmethod
     def engine() -> sqlalchemy.engine.Engine:
         """Get the database engine."""
         if not DB._engine:
-            raise ValueError("database engine not set. Did you forget to call set_path?")
+            raise ValueError(
+                "database engine not set. Did you forget to call set_path?"
+            )
         return DB._engine
 
     @contextmanager
@@ -59,34 +63,63 @@ class DB:
 
         try:
             session.execute(sqlalchemy.text("PRAGMA foreign_keys=ON"))
-            yield session # type: ignore
+            yield session  # type: ignore
         finally:
             session.close()
 
 
-def serialize_model(obj, exclude_tables=None):
+async def serialize_model(
+    obj, exclude_integer_primary_key: bool = True, exclude_tables=None
+):
     """Serialize an SQLAlchemy object, excluding redundant foreign keys."""
     if not isinstance(obj, TableBase):
         raise ValueError("Object must be an SQLAlchemy model")
-    
+
     if exclude_tables is None:
         exclude_tables = []
-    
+
     state: sqlalchemy.orm.InstanceState = inspect(obj)
     mapper: sqlalchemy.orm.Mapper = state.mapper
-    exclude_tables.append(state.class_.__table__)
+    exclude_tables.append(obj.__class__.__table__)
 
     # Determine which foreign keys to skip because they are handled by relationships
     skip_keys = set()
+    import logging
+
+    logging.debug(
+        len(exclude_tables) * "        " + f"mapper.columns: {mapper.columns}"
+    )
+    logging.debug(
+        len(exclude_tables) * "        " + f"exclude_tables: {exclude_tables}"
+    )
     for c in mapper.columns:
         if c.foreign_keys:
+            logging.debug(
+                (len(exclude_tables) + 1) * "        "
+                + f"foreign_keys: {c.foreign_keys}"
+            )
             for fk in c.foreign_keys:
                 if fk.column.table in exclude_tables:
                     skip_keys.add(c.key)
                     break
+        if (
+            exclude_integer_primary_key
+            and c.primary_key
+            and isinstance(c.type, sqlalchemy.Integer)
+        ):
+            skip_keys.add(c.key)
+    logging.debug(len(exclude_tables) * "        " + f"skip_keys: {skip_keys}")
 
     # Serialize columns except the skipped foreign keys
-    attributes = {c.key: getattr(obj, c.key) for c in mapper.column_attrs if c.key not in skip_keys}
+    attributes = {
+        c.key: getattr(obj, c.key)
+        for c in mapper.column_attrs
+        if c.key not in skip_keys
+    }
+    attributes = {k: v for k, v in attributes.items() if v is not None}
+    for value in attributes.values():
+        if hasattr(value, "__await__"):
+            await value
 
     # Serialize relationships
     for rel in mapper.relationships:
@@ -97,19 +130,25 @@ def serialize_model(obj, exclude_tables=None):
             if isinstance(related_objects, list):
                 models = []
                 for child in related_objects:
-                    model = serialize_model(child, exclude_tables=list(exclude_tables))
+                    model = await serialize_model(
+                        child, exclude_tables=list(exclude_tables)
+                    )
                     if len(model.keys()) == 1:
                         model = next(iter(model.values()))
                     models.append(model)
                 attributes[rel.key] = models
-            elif isinstance(related_objects, TableBase): 
-                attributes[rel.key] = serialize_model(related_objects, exclude_tables=list(exclude_tables))
+            elif isinstance(related_objects, TableBase):
+                attributes[rel.key] = await serialize_model(
+                    related_objects, exclude_tables=list(exclude_tables)
+                )
 
     list_attributes = {k: v for k, v in attributes.items() if isinstance(v, list)}
     dict_attributes = {k: v for k, v in attributes.items() if isinstance(v, dict)}
-    attributes = {k: v for k, v in attributes.items() if not isinstance(v, (list, dict))}
+    attributes = {
+        k: v for k, v in attributes.items() if not isinstance(v, (list, dict))
+    }
     attributes.update(list_attributes)
-    attributes.update(dict_attributes)    
+    attributes.update(dict_attributes)
     return attributes
 
 
@@ -120,7 +159,11 @@ def deserialize_model(session, model_class, data):
         if isinstance(value, list):  # Assuming a relationship to a list of models
             rel_class = getattr(model_class, key).property.mapper.class_
             try:
-                setattr(model, key, [deserialize_model(session, rel_class, item) for item in value])
+                setattr(
+                    model,
+                    key,
+                    [deserialize_model(session, rel_class, item) for item in value],
+                )
             except Exception as e:
                 raise ValueError(f"Error deserializing list relationship {key}") from e
         elif isinstance(value, dict):  # Assuming a single related model
@@ -128,10 +171,13 @@ def deserialize_model(session, model_class, data):
             try:
                 setattr(model, key, deserialize_model(session, rel_class, value))
             except Exception as e:
-                raise ValueError(f"Error deserializing single relationship {key}") from e
+                raise ValueError(
+                    f"Error deserializing single relationship {key}"
+                ) from e
         else:
             setattr(model, key, value)
     return model
+
 
 def export_yaml(obj):
     """Export an SQLAlchemy object to a YAML string, with error handling."""
@@ -141,14 +187,15 @@ def export_yaml(obj):
     except Exception as e:
         raise ValueError(f"Failed to export object to YAML: {e}")
 
+
 def import_yaml(session, model_class, yaml_str):
     """Import a YAML string into an SQLAlchemy object, with error handling."""
     try:
         data = yaml.safe_load(yaml_str)
     except yaml.YAMLError as e:
         raise ValueError(f"Failed to parse YAML: {e}")
-    
-    name = data.get('name')
+
+    name = data.get("name")
     try:
         # Delete existing object with the same key if exists
         existing_obj = session.query(model_class).filter_by(name=name).first()

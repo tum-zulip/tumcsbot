@@ -6,8 +6,8 @@
 import tempfile
 import unittest
 
-from tumcsbot.db import DB
-from tumcsbot.conf import Conf
+from tumcsbot.lib.db import DB
+from tumcsbot.lib.conf import Conf
 
 
 class ConfTest(unittest.TestCase):

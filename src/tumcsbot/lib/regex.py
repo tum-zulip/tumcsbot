@@ -17,8 +17,9 @@ class Regex:
 
     # todo: (jr) docuemnt why two different regex libraries are used
     _ARGUMENT_PATTERN = regex.compile(
-        r"(?P<args>@_?\*\*.*?\*\*\s*|@_\*.*?\*\s*|#\*\*.*?\*\*\s*|'(\\\\|\\.|.)*?'\s*|"
-        + r'"(\\\\|\\.|.)*?"\s*'
+        r"(?P<args>@_?\*\*.*?\*\*\s*|@_\*.*?\*\s*|#\*\*.*?\*\*\s*|'(\\\\|\\.|.)*?'\s*"
+        + r"|```([\s\S]*?)```"
+        + r'|"(\\\\|\\.|.)*?"\s*'
         + r"|\S*\s*)*"
     )
 
@@ -128,15 +129,12 @@ class Regex:
 
     @classmethod
     def get_stream_and_topic_name(cls, string: str) -> tuple[str, str | None] | None:
-        # todo:
-        raise NotImplementedError()
         """Extract the stream and the topic name from a string.
 
         Match the whole string and try to be smart:
            direct topic links: #**stream name>topic name**
                             -> (stream name, topic name)
            stream links: #**stream_name** -> (stream_name, None)
-           plain stream names: stream_name -> (stream_name, None)
 
         Leading/trailing whitespace is discarded.
         Return None if no match could be found.

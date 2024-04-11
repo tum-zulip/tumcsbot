@@ -10,7 +10,7 @@ from typing import Any, Callable, Iterable, Type, TypeVar, Final
 
 LOGGING_FORMAT: Final[
     str
-] = "[%(levelname)-8s] (%(asctime)s) | %(threadName)-15s| %(module)-15s| %(funcName)-15s: %(message)s"
+] = "[%(levelname)-8s] %(module)-15s: %(message)s" # (%(asctime)s) | %(threadName)-15s| | %(funcName)-15s
 
 T = TypeVar("T")
 

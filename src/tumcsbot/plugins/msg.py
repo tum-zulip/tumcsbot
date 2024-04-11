@@ -14,14 +14,13 @@ from tumcsbot.plugin_decorators import (
     command,
     privilege,
     arg,
-    response_type,
     DMResponse,
     DMError,
 )
 from tumcsbot.lib.types import Privilege, response_type, ZulipUser
 
 
-class Messages(TableBase):
+class Messages(TableBase):  # type: ignore
     __tablename__ = "Messages"
 
     MsgId = Column(String, primary_key=True)

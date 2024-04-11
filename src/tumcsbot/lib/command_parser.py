@@ -1,3 +1,4 @@
+import difflib
 from typing import Any, Callable
 from argparse import Namespace
 
@@ -154,8 +155,15 @@ class CommandParser:
         # Get the fitting subcommand.
         subcommand: str = tokens[0]
         if subcommand not in self.commands:
+            # find the closest matching subcommand
+            matches = difflib.get_close_matches(subcommand, self.commands.keys(), n=2)
+            matches = [f"`{m}`" for m in matches]
+            if len(matches) == 0:
+                raise CommandParser.IllegalCommandParserState(
+                    f"Subcommand `{subcommand}` not found. Available subcommands: {', '.join(self.commands.keys())}"
+                )
             raise CommandParser.IllegalCommandParserState(
-                f"Subcommand `{subcommand}` not found."
+                f"Subcommand `{subcommand}` not found. Did you mean {' or '.join(matches)}?"
             )
 
         opts, positional, optional, greedy = self.commands[subcommand]
@@ -234,7 +242,7 @@ class CommandParser:
         for key in greedy:
             solution.update({key: []})
 
-        remainder = {i: a for i, a in enumerate(args)}
+        remainder = dict(enumerate(args))
 
         for i, arg in enumerate(args):
             if CommandParser._match_argument_to_target(positional, arg, solution):

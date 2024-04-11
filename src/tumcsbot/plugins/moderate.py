@@ -12,25 +12,35 @@ change the alert words and specify the emojis to use for the reactions.
 
 from enum import Enum
 from inspect import cleandoc
-from typing import Any, Iterable, Callable
+from typing import Any, AsyncGenerator
 
-from sqlalchemy import Column, ForeignKey, Integer, String
+from sqlalchemy import Column, ForeignKey, Integer, String, UniqueConstraint
 from sqlalchemy.orm import relationship, Mapped
 import yaml
 
 from tumcsbot.lib.response import Response
 from tumcsbot.lib.regex import Regex
 from tumcsbot.lib.command_parser import CommandParser
-from tumcsbot.lib.db import TableBase, serialize_model
+from tumcsbot.lib.db import TableBase, serialize_model, Session
 from tumcsbot.lib.types import ZulipStream
 from tumcsbot.plugin import PluginCommandMixin, Plugin
-from tumcsbot.plugin_decorators import *
+from tumcsbot.plugin_decorators import arg, command, opt, privilege
 from tumcsbot.plugins.usergroup import UserGroup, UserGroupMember, Usergroup
 
-# from tumcsbot.plugins.moderation_reaction_handler import ModerationReactionHandler
+from tumcsbot.lib.types import (
+    DMError,
+    DMMessage,
+    DMResponse,
+    PartialError,
+    PartialSuccess,
+    Privilege,
+    UserNotPrivilegedException,
+    response_type,
+    ZulipUser,
+)
 
 
-class ReactionAction(TableBase):
+class ReactionAction(TableBase): # type: ignore
     __tablename__ = "ReactionAction"
 
     ReactionActionId = Column(Integer, primary_key=True, autoincrement=True)
@@ -40,41 +50,47 @@ class ReactionAction(TableBase):
     reaction = Column(Integer, ForeignKey("ReactionConfig.id", ondelete="CASCADE"))
 
 
-class ReactionConfig(TableBase):
+class ReactionConfig(TableBase): # type: ignore
     __tablename__ = "ReactionConfig"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    emote = Column(String, unique=True, nullable=False)
+    emote = Column(String, nullable=False)
     ModerationConfigId = Column(
         Integer, ForeignKey("ModerationConfig.ModerationConfigId", ondelete="CASCADE")
     )
 
     actions: Mapped[list[ReactionAction]] = relationship()
 
+    __table_args__ = (UniqueConstraint("emote", "ModerationConfigId"),)
 
-class GroupAuthorization(TableBase):
+
+class GroupAuthorization(TableBase): # type: ignore
     __tablename__ = "GroupAuthorization"
 
     GroupId = Column(
         Integer, ForeignKey(UserGroup.GroupId, ondelete="CASCADE"), primary_key=True
     )
     ModerationConfigId = Column(
-        Integer, ForeignKey("ModerationConfig.ModerationConfigId", ondelete="CASCADE"), primary_key=True
+        Integer,
+        ForeignKey("ModerationConfig.ModerationConfigId", ondelete="CASCADE"),
+        primary_key=True,
     )
 
     group: Mapped[UserGroup] = relationship()
 
 
-class StreamAuthorization(TableBase):
+class StreamAuthorization(TableBase): # type: ignore
     __tablename__ = "StreamAuthorization"
 
     Stream = Column(ZulipStream, primary_key=True)
     ModerationConfigId = Column(
-        Integer, ForeignKey("ModerationConfig.ModerationConfigId", ondelete="CASCADE"), primary_key=True
+        Integer,
+        ForeignKey("ModerationConfig.ModerationConfigId", ondelete="CASCADE"),
+        primary_key=True,
     )
 
 
-class ModerationConfig(TableBase):
+class ModerationConfig(TableBase): # type: ignore
     __tablename__ = "ModerationConfig"
 
     ModerationConfigId = Column(Integer, primary_key=True, autoincrement=True)
@@ -255,137 +271,6 @@ class Moderate(PluginCommandMixin, Plugin):
     ]
     # pylint: enable=line-too-long
 
-    @staticmethod
-    def parse_action(s: str) -> str:
-        if s in Moderate._actions:
-            return s
-        raise ValueError
-
-    @staticmethod
-    def parse_action_or_number(s: str) -> str:
-        try:
-            return Moderate.parse_action(s)
-        except:
-            return str(int(s))
-
-        # pylint: disable=line-too-long
-        self.command_parser: CommandParser = CommandParser()
-        self.command_parser.add_subcommand(
-            "list",
-            optionals={"user": Regex.match_user_argument},
-            opts={"a": None, "all": None, "v": None, "verbose": None},
-            # todo: description=cleandoc(
-            # todo:     """
-            # todo:     list moderation configuration for a users.
-            # todo:     - `user` : the user for which the config should be displayed. Defaults to the sender of the command
-            # todo:     - `-a, --all` : option to display configuration for all users
-            # todo:     - `-v, --verbose` : additionaly show the actions taken for each reaction
-            # todo:     """
-            # todo: ),
-        )
-
-        actions_str = "\n" + "\n".join([f"  - `{a}`" for a in self._actions]) + "\n"
-        supported_variables = "\n".join(
-            [
-                f"  - `${name}`: {desc}"
-                for name, (_, desc) in ModerationReactionHandler._replace_dict.items()
-            ]
-        )
-
-        self.command_parser.add_subcommand(
-            "add",
-            args={
-                "reaction": Regex.match_reaction_argument,
-                "action": Moderate.parse_action,
-            },
-            optionals={
-                "user": Regex.match_user_argument,
-                "message": str,
-                "description": str,
-            },
-            # todo: description=cleandoc(
-            # todo:     """
-            # todo:     Add an moderation configuration for a user.
-            # todo:     - `reaction` : the reaction that should trigger an action
-            # todo:     - `action` : the action that should be triggered. Supported actions are:
-            # todo:     """
-            # todo: )
-            # todo: + actions_str
-            # todo: + cleandoc(
-            # todo:     """
-            # todo:     - `user` : the user this configuration should be addded. Defaults to the sender of the command
-            # todo:     - `message` : the message an action should use. The message may use special variables that are replaced depending on the context. Supported variables for message content:
-            # todo:     """
-            # todo: )
-            # todo: + supported_variables,
-        )
-
-        self.command_parser.add_subcommand(
-            "remove",
-            optionals={
-                "user": Regex.match_user_argument,
-                "reaction": Regex.match_reaction_argument,
-                "action": Moderate.parse_action_or_number,
-            },
-            # todo: description=cleandoc(
-            # todo:     """
-            # todo:
-            # todo:     Remove reactions from a configuration
-            # todo:     - `user` : the user the reaction should be removed from. Defaults to the sender of the command
-            # todo:     - `reaction` : the reaction that should be affected. Defaults to all reactions
-            # todo:     - `action` : the action that should be removed. May be the action keyword or the number of the action-element (starting with 1)
-            # todo:     """
-            # todo: ),
-        )
-
-        self.command_parser.add_subcommand(
-            "authorize",
-            args={"group": str},
-            greedy={"streams": str},
-            # todo: description=cleandoc(
-            # todo:     """
-            # todo:     Authorize a group to allow moderation in streams
-            # todo:     - `group` : the group that should be granted moderation rights
-            # todo:     - `streams` : the streams that users in `<group>` should be able to moderate
-            # todo:     """
-            # todo: ),
-        )
-
-        self.command_parser.add_subcommand(
-            "revoke",
-            optionals={
-                "group": Regex.match_group_argument,
-                "stream": Regex.match_stream_argument,
-            },
-            # todo: description=cleandoc(
-            # todo:     """
-            # todo:     Remove authorization
-            # todo:     - `group` : the group that should be revoked. If `stream` is not specified, permissions for all streams are revoked for this group
-            # todo:     - `stream` : the stream that should be revoked. If `group` is not specified, permissions of all groups are revoked for this stream
-            # todo:     """
-            # todo: ),
-        )
-
-        defaults_str = ", ".join(set([e for e, _, _, desc in self._default_config]))
-        self.command_parser.add_subcommand(
-            "defaults",
-            greedy={"users": Regex.match_user_argument},
-            # todo: description=cleandoc(
-            # todo:     """
-            # todo:     Set the actions for [
-            # todo:     """
-            # todo: )
-            # todo: + defaults_str
-            # todo: + cleandoc(
-            # todo:     """] to their defaults
-            # todo:     - `users` : the users that should get their default reactions set
-            # todo:     """
-            # todo: ),
-        )
-        # pylint: enable=line-too-long
-
-        self.update_plugin_usage()
-
     @command(name="list")
     @arg(
         "user",
@@ -452,64 +337,6 @@ class Moderate(PluginCommandMixin, Plugin):
             content += "---\n*hint: use option -v to see detailed description*"
         yield DMResponse(content)
 
-    def _add(
-        self,
-        sender: ZulipUser,
-        session: Session,
-        args: CommandParser.Args,
-        opts: CommandParser.Opts,
-        message: dict[str, Any],
-    ) -> AsyncGenerator[response_type, None]:
-        user_id: int | None
-        uid: int
-        description: str
-
-        if args.user is not None:
-            user_id = self.client.get_user_id_by_name(args.user)
-            if user_id is None:
-                return Response.build_message(
-                    message, f"User not found: {args.user}", msg_type="private"
-                )
-            uid = user_id
-        else:
-            uid = message["sender_id"]
-            user_result = self.client.get_user_by_id(uid)
-            if user_result["result"] != "success":
-                return Response.build_message(
-                    message,
-                    f"Error: User with id {uid} not found.",
-                    msg_type="private",
-                )
-            args.user = f"@_**{user_result['user']['full_name']}|{user_result['user']['user_id']}**"
-
-        if (
-            not self.client.user_is_privileged(message["sender_id"])
-            and message["sender_id"] != uid
-        ):
-            return Response.privilege_err(message)
-
-        if args.action not in self._actions:
-            return Response.build_message(
-                message,
-                f"Error: '{args.action}' is not a valid action.",
-                msg_type="private",
-            )
-
-        if args.description is None:
-            description = self._actions[args.action]
-        else:
-            description = args.description
-
-        self._db.execute(
-            self._insert_reaction_sql,
-            uid,
-            args.reaction,
-            args.action,
-            args.message,
-            description,
-            commit=True,
-        )
-        return Response.ok(message)
 
     @command
     @privilege(Privilege.ADMIN)
@@ -535,42 +362,9 @@ class Moderate(PluginCommandMixin, Plugin):
                 f"Error: Configuration with name '{args.name}' already exists"
             )
 
-        session.add(ModerationConfig(name=args.name))
+        session.add(ModerationConfig(ModerationConfigName=args.name))
         session.commit()
         yield DMResponse(f"Configuration '{args.name}' created")
-
-    @command
-    async def defaults(
-        self,
-        _sender: ZulipUser,
-        session: Session,
-        _args: CommandParser.Args,
-        _opts: CommandParser.Opts,
-        _message: dict[str, Any],
-    ) -> AsyncGenerator[response_type, None]:
-
-        emotes = set([e for e, _, _, _ in self._default_config])
-        session.query(ModerationConfig).filter(
-            ModerationConfig.ModerationConfigName == "default"
-        ).delete()
-        session.merge(
-            ModerationConfig(
-                name="default",
-                reactions=[
-                    ReactionConfig(
-                        emote=emote_str,
-                        actions=[
-                            ReactionAction(action=action_str, data=msg_str)
-                            for inner_emote, action_str, msg_str, _ in self._default_config
-                            if inner_emote == emote_str
-                        ],
-                    )
-                    for emote_str in emotes
-                ],
-            )
-        )
-        session.commit()
-        yield DMResponse("Default reactions set")
 
     @command
     @privilege(Privilege.ADMIN)
@@ -612,46 +406,71 @@ class Moderate(PluginCommandMixin, Plugin):
             )
 
         if group:
+            if (
+                session.query(ModerationConfig)
+                .filter(GroupAuthorization.GroupId == group.GroupId)
+                .first()
+            ):
+                raise DMError(
+                    f"Error: Group '{group.GroupName}' already has moderation rights for '{moderation_config.ModerationConfigName}'"
+                )
+
             session.merge(
                 GroupAuthorization(
-                    GroupId=group.GroupId, ModerationConfigId=moderation_config.id
+                    GroupId=group.GroupId,
+                    ModerationConfigId=moderation_config.ModerationConfigId,
                 )
             )
             session.commit()
-            for member in group.members:
+            members = Usergroup.get_users_for_group(session, group)
+            for member in members:
                 yield DMMessage(
                     member,
-                    f"Hey,\nthe group '{group.GroupName}' you are a member of has been granted moderation rights for `{moderation_config.name}`.\n*hint: use the moderate command for more information*",
+                    f"Hey,\nthe group '{group.GroupName}' you are a member of has been granted moderation rights for `{moderation_config.ModerationConfigName}`.\n*hint: use the moderate command for more information*",
                 )
             yield DMResponse(
                 f"Notified members of group '{group.GroupName}' about the new moderation rights."
             )
         else:
+            if (
+                session.query(ModerationConfig)
+                .filter(StreamAuthorization.Stream == stream)
+                .first()
+            ):
+                raise DMError(
+                    f"Error: Moderation for Stream {stream.mention} is already enabled in {moderation_config.ModerationConfigName}"
+                )
+
             session.merge(
                 StreamAuthorization(
-                    Stream=stream, ModerationConfigId=moderation_config.id
+                    Stream=stream,
+                    ModerationConfigId=moderation_config.ModerationConfigId,
                 )
             )
-
-            member: UserGroupMember
-            for member in group.members:
-                yield DMMessage(
-                    member,
-                    f"Hey,\nthe group '{group.GroupName}' you are a member of has been granted moderation rights for `{moderation_config.name}`.\n*hint: use the moderate command for more information*",
-                )
-
             session.commit()
             yield DMResponse(
-                f"Group '{group.GroupName}' has been granted moderation rights for {moderation_config.name}."
+                f"Stream {stream.mention} has been marked as moderateable for {moderation_config.ModerationConfigName}."
             )
 
     @command
     @privilege(Privilege.ADMIN)
     @arg(
-        "moderation_config", ModerationConfig.ModerationConfigName, description="The name of the moderation configuration"
+        "moderation_config",
+        ModerationConfig.ModerationConfigName,
+        description="The name of the moderation configuration",
     )
-    @opt("g", "group", UserGroup.GroupName, description="The group that should no longer be granted moderation rights")
-    @opt("s", "stream", ZulipStream, description="The stream that should no longer be able to be moderated")
+    @opt(
+        "g",
+        "group",
+        UserGroup.GroupName,
+        description="The group that should no longer be granted moderation rights",
+    )
+    @opt(
+        "s",
+        "stream",
+        ZulipStream,
+        description="The stream that should no longer be able to be moderated",
+    )
     async def revoke(
         self,
         sender: ZulipUser,
@@ -662,13 +481,23 @@ class Moderate(PluginCommandMixin, Plugin):
     ) -> AsyncGenerator[response_type, None]:
         config: ModerationConfig = args.moderation_config
 
+        if not opts.group and not opts.stream:
+            raise DMError("Error: At least a stream or a group must be specified.")
+
+        if opts.group and opts.stream:
+            raise DMError(
+                "Error: Either a group or streams must be specified, not both."
+            )
 
         if opts.stream:
-            stream: ZulipStream = opts.stream
-
-            if not config.streams.any(StreamAuthorization.Stream == stream):
+            stream = opts.stream
+            if (
+                not session.query(ModerationConfig)
+                .filter(StreamAuthorization.Stream == stream)
+                .first()
+            ):
                 raise DMError(
-                    f"Error: Stream '{stream.name}' does not have moderation rights for {config.ModerationConfigName}"
+                    f"Error: Stream {stream.mention} does not have moderation rights for {config.ModerationConfigName}"
                 )
 
             session.query(StreamAuthorization).filter(
@@ -676,15 +505,18 @@ class Moderate(PluginCommandMixin, Plugin):
             ).filter(StreamAuthorization.Stream == stream).delete()
             session.commit()
             yield DMResponse(
-                f"Stream '{stream}' has been revoked moderation rights for {config.ModerationConfigName} and the members have been notified."
+                f"Stream {stream.mention} has been revoked moderation rights for {config.ModerationConfigName} and the members have been notified."
             )
-        
-        else:
-            group: UserGroup = opts.group
 
-            if not config.groups.any(GroupAuthorization.GroupId == group.GroupId):
+        else:
+            group = opts.group
+            if (
+                not session.query(ModerationConfig)
+                .filter(GroupAuthorization.GroupId == group.GroupId)
+                .first()
+            ):
                 raise DMError(
-                    f"Error: Group '{group.GroupName}' does not have moderation rights for {config.ModerationConfigName}"
+                    f"Error: Group '{group.GroupName}' does not have moderation rights for '{config.ModerationConfigName}'"
                 )
 
             session.query(GroupAuthorization).filter(
@@ -692,20 +524,31 @@ class Moderate(PluginCommandMixin, Plugin):
             ).filter(GroupAuthorization.GroupId == group.GroupId).delete()
             session.commit()
             yield DMResponse(
-                f"Group '{group.GroupName}' has been revoked moderation rights for {config.ModerationConfigName} and the members have been notified."
+                f"Group '{group.GroupName}' has been revoked moderation rights for '{config.ModerationConfigName}' and the members have been notified."
             )
-
 
     @command
     @privilege(Privilege.ADMIN)
-    @arg("name", ModerationConfig.ModerationConfigName, description="The name of the configuration")
-    @arg("emote", Regex.get_reaction_emoji, description="The emote that should trigger the reaction")
-    @arg("configuration", str, description="The configuration for the reaction as a yaml-style code block.", greedy=True)
+    @arg(
+        "name",
+        ModerationConfig.ModerationConfigName,
+        description="The name of the configuration",
+    )
+    @arg(
+        "emote",
+        Regex.get_reaction_emoji,
+        description="The emote that should trigger the reaction",
+    )
+    @arg(
+        "configuration",
+        str,
+        description="The configuration for the reaction as a yaml-style code block.",
+    )
     async def configure_reaction(
         self,
         _sender: ZulipUser,
         session: Session,
-        _args: CommandParser.Args,
+        args: CommandParser.Args,
         _opts: CommandParser.Opts,
         _message: dict[str, Any],
     ) -> AsyncGenerator[response_type, None]:
@@ -714,25 +557,83 @@ class Moderate(PluginCommandMixin, Plugin):
         ---
         the configuration should be a yaml-style code block with the following structure:
         ```yaml
-        - <action>: [data]
+        - <action>[: data]
         # ...
         # ...
         # ...
         ```
         where `<action>` is one of the following actions:
-        - `dm` : send a dm to the author
-        - `delete` : delete the message
-        - `respond` : respond to the message
+        `dm` : send a dm to the author
+        `delete` : delete the message
+        `respond` : respond to the message
         and `[data]` is the message that should be sent.
 
         Here is an example configuration:
         ```yaml
-        - dm: >
-            Your question has already been asked elsewhere and was therefore deleted.
-        - delete: null
+        - dm: Your question has already been asked elsewhere and was therefore deleted.
+        - delete
         ```
         """
-        pass
+        config = self.load_yaml_from_string(args.configuration)
+
+        actions = []
+        for action in config:
+            actions.append(self.reaction_action_from_yaml(action))
+
+        moderation_config: ModerationConfig = args.name
+        reaction = ReactionConfig(
+            ModerationConfigId=moderation_config.ModerationConfigId,
+            emote=args.emote,
+            actions=actions,
+        )
+        session.query(ReactionConfig).filter(
+            ReactionConfig.emote == args.emote,
+            ReactionConfig.ModerationConfigId == moderation_config.ModerationConfigId,
+        ).delete()
+        session.merge(reaction)
+        # moderation_config.reactions.append(reaction)
+        session.commit()
+        yield DMResponse(f"Reaction for {args.emote} configured")
+
+    @command
+    @privilege(Privilege.ADMIN)
+    @arg(
+        "name",
+        ModerationConfig.ModerationConfigName,
+        description="The name of the configuration",
+    )
+    @arg(
+        "emote",
+        Regex.get_reaction_emoji,
+        description="The emote that should trigger the reaction",
+    )
+    async def remove(
+        self,
+        _sender: ZulipUser,
+        session: Session,
+        args: CommandParser.Args,
+        _opts: CommandParser.Opts,
+        _message: dict[str, Any],
+    ) -> AsyncGenerator[response_type, None]:
+        """
+        Remove a reaction.
+        """
+        moderation_config: ModerationConfig = args.name
+        reaction = (
+            session.query(ReactionConfig)
+            .filter(
+                ReactionConfig.emote == args.emote,
+                ReactionConfig.ModerationConfigId
+                == moderation_config.ModerationConfigId,
+            )
+            .first()
+        )
+        if reaction is None:
+            yield DMResponse(f"No Actions configured for :{args.emote}:")
+            return
+        session.delete(reaction)
+        session.commit()
+        yield DMResponse(f"Actions for :{args.emote}: removed")
 
     @command
     @privilege(Privilege.ADMIN)
@@ -750,18 +651,15 @@ class Moderate(PluginCommandMixin, Plugin):
         configs = []
         for c in session.query(ModerationConfig).all():
             try:
-                dict_repr = {
-                    "name": c.name,
-                    "streams": [serialize_model(s) for s in c.streams],
-                    "groups": [g.group.GroupName for g in c.groups],
-                    "reactions": [serialize_model(r) for r in c.reactions],
-                }
-                configs.append(dict_repr)
+                m = await serialize_model(c)
+                configs.append(m)
             except Exception as e:
-                yield PartialError(f"Could not serialize group {c.name}: {str(e)}")
+                yield PartialError(
+                    f"Could not serialize group {c.ModerationConfigName}: {str(e)}"
+                )
                 self.logger.exception(e)
                 continue
-            yield PartialSuccess(f"Exported group {c.name}")
+            yield PartialSuccess(f"Exported group {c.ModerationConfigName}")
         yield DMResponse(
             "```yaml\n"
             + yaml.dump(configs, allow_unicode=True, sort_keys=False)
@@ -802,7 +700,8 @@ class Moderate(PluginCommandMixin, Plugin):
                     members = [m for m in g.group.members]
                     for m in members:
                         await m
-                    msg += "    " + ", ".join([m.mention_silent for m in members]) 
+                    msg += "    " + ", ".join([m.mention_silent for m in members])
+                    msg += "\n"
         return msg
 
     @staticmethod
@@ -811,8 +710,51 @@ class Moderate(PluginCommandMixin, Plugin):
         verbose: bool = False,
     ) -> str:
         msg = f"## Configuration for {cfg.ModerationConfigName}\n"
-        msg += "**Configured reactions**\n"
+        msg += "\n**Configured reactions**\n"
         msg += await Moderate.format_reactions(cfg.reactions, verbose)
-        msg += "**Authorized groups:**\n"
+        msg += "\n**Authorized groups:**\n"
         msg += await Moderate.format_authorizations(cfg.groups, verbose)
+        msg += "\n**Authorized streams:**\n"
+        streams: list[ZulipStream] = []
+        for s in cfg.streams:
+            stream = ZulipStream(s.Stream)
+            await stream
+            streams.append(stream)
+        msg += ", ".join([s.mention for s in streams]) + "\n"
         return msg
+
+    @staticmethod
+    def load_yaml_from_string(s: str) -> Any:
+        s = s.strip()
+        if not s.startswith("```"):
+            raise DMError("Error: Configuration must be a yaml-style code block.")
+        if not s.endswith("```"):
+            raise DMError("Error: Configuration must be a yaml-style code block.")
+        yaml_content = s[3:-3]
+        try:
+            config = yaml.safe_load(yaml_content)
+        except yaml.YAMLError as e:
+            raise DMError(f"Error: Could not parse configuration: {str(e)}")
+        return config
+
+    @staticmethod
+    def reaction_action_from_yaml(action: str | dict[str, Any]) -> ReactionAction:
+        if isinstance(action, str):
+            Moderate.ensure_valid_action(action)
+            return ReactionAction(Action=action)
+        elif isinstance(action, dict):
+            if len(action.keys()) != 1:
+                raise DMError("Error: Action must have exactly one key")
+
+            action_str, data = next(iter(action.items()))
+            Moderate.ensure_valid_action(action_str)
+            return ReactionAction(Action=action_str, Data=data)
+        else:
+            raise ValueError("Error: Action must be a string or a dictionary")
+
+    @staticmethod
+    def ensure_valid_action(action: str) -> None:
+        if action not in ["dm", "delete", "respond"]:
+            raise DMError(
+                f"Error: '{action}' is not a valid action. Supported actions are 'dm', 'delete' and 'respond'"
+            )

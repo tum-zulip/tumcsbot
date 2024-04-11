@@ -9,7 +9,8 @@ from tumcsbot.lib.db import Session
 
 from tumcsbot.lib.command_parser import CommandParser
 from tumcsbot.plugin import PluginCommandMixin, Plugin, ZulipUser
-from tumcsbot.plugin_decorators import command, arg, response_type, DMResponse
+from tumcsbot.plugin_decorators import command, arg
+from tumcsbot.lib.types import response_type, ZulipUser, DMResponse
 
 
 class Search(PluginCommandMixin, Plugin):

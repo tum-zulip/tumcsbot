@@ -1,20 +1,20 @@
 from __future__ import annotations
 from abc import ABC, abstractmethod
-import yaml
-from collections.abc import Iterable
+from typing import Any, AsyncGenerator, Callable
+
 from dataclasses import dataclass, field
 from enum import Enum
-from queue import Empty, Queue
-from threading import Thread
-from typing import Any, AsyncGenerator, Callable
+
+import yaml
+
 from sqlalchemy.types import TypeDecorator, Integer
 from sqlalchemy.ext.mutable import Mutable
+import sqlalchemy
+from sqlalchemy.dialects.postgresql import INTEGER
 
 from tumcsbot.lib.client import AsyncClient
 from tumcsbot.lib.command_parser import CommandParser
 from tumcsbot.lib.regex import Regex
-
-from sqlalchemy.dialects.postgresql import INTEGER
 
 
 class DMError(Exception):
@@ -90,7 +90,7 @@ class ZulipStreamNotFound(Exception):
     pass
 
 
-class AsncClientMixin:
+class AsyncClientMixin:
     # todo: are there probles with threads?
     _client: AsyncClient | None = None
 
@@ -107,7 +107,7 @@ class AsncClientMixin:
 
 class SqlAlchemyMixinFactory:
     @staticmethod
-    def from_type(_impl):
+    def from_type(_impl) -> type:
         class Mixin(TypeDecorator, ABC):
             cache_ok = True
             impl = _impl
@@ -167,11 +167,13 @@ yaml.add_multi_representer(YAMLSerializableMixin, YAMLSerializableMixin.to_yaml)
 
 
 class ZulipUser(
-    SqlAlchemyMixinFactory.from_type(Integer), AsncClientMixin, YAMLSerializableMixin
+    SqlAlchemyMixinFactory.from_type(Integer), AsyncClientMixin, YAMLSerializableMixin
 ):
     """
     Inferface for Zulip users that dynamically fetches the user id and name and can be used as a type in the database.
     """
+
+    cache_ok = True
 
     def __init__(
         self,
@@ -267,7 +269,7 @@ class ZulipUser(
 
 
 class ZulipStream(
-    SqlAlchemyMixinFactory.from_type(Integer), AsncClientMixin, YAMLSerializableMixin
+    SqlAlchemyMixinFactory.from_type(Integer), AsyncClientMixin, YAMLSerializableMixin
 ):
     """
     Inferface for Zulip streams that dynamically fetches the user id and name and can be used as a type in the database.
@@ -302,7 +304,7 @@ class ZulipStream(
             self._id = result
         if self._name is None:
             result = await self.client.get_stream_by_id(self._id)
-            if result==None:
+            if result == None:
                 raise ZulipStreamNotFound(
                     f"Stream with id {self._id} could be not found: {result}"
                 )
@@ -313,12 +315,12 @@ class ZulipStream(
 
     def __yaml__(self):
         return {"name": self.name}
-    
-    #def __eq__(self, other):
+
+    # def __eq__(self, other):
     #    if not isinstance(other, ZulipStream):
     #        raise ValueError("Can only compare two ZulipStreams")
     #    return self.id == other.id
-#
+    #
     @staticmethod
     def get_db_value(value):
         if isinstance(value, ZulipStream):
@@ -353,6 +355,12 @@ response_type = (
     | ReactionResponse
     | PartialSuccess
     | PartialError
+)
+
+arg_type = (
+    Callable[[Any], Any]
+    | sqlalchemy.Column[Any]
+    | sqlalchemy.orm.InstrumentedAttribute[Any]
 )
 
 command_func_type = Callable[
@@ -486,13 +494,21 @@ class SubCommandConfig:
             privilege=Privilege.from_str(d["privilege"]),
             description=d["description"],
         )
-    
+
     def syntax_for(self, privilege: Privilege) -> str:
         if self.name is None:
             raise ValueError("Name of command is not set.")
-        
-        args = [arg.syntax for arg in self.args if not arg.privilege or arg.privilege <= privilege]
-        opts = [opt.syntax for opt in self.opts if not opt.privilege or opt.privilege <= privilege]
+
+        args = [
+            arg.syntax
+            for arg in self.args
+            if not arg.privilege or arg.privilege <= privilege
+        ]
+        opts = [
+            opt.syntax
+            for opt in self.opts
+            if not opt.privilege or opt.privilege <= privilege
+        ]
 
         if len(opts + args) > 0:
             return self.name + " " + " ".join(opts + args)
@@ -522,12 +538,18 @@ class CommandConfig:
             subcommands=[SubCommandConfig.from_dict(sub) for sub in d["subcommands"]],
             description=d["description"],
         )
-    
+
     def syntax_for(self, privilege: Privilege) -> str:
         if self.name is None:
             raise ValueError("Name of command is not set.")
-        
-        return "\n or ".join([self.name + " " + sub.syntax_for(privilege) for sub in self.subcommands if not sub.privilege or sub.privilege <= privilege])
+
+        return "\n or ".join(
+            [
+                self.name + " " + sub.syntax_for(privilege)
+                for sub in self.subcommands
+                if not sub.privilege or sub.privilege <= privilege
+            ]
+        )
 
     @property
     def syntax(self) -> str:

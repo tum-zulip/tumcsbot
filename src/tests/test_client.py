@@ -10,7 +10,7 @@ import unittest
 from typing import Any, Callable, ClassVar
 
 from zulip import Client as ZulipClient
-from tumcsbot.client import AsyncClient as TUMCSBotClient
+from tumcsbot.lib.client import AsyncClient as TUMCSBotClient
 
 def asSync(func: Callable[[Any], Any]) -> Callable[[Any], Any]:
     @wraps(func)

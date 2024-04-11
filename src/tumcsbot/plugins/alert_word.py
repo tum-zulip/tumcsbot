@@ -12,17 +12,19 @@ change the alert words and specify the emojis to use for the reactions.
 
 from random import randint
 import re
-from typing import Any, Iterable
+from typing import Any, AsyncGenerator, Iterable
 from sqlalchemy import Column, String
 
 from tumcsbot.lib.response import Response
 from tumcsbot.lib.regex import Regex
 from tumcsbot.lib.command_parser import CommandParser
-from tumcsbot.lib.db import DB, TableBase
+from tumcsbot.lib.db import DB, Session, TableBase
+from tumcsbot.lib.types import Privilege, ZulipUser
+from tumcsbot.lib.types import response_type
 from tumcsbot.plugin import Event, PluginCommandMixin, Plugin
-from tumcsbot.plugin_decorators import *
+from tumcsbot.plugin_decorators import command, privilege, arg
 
-class Alert(TableBase):
+class Alert(TableBase): # type: ignore
     __tablename__ = 'Alerts'
 
     Phrase = Column(String, primary_key=True)

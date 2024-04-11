@@ -2,7 +2,8 @@ from sqlalchemy import Column, String
 
 from tumcsbot.lib.db import TableBase, DB
 
-class ConfigTable(TableBase):
+
+class ConfigTable(TableBase):  # type: ignore
     __tablename__ = "Conf"
 
     Key = Column(String, primary_key=True)
@@ -16,12 +17,12 @@ class Conf:
         with DB.session() as session:
             result: str | None = session.query(ConfigTable).filter_by(Key=key).first()
             return result.Value if result else None
-        
+
     @staticmethod
     def list() -> list[tuple[str, str]]:
         with DB.session() as session:
             return [(t.Key, t.Value) for t in session.query(ConfigTable).all()]
-    
+
     @staticmethod
     def remove(key: str) -> None:
         with DB.session() as session:

@@ -21,6 +21,7 @@ from tumcsbot.lib.types import (
     ArgConfig,
     OptConfig,
     CommandConfig,
+    arg_type,
     command_func_type,
     command_decorator_type,
     DMError,
@@ -85,9 +86,10 @@ async def process_arg(name: str, greedy: bool, optional: bool,  type: Any, args:
         result = await handle_argument(getattr(args, name))
     setattr(args, name, result)
 
+
 def arg(
     name: str,
-    type: Callable[[Any], Any],
+    type: arg_type,
     description: str | None = None,
     privilege: Privilege | None = None,
     greedy: bool = False,
@@ -130,7 +132,7 @@ def arg(
 def opt(
     opt: str,
     long_opt: str | None = None,
-    type: Callable[[Any], Any] | None = None,
+    type: arg_type | None = None,
     description: str | None = None,
     privilege: Privilege | None = None,
 ) -> command_decorator_type:
@@ -205,26 +207,6 @@ def privilege(privilege: Privilege) -> command_decorator_type:
         return wrapper
 
     return decorator
-
-
-# todo: def tool_factory(plugin_class_name: str, config: SubCommandConfig, callback: Callable[[Any], Any]) -> Callable[[ZulipUser], Type[BaseTool]]:
-# todo:
-# todo:     # Dynamically create a Pydantic model for the tool's inputs
-# todo:     fields = {arg.name: (arg.type, Field(description=arg.description)) for arg in config.args}
-# todo:     model = type(f"{config.name.capitalize()}Input", (BaseModel,), fields)
-# todo:
-# todo:     async def args_unwrapper(args: model):
-# todo:         logging.debug("Unwrapping args: %s", dict(args))
-# todo:         return "Not implemented"
-# todo:
-# todo:     # Define the tool class
-# todo:     return StructuredTool.from_function(
-# todo:         func=lambda query: "Not implemented",
-# todo:         coroutine=args_unwrapper,
-# todo:         name=f"{plugin_class_name.capitalize()}{config.name.capitalize()}Tool",
-# todo:         description=config.description,
-# todo:         # args_schema=model,
-# todo:     )
 
 
 class command:
