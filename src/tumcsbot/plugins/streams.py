@@ -9,7 +9,7 @@ from tumcsbot.lib.utils import split
 from tumcsbot.plugin import PluginCommandMixin, Plugin
 from tumcsbot.plugin_decorators import command, arg, privilege, opt
 from tumcsbot.lib.regex import Regex
-from tumcsbot.lib.types import Privilege, PartialError, PartialSuccess, ZulipUser
+from tumcsbot.lib.types import Privilege, PartialError, PartialSuccess, ZulipUser, DMResponse, DMError  
 
 
 class Streams(PluginCommandMixin, Plugin):

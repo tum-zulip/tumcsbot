@@ -23,6 +23,7 @@ from tumcsbot.lib.types import (
     DMError,
     DMMessage,
     DMResponse,
+    ReactionResponse,
     Privilege,
     response_type,
     ZulipUser,
@@ -149,19 +150,19 @@ class Streamgroup(PluginCommandMixin, Plugin):
     async def handle_stream_event(
         self, event: dict[str, Any]
     ) -> Response | Iterable[Response]:
-        user_id: int = event["user_id"]
+        # user_id: int = event["user_id"]
 
-        for stream in event["streams"]:
-            name: str = stream["name"]
+        # for stream in event["streams"]:
+        #    name: str = stream["name"]
 
             # Get all the groups this stream belongs to.
-            group_ids: list[str] = Streamgroup._get_group_ids_from_stream(name)
+        #    group_ids: list[str] = Streamgroup._get_group_ids_from_stream(name)
             # Get all user ids to subscribe to this new stream ...
-            user_ids: list[int] = Streamgroup._get_group_subscribers(group_ids)
+        #    user_ids: list[int] = Streamgroup._get_group_subscribers(group_ids)
             # ... and subscribe them.
-            sender: ZulipUser = ZulipUser(user_id)
-            await sender
-            sender.client.subscribe_users(user_ids, name)
+        #    sender: ZulipUser = ZulipUser(user_id)
+        #    await sender
+        #    sender.client.subscribe_users(user_ids, name)
 
         return Response.none()
 
@@ -246,7 +247,7 @@ class Streamgroup(PluginCommandMixin, Plugin):
 
     @command
     @privilege(Privilege.ADMIN)
-    @arg("group_id", str, description="The id of the Streamgroup to add.")
+    @arg("group_id", str, description="The identifier of the Streamgroup to add.")
     @arg(
         "emoji", Regex.get_emoji_name, description="The emoji to use for the reaction."
     )
@@ -275,7 +276,7 @@ class Streamgroup(PluginCommandMixin, Plugin):
     @arg(
         "group_id",
         StreamGroup.StreamGroupId,
-        description="The id of the Streamgroup to delete.",
+        description="The identifier of the Streamgroup to delete.",
     )
     async def delete(
         self,
@@ -298,7 +299,7 @@ class Streamgroup(PluginCommandMixin, Plugin):
     @arg(
         "group_id",
         StreamGroup.StreamGroupId,
-        description="The id of a Streamgroup to add streams to.",
+        description="The identifier of a Streamgroup to add streams to.",
     )
     @arg("streams", str, description="The stream patterns to add.", greedy=True)
     async def add_streams(
@@ -323,7 +324,7 @@ class Streamgroup(PluginCommandMixin, Plugin):
     @arg(
         "group_id",
         StreamGroup.StreamGroupId,
-        description="The id of a Streamgroup to remove streams from.",
+        description="The identifier of a Streamgroup to remove streams from.",
     )
     @arg("streams", str, description="The stream patterns to remove.", greedy=True)
     async def remove_streams(
@@ -348,7 +349,7 @@ class Streamgroup(PluginCommandMixin, Plugin):
     @arg(
         "group_id",
         StreamGroup.StreamGroupId,
-        description="The id of the Streamgroup to subscribe to.",
+        description="The identifier of the Streamgroup to subscribe to.",
     )
     async def subscribe(
         self,
@@ -385,7 +386,7 @@ class Streamgroup(PluginCommandMixin, Plugin):
     @arg(
         "group_id",
         StreamGroup.StreamGroupId,
-        description="The id of the Streamgroup the users shoud get subscribed to.",
+        description="The identifier of the Streamgroup the users shoud get subscribed to.",
     )
     @arg(
         "user",
@@ -430,7 +431,7 @@ class Streamgroup(PluginCommandMixin, Plugin):
     @arg(
         "streamgroup_id",
         StreamGroup.StreamGroupId,
-        description="The id of the Streamgroup the users shoud get subscribed to.",
+        description="The identifier of the Streamgroup the users shoud get subscribed to.",
     )
     @arg(
         "usergroup",
@@ -475,7 +476,7 @@ class Streamgroup(PluginCommandMixin, Plugin):
     @arg(
         "group_id",
         StreamGroup.StreamGroupId,
-        description="The id of the Streamgroup to unsubscribe from.",
+        description="The identifier of the Streamgroup to unsubscribe from.",
     )
     @opt(
         "t",
@@ -524,7 +525,7 @@ class Streamgroup(PluginCommandMixin, Plugin):
     @arg(
         "group_id",
         StreamGroup.StreamGroupId,
-        description="The id of the Streamgroup the users shoud get unsubscribed from.",
+        description="The identifier of the Streamgroup the users shoud get unsubscribed from.",
     )
     @arg(
         "user",
@@ -582,7 +583,7 @@ class Streamgroup(PluginCommandMixin, Plugin):
     @arg(
         "streamgroup_id",
         StreamGroup.StreamGroupId,
-        description="The id of the Streamgroup the users shoud get unsubscribed from.",
+        description="The identifier of the Streamgroup the users shoud get unsubscribed from.",
     )
     @arg(
         "usergroup",
@@ -640,7 +641,7 @@ class Streamgroup(PluginCommandMixin, Plugin):
     @arg(
         "group_id",
         StreamGroup.StreamGroupId,
-        description="The id of the Streamgroup to fix.",
+        description="The identifier of the Streamgroup to fix.",
         optional=True,
     )
     @opt(
@@ -677,7 +678,7 @@ class Streamgroup(PluginCommandMixin, Plugin):
     @arg(
         "group_id",
         StreamGroup.StreamGroupId,
-        description="The id of a Streamgroup for which to claim message.",
+        description="The identifier of a Streamgroup for which to claim message.",
         optional=True,
     )
     @opt(
@@ -768,7 +769,7 @@ class Streamgroup(PluginCommandMixin, Plugin):
             )
             if not group:
                 raise DMError(
-                    f"Uuups, it looks like i could not find any Streamgroup associated with `{group_id}` :botsad:"
+                    f"Uuups, it looks like i could not find any Streamgroup associated with `{group_id}` :botsceptical:"
                 )
 
         else:
@@ -807,7 +808,7 @@ class Streamgroup(PluginCommandMixin, Plugin):
     @arg(
         "group_id",
         str,
-        description="The id of a Streamgroup for which to unclaim message.",
+        description="The identifier of a Streamgroup for which to unclaim message.",
         optional=True,
     )
     @opt(
@@ -842,7 +843,7 @@ class Streamgroup(PluginCommandMixin, Plugin):
             )
             if not group:
                 raise DMError(
-                    f"Uuups, it looks like i could not find any Streamgroup associated with `{group_id}` :botsad:"
+                    f"Uuups, it looks like i could not find any Streamgroup associated with `{group_id}` :botsceptical:"
                 )
 
         else:
@@ -958,6 +959,41 @@ class Streamgroup(PluginCommandMixin, Plugin):
         except sqlalchemy.exc.IntegrityError as e:
             session.rollback()
             raise DMError(f"Could not create Streamgroup `{id}`.") from e
+        
+    @staticmethod
+    def _create_and_get_group(session: Session, id: str, emote: str) -> StreamGroup:
+        """
+        Create a new StreamGroup.
+
+        Args:
+            session: The database session.
+            id: The id of the group.
+            emote: the emote of the group.
+
+        Raises:
+            DMError: If the group creation fails.
+
+        Returns:
+            Streamgroup
+        """
+        if (
+            session.query(StreamGroup).filter(StreamGroup.StreamGroupId == id).first()
+            is not None
+        ):
+            raise DMError(f"Streamgroup `{id}` already exists")
+
+        ugroup: UserGroup = Streamgroup._create_usergroup(session, id)
+        group = StreamGroup(
+            StreamGroupId=id, StreamGroupEmote=emote, UserGroupId=ugroup.GroupId
+        )
+        try:
+            session.add(group)
+            session.commit()
+        except sqlalchemy.exc.IntegrityError as e:
+            session.rollback()
+            raise DMError(f"Could not create Streamgroup `{id}`.") from e
+        
+        return group
 
     @staticmethod
     def _create_usergroup(session: Session, id: str) -> UserGroup:
@@ -1126,6 +1162,32 @@ class Streamgroup(PluginCommandMixin, Plugin):
             except sqlalchemy.exc.IntegrityError as e:
                 session.rollback()
                 failed.append(f"#**{stream.name}**")
+
+        if failed:
+            s: str = " ".join(failed)
+            raise DMError(
+                f"Could not add stream(s) {s} to Streamgroup `{group.StreamGroupId}`."
+            )
+        
+    @staticmethod
+    def _add_zulip_streams(session:Session, streams:list[ZulipStream], group:StreamGroup):
+        failed: list[str] = []
+        for stream in streams:
+                if (
+                    session.query(StreamGroupMember)
+                    .filter(StreamGroupMember.StreamGroupId == group.StreamGroupId)
+                    .filter(StreamGroupMember.Stream == stream)
+                    .first()
+                ):
+                    continue
+                try:
+                    session.add(
+                        StreamGroupMember(StreamGroupId=group.StreamGroupId, Stream=stream)
+                    )
+                    session.commit()
+                except sqlalchemy.exc.IntegrityError as e:
+                    session.rollback()
+                    failed.append(f"#**{stream.name}**")
 
         if failed:
             s: str = " ".join(failed)
@@ -1384,7 +1446,7 @@ class Streamgroup(PluginCommandMixin, Plugin):
         _announcement_msg_table_row_fmt: str = "%s | :%s:"
         _announcement_msg: str = cleandoc(
             """
-                Hi! :smile:
+                Hi! :bothappypad:
                 I have the pleasure to announce some stream groups here.
                 You may subscribe to a stream group in order to be automatically \
                 subscribed to all streams belonging to that group. Also, you \
@@ -1614,6 +1676,24 @@ class Streamgroup(PluginCommandMixin, Plugin):
             f: str = " ".join(failed)
             raise DMError(f"Stream(s) with id(s) {f} could be not found.")
         return list(streams)
+    
+    @staticmethod
+    def _get_streams(
+        session: Session, group: StreamGroup
+    ) -> list[ZulipStream]:
+        """
+        Get a list of all streams that are members of a given Streamgroup.
+        """
+        streams: list[ZulipStream] = []
+        for s in (
+            session.query(StreamGroupMember)
+            .filter(StreamGroupMember.StreamGroupId == group.StreamGroupId)
+            .all()
+        ):
+            if s.Stream:
+                streams.append(s.Streams)
+               
+        return streams
 
     @staticmethod
     async def _get_unique_stream_names_client(

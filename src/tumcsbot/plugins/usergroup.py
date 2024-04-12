@@ -306,6 +306,13 @@ class Usergroup(PluginCommandMixin, Plugin):
     @staticmethod
     def get_groups(session: Session) -> list[UserGroup]:
         return session.query(UserGroup).all()
+    
+    @staticmethod
+    def get_name_by_id(session:Session, id:int) -> str:
+        ug: UserGroup = session.query(UserGroup).filter(UserGroup.GroupId==id).one_or_none()
+        if not ug:
+            raise DMError(f"Uuups, it looks like i could not find any UserGroup associated with `{id}` :botsceptical:")
+        return ug.GroupName
 
     @staticmethod
     def create_group(session: Session, name: str) -> None:
@@ -336,6 +343,38 @@ class Usergroup(PluginCommandMixin, Plugin):
         except sqlalchemy.exc.IntegrityError as e:
             session.rollback()
             raise DMError(f"Could not create group '{name}'. {str(e)}") from e
+        
+    @staticmethod
+    def create_and_get_group(session: Session, name: str) -> UserGroup:
+        """
+        Create a new user group.
+
+        Args:
+            session: The database session.
+            name: The name of the group.
+            description: The description of the group.
+
+        Raises:
+            DMError: If the group creation fails.
+
+        Returns:
+            Usergroup
+        """
+        if (
+            session.query(UserGroup).filter(UserGroup.GroupName == name).first()
+            is not None
+        ):
+            raise DMError(f"Group '{name}' already exists")
+
+        group = UserGroup(GroupName=name)
+        try:
+            session.add(group)
+            session.commit()
+        except sqlalchemy.exc.IntegrityError as e:
+            session.rollback()
+            raise DMError(f"Could not create group '{name}'. {str(e)}") from e
+        
+        return group
 
     @staticmethod
     def delete_group(session: Session, group: UserGroup) -> None:

@@ -59,9 +59,16 @@ class CourseDB(TableBase):
         "StreamGroup", back_populates="_course", cascade="all, delete-orphan"
     )
     _tutors = relationship(
-        "StreamGroup", back_populates="_course", cascade="all, delete-orphan"
+        "UserGroup", back_populates="_course", cascade="all, delete-orphan"
     )
 
+
+# !!! INFO !!!! 
+# relationships to add in UserGroup and StreamGroup when Course-Plugin is activated:
+#
+# StreamGroup:  _course = relationship("CourseDB", back_populates="_streams")
+# Usergroup:    _course = relationship("CourseDB", back_populates="_tutors")
+#
 
 class Course(PluginCommandMixin, Plugin):
     """
@@ -86,7 +93,8 @@ class Course(PluginCommandMixin, Plugin):
 
     @command
     @privilege(Privilege.ADMIN)
-    @arg("name", str, description="The name of the Course")
+    @arg("name", str, description="The name of the Course.")
+    @arg("emoji", Regex.get_emoji_name, description="The emoji to use for the Course.")
     @opt(
         "i",
         long_opt="instructors",
@@ -109,18 +117,25 @@ class Course(PluginCommandMixin, Plugin):
         Create an empty course
         """
         name: str = args.name
+        streamgroup_emoji: str = args.emoji
 
         if (
             session.query(CourseDB).filter(CourseDB.CourseName == name).first()
             is not None
         ):
             raise DMError(f"Course `{name}` already exists")
+        
+        if (
+            session.query(StreamGroup).filter(StreamGroup.StreamGroupEmote==streamgroup_emoji).first()
+            is not None
+        ):
+            raise DMError(f"Course with :{streamgroup_emoji}: already exists")
 
         try:
             # get a corresponding (empty) Streamgroup
             streamgroup_name: str = "streams_" + name
             streams: StreamGroup = Streamgroup._create_and_get_group(
-                session, streamgroup_name
+                session, streamgroup_name, streamgroup_emoji
             )
 
             if opts.s:
@@ -181,6 +196,7 @@ class Course(PluginCommandMixin, Plugin):
     @command
     @privilege(Privilege.ADMIN)
     @arg("name", str, description="The name of the Course")
+    @arg("emoji", Regex.get_emoji_name, description="The emoji to use for the Streamgroup.")
     @opt(
         "s",
         long_opt="streamgroup",
@@ -217,12 +233,19 @@ class Course(PluginCommandMixin, Plugin):
         Create a course with corresponding contents
         """
         name: str = args.name
+        streamgroup_emoji: str = args.emoji
 
         if (
             session.query(CourseDB).filter(CourseDB.CourseName == name).first()
             is not None
         ):
             raise DMError(f"Course `{name}` already exists")
+        
+        if (
+            session.query(StreamGroup).filter(StreamGroup.StreamGroupEmote==streamgroup_emoji).first()
+            is not None
+        ):
+            raise DMError(f"Course with :{streamgroup_emoji}: already exists")
 
         try:
             # get corresponding Streamgroup
@@ -232,7 +255,7 @@ class Course(PluginCommandMixin, Plugin):
             else:
                 streamgroup_name: str = "streams_" + name
                 streams = Streamgroup._create_and_get_group(
-                    session, streamgroup_name
+                    session, streamgroup_name, streamgroup_emoji
                 )
 
             # get corresponding Usergroup
@@ -479,7 +502,7 @@ class Course(PluginCommandMixin, Plugin):
             return result
 
         raise DMError(
-            f"Uuups, it looks like i could not find any Course associated with `{id}` :botsweat:"
+            f"Uuups, it looks like i could not find any Course associated with `{id}` :botsceptical:"
         )
 
     @staticmethod
@@ -493,7 +516,7 @@ class Course(PluginCommandMixin, Plugin):
             return result
 
         raise DMError(
-            f"Uuups, it looks like i could not find any Course associated with `{name}` :botsweat:"
+            f"Uuups, it looks like i could not find any Course associated with `{name}` :botsceptical:"
         )
 
     @staticmethod
@@ -523,7 +546,7 @@ class Course(PluginCommandMixin, Plugin):
     @staticmethod
     async def _get_streams(course: CourseDB, session: Session) -> list[ZulipStream]:
         """
-        Get the Tutors of a Course a list of ZulipUsers.
+        Get the Streams of a Course a list of ZulipStreams.
         """
         sg: StreamGroup = Course._get_streamgroup(course, session)
         return Streamgroup._get_streams(session, sg)

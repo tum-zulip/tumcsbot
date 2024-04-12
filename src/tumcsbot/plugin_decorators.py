@@ -70,7 +70,7 @@ async def process_arg(name: str, greedy: bool, optional: bool,  type: Any, args:
         if isinstance(type, sqlalchemy.orm.InstrumentedAttribute):
             obj = session.query(type.class_).filter(type == value).first()
             if not optional and obj is None:
-                raise DMError(f"Uuups, it looks like i could not find any {type.class_.__name__} associated with `{value}` :botsad:")
+                raise DMError(f"Uuups, it looks like i could not find any {type.class_.__name__} associated with `{value}` :botsceptical:")
         else:
             obj = value
         
@@ -153,7 +153,7 @@ def opt(
             if privilege is not None and getattr(opts, opt, None):
                 if not sender.isPrivileged:
                     raise UserNotPrivilegedException(
-                        f"Option `-{opt}` requires privilege *{privilege.name}*"
+                        f"Option `-{opt}` requires privilege *{privilege.name}* :botsweat:"
                     )
 
             opt_value = getattr(opts, opt, None)
@@ -199,7 +199,7 @@ def privilege(privilege: Privilege) -> command_decorator_type:
             if privilege is not None:
                 if not sender.isPrivileged:
                     raise UserNotPrivilegedException(
-                        f"You need to have *{privilege.name}* privilege to run this command."
+                        f"You need to have *{privilege.name}* privilege to run this command. :botsweat:"
                     )
             async for response in func(self, sender, session, args, opts, message):
                 yield response

@@ -37,7 +37,7 @@ HELP_TEMPLATE = cleandoc(
     Currently, you can use the following commands:
     {}
 
-    Have a nice day! :-)
+    Have a nice day! :bothappypad:
     """
 )
 PRIVILAGE_MSG = "**[administrator/moderator rights needed]**"
