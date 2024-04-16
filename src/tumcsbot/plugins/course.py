@@ -8,7 +8,7 @@ from inspect import cleandoc
 import re
 from sqlite3 import IntegrityError
 from typing import cast, Any, Callable, Iterable
-from sqlalchemy import Column, String, Integer, ForeignKey, UniqueConstraint
+from sqlalchemy import Column, String, Integer, ForeignKey, UniqueConstraint, update
 from sqlalchemy.orm import relationship, Mapped
 from sqlalchemy.ext.hybrid import hybrid_property
 from tumcsbot.lib.regex import Regex
@@ -98,12 +98,12 @@ class Course(PluginCommandMixin, Plugin):
     @opt(
         "i",
         long_opt="instructors",
-        description="The course has an additional private Stream for Instructors.",
+        description="The course has an additional Stream for Instructors.",
     )
     @opt(
         "s",
         long_opt="standard",
-        description="Add standard steams to the course (Allgemein, Organisation, Feedback, Ankündigungen, Technik)."
+        description="Add standard steams to the course (Allgemein, Organisation, Feedback, Ankündigungen, Technik, Memes)."
     )
     async def create_empty(
         self,
@@ -213,13 +213,18 @@ class Course(PluginCommandMixin, Plugin):
         "tuts",
         long_opt="tutor_stream",
         type=ZulipStream,
-        description="The course has an additional private Stream for Instructors.",
+        description="The course has an additional Stream for tutors.",
     )
     @opt(
         "ins",
         long_opt="instructor_stream",
         type=ZulipStream,
-        description="The course has an additional private Stream for Instructors.",
+        description="The course has an additional Stream for Instructors.",
+    )
+    @opt(
+        "s",
+        long_opt="standard",
+        description="Add standard steams to the course (Allgemein, Organisation, Feedback, Ankündigungen, Technik, Memes)."
     )
     async def create(
         self,
@@ -257,6 +262,9 @@ class Course(PluginCommandMixin, Plugin):
                 streams = Streamgroup._create_and_get_group(
                     session, streamgroup_name, streamgroup_emoji
                 )
+
+            if opts.s:
+                await Course.add_standard_streams(self, sender,session, message, name, streams)
 
             # get corresponding Usergroup
             tutors: Usergroup
@@ -328,7 +336,7 @@ class Course(PluginCommandMixin, Plugin):
 
     @command
     @privilege(Privilege.ADMIN)
-    @arg("name", type=CourseDB.CourseName,description="The name of the Course to delete.")
+    @arg("course", type=CourseDB.CourseName,description="The name of the Course to delete.")
     @opt(
         "s",
         long_opt="streamgroup",
@@ -358,7 +366,7 @@ class Course(PluginCommandMixin, Plugin):
         message: dict[str, Any],
     ) -> AsyncGenerator[response_type, None]:
         
-        course: CourseDB = args.name 
+        course: CourseDB = args.course 
         streams_id: str = course.Streams
         tut_ug_id:int = course.Tutors
         tut_s: ZulipStream = course.TutorStream
@@ -399,8 +407,31 @@ class Course(PluginCommandMixin, Plugin):
             
     @command
     @privilege(Privilege.ADMIN)
-    @arg()
-    @opt()
+    @arg("course", type=CourseDB.CourseName,description="The name of the Course to delete.")
+    @opt(
+        "s",
+        long_opt="streamgroup",
+        type=StreamGroup.StreamGroupId,
+        description="The id of an existing Streamgroup containing the streams for this course.",
+    )
+    @opt(
+        "t",
+        long_opt="tutors",
+        type=UserGroup.GroupName,
+        description="The name of an existing Usergroup containing the tutors for this course.",
+    )
+    @opt(
+        "tuts",
+        long_opt="tutor_stream",
+        type=ZulipStream,
+        description="The name of an existing Stream for Instructors.",
+    )
+    @opt(
+        "ins",
+        long_opt="instructor_stream",
+        type=ZulipStream,
+        description="The name of an existing Stream for Instructors.",
+    )
     async def update(
         self,
         sender: ZulipUser,
@@ -409,7 +440,45 @@ class Course(PluginCommandMixin, Plugin):
         opts: CommandParser.Opts,
         message: dict[str, Any],
     ) -> AsyncGenerator[response_type, None]:
-        pass
+        """
+        Update a course with corresponding contents
+        """
+        course: CourseDB = args.course 
+
+        if opts.s:
+            streams: StreamGroup = opts.s
+            Course._update_streamgroup(course, session, streams)
+
+        if opts.t:
+            tutors: UserGroup = opts.t
+            Course._update_tutorgroup(course, session, tutors)
+
+        if opts.tuts:
+            tutstream: ZulipStream = opts.tuts
+            await Course._update_tutorstream(course, session,sender.client, tutstream)
+
+        if opts.ins:
+            insstream : ZulipStream = opts.ins
+            await Course._update_instructorstream(course, session,sender.client, insstream)
+
+        @command
+        @privilege(Privilege.ADMIN)
+        @arg("course", type=CourseDB.CourseName,description="The name of the Course to delete.")
+        @opt("s", long_opt="streams", description="Remove the streams from the Course.")
+        @opt("t", long_opt="tutors", description="Remove the tutors from the Course")
+        async def clear(
+            self,
+            sender: ZulipUser,
+            session: Session,
+            args: CommandParser.Args,
+            opts: CommandParser.Opts,
+            message: dict[str, Any],
+        ) -> AsyncGenerator[response_type, None]:
+            """
+            Clear a course (Strems/Tutors), but keep the underlying components (Streamgroup/UserGroup).
+            """
+            course: CourseDB = args.course
+
 
 
     # ========================================================================================================================
@@ -483,9 +552,23 @@ class Course(PluginCommandMixin, Plugin):
         tech_stream: ZulipStream = ZulipStream(f"#**{tech_name}**")
         await tech_name
 
+        memes_name: str = name + "-Memes"
+        memes_desc: str = f"Willkommen im Meme Zulip Stream von dem Kurs {name}"
+        await plugin.invoke_other_cmd(
+            Streams.create,
+            sender,
+            session,
+            message,
+            name=memes_name,
+            description=memes_desc,
+        )
+        memes_stream: ZulipStream = ZulipStream(f"#**{memes_name}**")
+        await memes_stream
+
         Streamgroup._add_zulip_streams(session,
-                                       [allg_stream, org_stream, fb_stream, ank_stream, tech_stream],
+                                       [allg_stream, org_stream, fb_stream, ank_stream, tech_stream, memes_stream],
                                        sg)
+        
 
 
 
@@ -550,3 +633,80 @@ class Course(PluginCommandMixin, Plugin):
         """
         sg: StreamGroup = Course._get_streamgroup(course, session)
         return Streamgroup._get_streams(session, sg)
+    
+    @staticmethod
+    def _update_streamgroup(course: CourseDB, session: Session, group:StreamGroup) -> None:
+        """
+        Set the StreamGroup of a given Course.
+        """
+        oldSG : StreamGroup = Course._get_streamgroup(course, session)
+        if (oldSG == group):
+            raise DMError("The given Streamgroup is already set for this course.")
+        
+        stmt = update(CourseDB).where(CourseDB.CourseId==course.CourseId).values(Streams=group)
+        try:
+            session.execute(stmt)
+            session.query(StreamGroup).filter(StreamGroup.StreamGroupId==oldSG.StreamGroupId).delete()
+            session.commit()
+        except sqlalchemy.exc.IntegrityError as e:
+            session.rollback()
+            raise DMError("Could not update Streamgroup :botsad:")
+        
+
+
+    @staticmethod
+    def _update_tutorgroup(course: CourseDB, session: Session, group: UserGroup) -> None:
+        """
+        Set the Tutor-UserGroup of a given Course.
+        """
+        oldTG : UserGroup = Course._get_tutorgroup(course, session)
+        if (oldTG == group):
+            raise DMError("The given Usergroup is already set as Tutorgroup for this course.")
+        
+        stmt = update(CourseDB).where(CourseDB.CourseId==course.CourseId).values(Tutors=group)
+        try:
+            session.execute(stmt)
+            session.query(UserGroup).filter(UserGroup.GroupId==oldTG.GroupId).delete()
+            session.commit()
+        except sqlalchemy.exc.IntegrityError as e:
+            session.rollback()
+            raise DMError("Could not update Tutors :botsad:")
+
+    @staticmethod
+    async def _update_tutorstream(course:CourseDB, session:Session, client:AsyncClient, stream: ZulipStream) -> None:
+        """
+        Set the Tutor-Stream of a given Course.
+        """
+        oldTS : ZulipStream = course.TutorStream
+        if (oldTS == stream):
+            raise DMError("The given Stream is already set as Tutorstream for this course.")
+        
+        stmt = update(CourseDB).where(CourseDB.CourseId==course.CourseId).values(TutorStream=stream)
+        try:
+            session.execute(stmt)
+            session.commit()
+        except sqlalchemy.exc.IntegrityError as e:
+            session.rollback()
+            raise DMError("SCould not update Tutor-Stream :botsad:")
+        
+        await client.delete_stream(oldTS.id)
+
+    @staticmethod
+    async def _update_instructorstream(course:CourseDB, session:Session, client:AsyncClient, stream: ZulipStream) -> None:
+        """
+        Set the Tutor-Stream of a given Course.
+        """
+        oldIS : ZulipStream = course.InstructorStream
+        if (oldIS == stream):
+            raise DMError("The given Stream is already set as Instructorstream for this course.")
+        
+        stmt = update(CourseDB).where(CourseDB.CourseId==course.CourseId).values(InstructorStream=stream)
+        try:
+            session.execute(stmt)
+            session.commit()
+        except sqlalchemy.exc.IntegrityError as e:
+            session.rollback()
+            raise DMError("Could not update Instructor-Stream :botsad:")
+        
+        await client.delete_stream(oldIS.id)
+
