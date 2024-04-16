@@ -8,6 +8,7 @@ from inspect import cleandoc
 import re
 from sqlite3 import IntegrityError
 from typing import cast, Any, Callable, Iterable
+from xmlrpc.client import Boolean
 from sqlalchemy import Column, String, Integer, ForeignKey, UniqueConstraint, update
 from sqlalchemy.orm import relationship, Mapped
 from sqlalchemy.ext.hybrid import hybrid_property
@@ -37,6 +38,19 @@ from tumcsbot.lib.types import (
 )
 
 
+class TimeSlots(TableBase):
+    """Represents a Tutor in the system."""
+
+    __tablename__ = "Tutors"
+
+    User = Column(ZulipUser, primary_key=True)
+    TimeSlot = Column(String, nullable=True)
+
+    Course = Column(
+        Integer, ForeignKey("CourseDB.CourseId", ondelete="CASCADE"), primary_key=True
+    )
+
+
 class CourseDB(TableBase):
     """Represents a course in the system."""
 
@@ -52,14 +66,23 @@ class CourseDB(TableBase):
         nullable=False,
     )
 
-    Tutors = Column(
+    TutorsUserGroup = Column(
         Integer, ForeignKey("UserGroups.GroupId", ondelete="CASCADE"), nullable=False
     )
 
-    TutorStream = Column(ZulipStream, nullable=False)
+    IstructorsUserGroup = Column(
+        Integer, ForeignKey("UserGroups.GroupId", ondelete="CASCADE"), nullable=True
+    )
+
+    TutorStream = Column(ZulipStream, nullable=True)
     InstructorStream = Column(ZulipStream, nullable=True)
 
     ModerationConfigId = Column(Integer, ForeignKey("ModerationConfig.ModerationConfigId"))
+    AllowDeleteActionForTutors = Column(Boolean, default=False)
+
+    _time_slots = relationship(
+        "TimeSlots", back_populates="_course", cascade="all, delete-orphan"
+    )
 
     _moderation_config = relationship("ModerationConfig", back_populates="_course")
 
