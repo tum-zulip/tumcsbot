@@ -21,7 +21,7 @@ import yaml
 from tumcsbot.lib.response import Response
 from tumcsbot.lib.regex import Regex
 from tumcsbot.lib.command_parser import CommandParser
-from tumcsbot.lib.db import TableBase, serialize_model, Session
+from tumcsbot.lib.db import TableBase, serialize_model, Session, deserialize_model
 from tumcsbot.lib.types import ZulipStream
 from tumcsbot.plugin import PluginCommandMixin, Plugin
 from tumcsbot.plugin_decorators import arg, command, opt, privilege
@@ -544,12 +544,13 @@ class Moderate(PluginCommandMixin, Plugin):
         str,
         description="The configuration for the reaction as a yaml-style code block.",
     )
+    @opt("f", "force", description="Overwrite existing configuration for reaction and delete all configured actions")
     async def configure_reaction(
         self,
         _sender: ZulipUser,
         session: Session,
         args: CommandParser.Args,
-        _opts: CommandParser.Opts,
+        opts: CommandParser.Opts,
         _message: dict[str, Any],
     ) -> AsyncGenerator[response_type, None]:
         """
@@ -586,10 +587,13 @@ class Moderate(PluginCommandMixin, Plugin):
             emote=args.emote,
             actions=actions,
         )
-        session.query(ReactionConfig).filter(
+        r = session.query(ReactionConfig).filter(
             ReactionConfig.emote == args.emote,
             ReactionConfig.ModerationConfigId == moderation_config.ModerationConfigId,
-        ).delete()
+        ).first()
+        if r and not opts.f:
+            raise DMError(f"Reaction for {args.emote} already configured. Use -f to overwrite.")
+        
         session.merge(reaction)
         # moderation_config.reactions.append(reaction)
         session.commit()
@@ -637,17 +641,25 @@ class Moderate(PluginCommandMixin, Plugin):
 
     @command
     @privilege(Privilege.ADMIN)
+    @arg("name", ModerationConfig.ModerationConfigName, description="The name of the configuration", optional=True)
     async def export(
         self,
         _sender: ZulipUser,
         session: Session,
-        _args: CommandParser.Args,
+        args: CommandParser.Args,
         _opts: CommandParser.Opts,
         _message: dict[str, Any],
     ) -> AsyncGenerator[response_type, None]:
         """
         Export all user groups as yaml.
         """
+        if args.name:
+            cfg = session.query(ModerationConfig).filter(ModerationConfig.ModerationConfigName == args.name).first()
+            if not cfg:
+                raise DMError(f"Configuration '{args.name}' not found.")
+            yield DMResponse(f"```yaml\n{yaml.dump(await serialize_model(cfg), allow_unicode=True, sort_keys=False)}\n```")
+            return
+
         configs = []
         for c in session.query(ModerationConfig).all():
             try:
@@ -665,6 +677,32 @@ class Moderate(PluginCommandMixin, Plugin):
             + yaml.dump(configs, allow_unicode=True, sort_keys=False)
             + "\n```"
         )
+
+    @command
+    @privilege(Privilege.ADMIN)
+    @arg("name", str, description="The name of the configuration")
+    @arg("config", str, description="The configuration as yaml")
+    @opt("f", "force", description="Overwrite existing configuration and delete all configured reactions")
+    async def load(
+        self,
+        _sender: ZulipUser,
+        session: Session,
+        args: CommandParser.Args,
+        opts: CommandParser.Opts,
+        _message: dict[str, Any],
+    ) -> AsyncGenerator[response_type, None]:
+        cfg = self.load_yaml_from_string(args.config)
+        model = await deserialize_model(session, cfg)
+        if session.query(ModerationConfig).filter(ModerationConfig.ModerationConfigName == model.ModerationConfigName).count() > 0:
+            if not opts.force:
+                raise DMError(f"Configuration '{model.ModerationConfigName}' already exists. Use the -f option to overwrite.")
+            session.query(ModerationConfig).filter(ModerationConfig.ModerationConfigName == model.ModerationConfigName).delete()
+            session.commit()
+
+        session.add(model)
+        session.commit()
+        yield DMResponse(f"Configuration '{model.ModerationConfigName}' loaded:\n{await Moderate.format_config(model)}")
+        
 
     @staticmethod
     async def format_reactions(
@@ -758,3 +796,4 @@ class Moderate(PluginCommandMixin, Plugin):
             raise DMError(
                 f"Error: '{action}' is not a valid action. Supported actions are 'dm', 'delete' and 'respond'"
             )
+

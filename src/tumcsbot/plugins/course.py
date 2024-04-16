@@ -44,16 +44,24 @@ class CourseDB(TableBase):
 
     CourseId = Column(Integer, primary_key=True, autoincrement=True)
     CourseName = Column(String, unique=True)
+    CourseDescription = Column(String, nullable=True)
+
     Streams = Column(
         String,
         ForeignKey("StreamGroups.StreamGroupId", ondelete="CASCADE"),
         nullable=False,
     )
+
     Tutors = Column(
         Integer, ForeignKey("UserGroups.GroupId", ondelete="CASCADE"), nullable=False
     )
+
     TutorStream = Column(ZulipStream, nullable=False)
     InstructorStream = Column(ZulipStream, nullable=True)
+
+    ModerationConfigId = Column(Integer, ForeignKey("ModerationConfig.ModerationConfigId"))
+
+    _moderation_config = relationship("ModerationConfig", back_populates="_course")
 
     _streams = relationship(
         "StreamGroup", back_populates="_course", cascade="all, delete-orphan"

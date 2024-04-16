@@ -28,6 +28,7 @@ from typing import Any, Callable, Iterable, Type, TypeVar, final
 
 
 from tumcsbot.lib.client import AsyncClient, PluginContext
+from tumcsbot.lib.conf import Conf
 from tumcsbot.lib.response import Response, StrEnum
 from tumcsbot.lib.command_parser import CommandParser
 from tumcsbot.lib.db import DB, TableBase
@@ -147,8 +148,7 @@ class Plugin(threading.Thread, ABC):
         self.running: bool = False
 
         self.bot = bot
-
-        self.call_ctx = {}
+        self.streamlog_name = Conf.get("StreamLog")
 
         # call custom init code
         self._init_plugin()
@@ -201,8 +201,20 @@ class Plugin(threading.Thread, ABC):
                 else:
                     # default handler
                     async def handler():
-                        responses = await self.handle_event(event)
-                        await self.client.send_responses(responses)
+                        try:
+                            responses = await self.handle_event(event)
+                            await self.client.send_responses(responses)
+                        except Exception as e:
+                            self.logger.exception(e)
+                            self.logger.error("Error while handling event. Ignoring.")
+                            if self.streamlog_name:
+                                streamlog_id = await self.client.get_stream_id_by_name(self.streamlog_name)
+                                if streamlog_id:
+                                    await self.client.send_message(
+                                        streamlog_id,
+                                        f"```spoiler {self.plugin_name()}: Error while handling event\n````\n{e}\n````\n---\n````\n{event}\n````\n```\n",
+                                    )
+
                     
                     asyncio.create_task(handler())
                 self.queue.task_done()
