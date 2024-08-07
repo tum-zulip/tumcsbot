@@ -4,6 +4,8 @@
 # TUM CS Bot - https://github.com/ro-i/tumcsbot
 
 from typing import Any
+
+from zulip import ZulipStream
 from tumcsbot.lib.command_parser import CommandParser
 from tumcsbot.lib.utils import split
 from tumcsbot.plugin import PluginCommandMixin, Plugin
@@ -13,6 +15,27 @@ from tumcsbot.lib.types import Privilege, PartialError, PartialSuccess, ZulipUse
 
 
 class Streams(PluginCommandMixin, Plugin):
+
+    @command(name="list")
+    @arg("pattern", str, description="The pattern to search for.")
+    async def _list(
+        self,
+        sender: ZulipUser,
+        _session,
+        args: CommandParser.Args,
+        _opts: CommandParser.Opts,
+        _message: dict[str, Any],
+    ):
+        """
+        Search for streams that match the given pattern.
+        """
+    
+        result: list[str] = await sender.client.get_streams_from_regex(args.pattern)
+ 
+        if not result:
+            yield DMResponse("No matches found.")
+        else:
+            yield DMResponse(", ".join([f"#**{s}**" for s in result]))
 
     @command
     @privilege(Privilege.ADMIN)
