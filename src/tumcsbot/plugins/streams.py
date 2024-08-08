@@ -30,7 +30,7 @@ class Streams(PluginCommandMixin, Plugin):
         Search for streams that match the given pattern.
         """
     
-        result: list[str] = await sender.client.get_streams_from_regex(args.pattern)
+        result: list[str] = await self.client.get_streams_from_regex(args.pattern)
  
         if not result:
             yield DMResponse("No matches found.")

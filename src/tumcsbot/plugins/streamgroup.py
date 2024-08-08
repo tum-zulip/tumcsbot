@@ -124,19 +124,36 @@ class Streamgroup(PluginCommandMixin, Plugin):
         if data["type"] == "reaction":
             self.logger.debug("User reacted to a claimed message")
             return await self.handle_reaction_event(data)
+        if data["type"] == "delete_message":
+            self.logger.debug("User deleted (potentially claimed) a message")
+            return await self.handle_delete_message(data)
         if data["type"] == "stream":
             op = data["op"]
             if op == "create":
                 op = "created"
-            elif op == "remove":
+            elif op == "delete":
                 op = "deleted"
             else:
-                op = "unkown operation (" + op + ")"
+                op = "unknown operation (" + op + ")"
 
             self.logger.info(f"Streams {', '.join([f'#**{s['name']}**' for s in data['streams']])} {op}")
+            self.logger.debug(data)
             return await self.handle_stream_event(data)
         self.logger.debug("%s", event)
         return await self.handle_message(data["message"])
+    
+    async def handle_delete_message(
+        self, event: dict[str, Any]
+    ) -> Response | Iterable[Response]:
+        id : int = event["message_id"]
+        with DB.session() as session:
+            try:
+                session.query(GroupClaim).filter(GroupClaim.MessageId == id).delete()
+                session.query(GroupClaimAll).filter(GroupClaimAll.MessageId == id).delete()
+                session.commit()
+            except sqlalchemy.exc.IntegrityError:
+                session.rollback()
+        return Response.none()
 
     async def handle_reaction_event(
         self, event: dict[str, Any]
@@ -165,20 +182,58 @@ class Streamgroup(PluginCommandMixin, Plugin):
     async def handle_stream_event(
         self, event: dict[str, Any]
     ) -> Response | Iterable[Response]:
-        # user_id: int = event["user_id"]
-# 
-        # for stream in event["streams"]:
-        #    name: str = stream["name"]
-# 
-        #    # Get all the groups this stream belongs to.
-        #    group_ids: list[str] = Streamgroup._get_group_ids_from_stream(name)
-        #    # Get all user ids to subscribe to this new stream ...
-        #    user_ids: list[int] = Streamgroup._get_group_subscribers(group_ids)
-        #    # ... and subscribe them.
-        #    sender: ZulipUser = ZulipUser(user_id)
-        #    await sender
-        #    sender.client.subscribe_users(user_ids, name)
-# 
+
+
+        if event["op"] == "create":
+            for stream in event["streams"]:
+                name: str = stream["name"]
+                id: int = stream["stream_id"]
+    
+                # Get all the groups this stream belongs to.
+                group_ids: list[str] = Streamgroup._get_group_ids_from_stream_id(id)
+                # Get all user ids to subscribe to this new stream ...
+                user_ids: list[int] = Streamgroup._get_group_subscribers(group_ids)
+                # ... and subscribe them.
+                self.client.subscribe_users(user_ids, name)
+
+        elif event["op"] == "delete":
+            for stream in event["streams"]:
+                # Streams
+                name: str = stream["name"]
+                id: int = stream["stream_id"]
+                
+                group_ids: list[str] = Streamgroup._get_group_ids_from_stream_id(id)
+
+                self.logger.info(f"Stream {name} being deleted from groups {group_ids}")
+                print("_"*300)
+              
+                for group_id in group_ids:
+                    with DB.session() as session:
+                        s: StreamGroup =  session.query(StreamGroup).filter(StreamGroup.StreamGroupId == group_id).one()
+                        await Streamgroup._remove_streams_by_id(session, self.client, s, [id])
+
+                # messages
+                with DB.session() as session:
+                    claims: list[GroupClaim] = session.query(GroupClaim).all()
+                    for claim in claims:
+                        msg = await self.client.get_message_by_id(claim.MessageId)
+                        if msg["type"] == "stream" and msg["stream_id"] == id:
+                            try:
+                                session.query(GroupClaim).filter(GroupClaim.MessageId == msg["id"]).delete()
+                                session.commit()
+                            except sqlalchemy.exc.IntegrityError:
+                                session.rollback()
+
+                    claimsAll: list[GroupClaimAll] = session.query(GroupClaimAll).all()
+                    for claim in claimsAll:
+                        msg = await self.client.get_message_by_id(claim.MessageId)
+                        if msg["type"] == "stream" and msg["stream_id"] == id:
+                            try:
+                                session.query(GroupClaimAll).filter(GroupClaimAll.MessageId == msg["id"]).delete()
+                                session.commit()
+                            except sqlalchemy.exc.IntegrityError:
+                                session.rollback()
+
         return Response.none()
 
     async def is_responsible(self, event: Event) -> bool:
@@ -192,7 +247,8 @@ class Streamgroup(PluginCommandMixin, Plugin):
                     event.data["message_id"], event.data["emoji_name"]
                 )
             )
-            or (event.data["type"] == "stream" and event.data["op"] == "create")
+            or (event.data["type"] == "stream" and event.data["op"] in ["create", "delete"])
+            or (event.data["type"] == "delete_message" and event.data["message_type"] == "stream")
         )
 
     # ========================================================================================================================
@@ -217,7 +273,7 @@ class Streamgroup(PluginCommandMixin, Plugin):
             "Group Id | Emoji | Streams | Claimed Msg\n---- | ---- | ---- | ----"
         )
 
-        message_link: str = "[{0}](" + sender.client.base_url[:-4] + "#narrow/id/{0})"
+        message_link: str = "[{0}](" + self.client.base_url[:-4] + "#narrow/id/{0})"
 
         groups: list[StreamGroup]
         if opts.a:
@@ -240,7 +296,7 @@ class Streamgroup(PluginCommandMixin, Plugin):
             group_id = group.StreamGroupId
             emoji = group.StreamGroupEmote
             streams: list[str] = await Streamgroup._get_stream_names(
-                session, sender.client, [group]
+                session, self.client, [group]
             )
 
             streams_concat: str = ", ".join(f"`{s}`" for s in streams)
@@ -334,7 +390,7 @@ class Streamgroup(PluginCommandMixin, Plugin):
         group: StreamGroup = args.group_id
         stream_patterns: list[str] = args.streams
 
-        await Streamgroup._add_streams(session, sender, group, stream_patterns)
+        await Streamgroup._add_streams(self.client, session, sender, group, stream_patterns)
         yield DMResponse(f"Added streams to Streamgroup `{group.StreamGroupId}`.")
 
     @command
@@ -359,7 +415,7 @@ class Streamgroup(PluginCommandMixin, Plugin):
         group: StreamGroup = args.group_id
         stream_patterns: list[str] = args.streams
 
-        await Streamgroup._remove_streams(session, sender, group, stream_patterns)
+        await Streamgroup._remove_streams(session, self.client, group, stream_patterns)
         yield DMResponse(f"Removed streams from Streamgroup `{group.StreamGroupId}`.")
 
     @command
@@ -384,14 +440,14 @@ class Streamgroup(PluginCommandMixin, Plugin):
         members: UserGroup = Streamgroup._get_usergroup(session, group)
         user_id: list[int] = [sender.id]
         stream_names: list[str] = await Streamgroup._get_stream_names(
-            session, sender.client, [group]
+            session, self.client, [group]
         )
 
         streams: list[(str, None)] = [
             (stream_name, None) for stream_name in stream_names
         ]
 
-        await sender.client.subscribe_users_multiple_streams(user_id, streams)
+        await self.client.subscribe_users_multiple_streams(user_id, streams)
 
         Usergroup.add_user_to_group(session, sender, members)
 
@@ -428,14 +484,14 @@ class Streamgroup(PluginCommandMixin, Plugin):
         users: list[ZulipUser] = args.user
         user_ids: list[int] = [user.id for user in users]
         stream_names: list[str] = await Streamgroup._get_stream_names(
-            session, sender.client, [group]
+            session, self.client, [group]
         )
 
         streams: list[(str, None)] = [
             (stream_name, None) for stream_name in stream_names
         ]
 
-        await sender.client.subscribe_users_multiple_streams(user_ids, streams)
+        await self.client.subscribe_users_multiple_streams(user_ids, streams)
 
         for user in users:
             Usergroup.add_user_to_group(session, user, members)
@@ -473,14 +529,14 @@ class Streamgroup(PluginCommandMixin, Plugin):
         users: list[ZulipUser] = Usergroup.get_users_for_group(session, ugroup)
         user_ids: list[int] = Usergroup.get_user_ids_for_group(session, ugroup)
         stream_names: list[str] = await Streamgroup._get_stream_names(
-            session, sender.client, [group]
+            session, self.client, [group]
         )
 
         streams: list[(str, None)] = [
             (stream_name, None) for stream_name in stream_names
         ]
 
-        await sender.client.subscribe_users_multiple_streams(user_ids, streams)
+        await self.client.subscribe_users_multiple_streams(user_ids, streams)
 
         for user in users:
             Usergroup.add_user_to_group(session, user, members)
@@ -532,7 +588,7 @@ class Streamgroup(PluginCommandMixin, Plugin):
         Usergroup.remove_user_from_group(session, sender, members)
 
         if opts.t or not opts.k:
-            await sender.client.remove_subscriptions(user_id, stream_names)
+            await self.client.remove_subscriptions(user_id, stream_names)
 
         yield DMResponse(
             f"You have unsubscribed from the Streamgroup `{group.StreamGroupId}`"
@@ -590,7 +646,7 @@ class Streamgroup(PluginCommandMixin, Plugin):
 
         if opts.t or not opts.k:
             for id in user_ids:
-                await sender.client.remove_subscriptions(id, stream_names)
+                await self.client.remove_subscriptions(id, stream_names)
 
         yield DMResponse(
             f"You have unsubscribed the users from the streamgroup `{group.StreamGroupId}`"
@@ -648,7 +704,7 @@ class Streamgroup(PluginCommandMixin, Plugin):
 
         if opts.t or not opts.k:
             for id in user_ids:
-                await sender.client.remove_subscriptions(id, stream_names)
+                await self.client.remove_subscriptions(id, stream_names)
 
         yield DMResponse(
             f"You have unsubscribed the users from the streamgroup `{group.StreamGroupId}`"
@@ -681,13 +737,13 @@ class Streamgroup(PluginCommandMixin, Plugin):
         group: StreamGroup | None = args.group_id
 
         if opts.a:
-            await Streamgroup._fix_all(sender, session)
+            await Streamgroup._fix_all(self.client, session)
         else:
             if group is None:
                 raise DMError(
                     "Missing `group_id` of Streamgroup, see `help streamgroup`."
                 )
-            await Streamgroup._fix(sender, session, group)
+            await Streamgroup._fix(self.client, session, group)
 
         yield ReactionResponse("ok")
 
@@ -731,7 +787,7 @@ class Streamgroup(PluginCommandMixin, Plugin):
         if message["type"] != "stream":
             raise DMError("Claim only stream messages.")
 
-        stream = await sender.client.get_stream_by_id(message["stream_id"])
+        stream = await self.client.get_stream_by_id(message["stream_id"])
         name = stream["name"]
 
         await Streamgroup._claim(
@@ -801,12 +857,12 @@ class Streamgroup(PluginCommandMixin, Plugin):
 
             group = None
 
-        msg = await sender.client.get_message_by_id(msg_id)
+        msg = await self.client.get_message_by_id(msg_id)
 
         if msg["type"] != "stream":
             raise DMError("Claim only stream messages.")
 
-        stream = await sender.client.get_stream_by_id(msg["stream_id"])
+        stream = await self.client.get_stream_by_id(msg["stream_id"])
         name = stream["name"]
 
         await Streamgroup._claim(
@@ -875,12 +931,12 @@ class Streamgroup(PluginCommandMixin, Plugin):
 
             group = None
 
-        msg = await sender.client.get_message_by_id(msg_id)
+        msg = await self.client.get_message_by_id(msg_id)
 
         if msg["type"] != "stream":
             raise DMError("Unclaim only stream messages.")
 
-        stream = await sender.client.get_stream_by_id(msg["stream_id"])
+        stream = await self.client.get_stream_by_id(msg["stream_id"])
         name = stream["name"]
 
         await Streamgroup._unclaim(
@@ -911,9 +967,9 @@ class Streamgroup(PluginCommandMixin, Plugin):
         if message["type"] != "stream":
             raise DMError("Claim only stream messages.")
 
-        await Streamgroup._announce(sender, session, message)
+        await Streamgroup._announce(session, message, self.client)
 
-        stream = await sender.client.get_stream_by_id(message["stream_id"])
+        stream = await self.client.get_stream_by_id(message["stream_id"])
         name = stream["name"]
         yield DMMessage(sender, f"Announced message in Stream #**{name}**.")
 
@@ -933,11 +989,11 @@ class Streamgroup(PluginCommandMixin, Plugin):
         """
         msg_id: int = args.message_id
 
-        msg = await sender.client.get_message_by_id(msg_id)
-        stream = await sender.client.get_stream_by_id(msg["stream_id"])
+        msg = await self.client.get_message_by_id(msg_id)
+        stream = await self.client.get_stream_by_id(msg["stream_id"])
         name = stream["name"]
 
-        await Streamgroup._unannounce(sender, session, msg_id)
+        await Streamgroup._unannounce(session, msg_id, self.client)
 
         yield DMResponse(f"Unannounced message in Stream #**{name}**.")
 
@@ -1067,11 +1123,11 @@ class Streamgroup(PluginCommandMixin, Plugin):
             raise DMError(
                 f"Could not delete Streamgroup `{group.StreamGroupId}`."
             ) from e
-
+        
     @staticmethod
     async def _remove_streams(
         session: Session,
-        sender: ZulipUser,
+        client: AsyncClient,
         group: StreamGroup,
         stream_patterns: list[str],
     ):
@@ -1090,10 +1146,10 @@ class Streamgroup(PluginCommandMixin, Plugin):
         Returns:
             None
         """
-
+    
         failed: list[str] = []
         for stream_reg in stream_patterns:
-            streams: list[str] = await sender.client.get_streams_from_regex(stream_reg)
+            streams: list[str] = await client.get_streams_from_regex(stream_reg)
 
             for s in streams:
                 stream: ZulipStream = ZulipStream(f"#**{s}**")
@@ -1101,7 +1157,7 @@ class Streamgroup(PluginCommandMixin, Plugin):
 
                 if (
                     session.query(StreamGroupMember)
-                    .filter(StreamGroupMember.Stream == stream)
+                    .filter(StreamGroupMember.Stream == stream.id)
                     .filter(StreamGroupMember.StreamGroupId == group.StreamGroupId)
                     .first()
                     is None
@@ -1110,7 +1166,7 @@ class Streamgroup(PluginCommandMixin, Plugin):
                 try:
                     # search for the listed streams in the db and delete them
                     session.query(StreamGroupMember).filter(
-                        StreamGroupMember.Stream == stream
+                        StreamGroupMember.Stream == stream.id
                     ).filter(
                         StreamGroupMember.StreamGroupId == group.StreamGroupId
                     ).delete()
@@ -1124,9 +1180,38 @@ class Streamgroup(PluginCommandMixin, Plugin):
             raise DMError(
                 f"Could not delete streams(s) {s} from Streamgroup `{group.StreamGroupId}`."
             )
+        
+    @staticmethod
+    async def _remove_streams_by_id(
+        session: Session,
+        client: AsyncClient,
+        group: StreamGroup,
+        stream_ids: list[int],
+    ):
+        for id in stream_ids:
+                if (
+                    session.query(StreamGroupMember)
+                    .filter(StreamGroupMember.Stream == id)
+                    .filter(StreamGroupMember.StreamGroupId == group.StreamGroupId)
+                    .first()
+                    is None
+                ):
+                    continue
+                try:
+                    # search for the listed streams in the db and delete them
+                    session.query(StreamGroupMember).filter(
+                        StreamGroupMember.Stream == id
+                    ).filter(
+                        StreamGroupMember.StreamGroupId == group.StreamGroupId
+                    ).delete()
+                    session.commit()
+                except sqlalchemy.exc.IntegrityError as e:
+                    session.rollback()
+
 
     @staticmethod
     async def _add_streams(
+        client: AsyncClient,
         session: Session,
         sender: ZulipUser,
         group: StreamGroup,
@@ -1151,8 +1236,9 @@ class Streamgroup(PluginCommandMixin, Plugin):
         failed: list[str] = []
         streams: list[str] = []
         for stream_reg in stream_patterns:
-            s: list[str] = await sender.client.get_streams_from_regex(stream_reg)
+            s: list[str] = await client.get_streams_from_regex(stream_reg)
             streams.extend(s)
+
 
         if not streams:
             stream_patterns_output: list[str] = map(lambda s: f"`{s}`", stream_patterns)
@@ -1405,7 +1491,7 @@ class Streamgroup(PluginCommandMixin, Plugin):
                         )
 
     @staticmethod
-    async def _announce(sender: ZulipUser, session: Session, message):
+    async def _announce(session: Session, message, client: AsyncClient):
         """
         Triggers a (for all groups) claimed announcement message from the bot with a list o all existing Streamgroups.
 
@@ -1424,10 +1510,10 @@ class Streamgroup(PluginCommandMixin, Plugin):
         announcement_msg: str = Streamgroup._build_announcement_message(session)
 
         # Remove the requesting message.
-        response = await sender.client.delete_message(message["id"])
+        response = await client.delete_message(message["id"])
 
         # Send own message.
-        botMessage: dict[str, Any] = await sender.client.send_response(
+        botMessage: dict[str, Any] = await client.send_response(
             Response.build_message(message, announcement_msg)
         )
         if botMessage["result"] != "success":
@@ -1452,7 +1538,7 @@ class Streamgroup(PluginCommandMixin, Plugin):
 
         # React with all those emojis on this message.
         for emoji in all_emojis:
-            await sender.client.send_response(
+            await client.send_response(
                 Response.build_reaction(botMessage, emoji=emoji)
             )
 
@@ -1503,7 +1589,7 @@ class Streamgroup(PluginCommandMixin, Plugin):
         return _announcement_msg.format(table)
 
     @staticmethod
-    async def _unannounce(sender: ZulipUser, session: Session, message_id: int):
+    async def _unannounce(session: Session, message_id: int, client: AsyncClient):
         """
         Reverts "special status" of a announced message.
 
@@ -1535,10 +1621,10 @@ class Streamgroup(PluginCommandMixin, Plugin):
             session.rollback()
             raise DMError(f"Could not unclaim message '{message_id}'.") from e
 
-        await sender.client.delete_message(message_id)
+        await client.delete_message(message_id)
 
     @staticmethod
-    async def _fix(sender: ZulipUser, session: Session, group: StreamGroup):
+    async def _fix(client: AsyncClient, session: Session, group: StreamGroup):
         """
         Makes sure that every subscriber of the given group is subscribed to all streams of this group.
 
@@ -1556,17 +1642,17 @@ class Streamgroup(PluginCommandMixin, Plugin):
         ugroup: UserGroup = Streamgroup._get_usergroup(session, group)
         user_ids: list[int] = Usergroup.get_user_ids_for_group(session, ugroup)
         stream_names: list[str] = await Streamgroup._get_stream_names(
-            session, sender.client, [group]
+            session, client, [group]
         )
 
         streams: list[(str, None)] = [
             (stream_name, None) for stream_name in stream_names
         ]
 
-        await sender.client.subscribe_users_multiple_streams(user_ids, streams)
+        await client.subscribe_users_multiple_streams(user_ids, streams)
 
     @staticmethod
-    async def _fix_all(sender: ZulipUser, session: Session):
+    async def _fix_all(client: AsyncClient, session: Session):
         """
           Fixing all Streams of all StreamGroups
 
@@ -1583,7 +1669,7 @@ class Streamgroup(PluginCommandMixin, Plugin):
         groups: list[StreamGroup] = session.query(StreamGroup).all()
 
         for group in groups:
-            await Streamgroup._fix(sender, session, group)
+            await Streamgroup._fix(session, group, client)
 
     # ========================================================================================================================
     #       HELPER METHODS
@@ -1607,7 +1693,7 @@ class Streamgroup(PluginCommandMixin, Plugin):
         return result
 
     @staticmethod
-    def _get_group_ids_from_stream(name: str) -> list[str]:
+    def _get_group_ids_from_stream_id(id: str) -> list[str]:
         """
         Get a list of all StreamGroup-identifiers that a stream is a member in.
         Returns empty list if stream is not member of any StreamGroup.
@@ -1617,7 +1703,7 @@ class Streamgroup(PluginCommandMixin, Plugin):
             result = {
                 sg.StreamGroupId
                 for sg in session.query(StreamGroupMember)
-                .filter(StreamGroupMember.Stream.name == name)
+                .filter(StreamGroupMember.Stream == id)
                 .all()
             }
         return list(result)
@@ -1742,7 +1828,7 @@ class Streamgroup(PluginCommandMixin, Plugin):
 
     @staticmethod
     async def _get_unique_stream_names(
-        session: Session, sender: ZulipUser, group: StreamGroup
+        session: Session, sender: ZulipUser, group: StreamGroup, client : AsyncClient
     ) -> list[str]:
         """
         Get a list of the names of all streams that are members only in a given StreamGroup and not in any other StreamGroup.
@@ -1751,7 +1837,7 @@ class Streamgroup(PluginCommandMixin, Plugin):
         groups.remove(group)
 
         streamsToKeep: list[str] = await Streamgroup._get_stream_names(
-            session, sender.client, groups
+            session, client, groups
         )
 
         streams: list[str] = []
@@ -1761,7 +1847,7 @@ class Streamgroup(PluginCommandMixin, Plugin):
             .filter(StreamGroupMember.StreamGroupId == group.StreamGroupId)
             .all()
         ):
-            result = await sender.client.get_stream_by_id(s.Stream.id)
+            result = await client.get_stream_by_id(s.Stream.id)
             if result == None:
                 failed.append(f"`{s.Stream.id}`")
                 continue
