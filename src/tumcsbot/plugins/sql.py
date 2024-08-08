@@ -6,7 +6,10 @@
 from inspect import cleandoc
 from typing import Any, Iterable
 
-from tumcsbot.lib import DB, Response
+from sqlalchemy import text
+
+from tumcsbot.lib.db import DB
+from tumcsbot.lib.response import Response
 from tumcsbot.lib.types import DMResponse, Privilege
 from tumcsbot.plugin import PluginCommandMixin,Plugin
 from tumcsbot.plugin_decorators import arg, command, privilege
@@ -32,5 +35,5 @@ class Source(PluginCommandMixin, Plugin):
         Execute a SELECT SQL command in the bot's database.
         """
         sql = args.sql
-        result = session.execute("SELECT " + " ".join(sql))
-        yield DMResponse(result)
+        result = session.execute(text("SELECT " + " ".join(sql))).fetchall()
+        yield DMResponse("```" + "\n".join(str(row) for row in result) + "```")
