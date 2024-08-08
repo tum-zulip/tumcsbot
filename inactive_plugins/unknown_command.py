@@ -43,7 +43,7 @@ class UnknownCommand(Plugin):
         
         return Response.build_reaction(event.data["message"], "question")
 
-    def is_responsible(self, event: Event) -> bool:
+    async def is_responsible(self, event: Event) -> bool:
         return event.data["type"] == "message" and (
             "command_name" in event.data["message"]
             and event.data["message"]["command_name"]
