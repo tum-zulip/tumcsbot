@@ -15,7 +15,7 @@ receive events for all public streams.
 
 import asyncio
 import logging
-from typing import Any, Iterable
+from typing import Any, Iterable, Literal
 
 from tumcsbot.lib.client import AsyncClient
 from tumcsbot.lib.response import Response
@@ -85,34 +85,43 @@ class UserInput(Plugin):
 
     @classmethod
     async def confirm(cls, client: AsyncClient, message_id: int, timeout: int = 10) -> tuple[bool, dict[str, Any]]:
+        emote, msg = await cls.choose(client, message_id, ["check", "cross_mark"], timeout)
+        return emote == "check", msg
+    
+
+    @classmethod
+    async def i8n_german_or_english(cls, client: AsyncClient, message_id: int, timeout: int = 10) -> tuple[Literal["de", "en"], dict[str, Any]]:
+        emote, msg = await cls.choose(client, message_id, ["flag_germany", "flag_united_kingdom"], timeout)
+        return "de" if emote == "flag_germany" else "en", msg
+
+    @classmethod
+    async def choose(cls, client: AsyncClient, message_id: int, emotes_to_choose: list[str], timeout: int = 10) -> tuple[str | None, dict[str, Any]]:
         """Ask the user for confirmation."""
-        
+
         q = asyncio.Queue(1)
         cls.pending_inputs[message_id] = q
-        
+
         # wait for UI to be ready, if we send instantly, the reaction might not be registered
         await asyncio.sleep(.5)
 
-        message_nak = await client.send_response(Response.build_reaction_from_id(message_id, "cross_mark"))
-        message_ack = await client.send_response(Response.build_reaction_from_id(message_id, "check"))
+        for emote in emotes_to_choose:
+            result = await client.send_response(Response.build_reaction_from_id(message_id, emote))
+            if result["result"] != "success":
+                raise Exception(f"Could not send reaction to user: {emote}")
 
-        if message_nak["result"] != "success" or message_ack["result"] != "success":
-            raise Exception("Could not send reaction to user.")
-        
         # todo: handle if message_nak or message_ack was not successful
-
         try:
             reaction = await cls._wait_for_queue(q, timeout)
             q.task_done()
             if "emoji_name" not in reaction:
-                return False, reaction
-            return reaction["emoji_name"] == "check", reaction
+                return None, reaction
+            return reaction["emoji_name"], reaction
         except asyncio.TimeoutError:
-            return False, {}
+            return None, {}
         finally:
             del cls.pending_inputs[message_id]
-            await client.remove_reaction({"message_id": message_id, "emoji_name": "cross_mark"})
-            await client.remove_reaction({"message_id": message_id, "emoji_name": "check"})
+            for emote in emotes_to_choose:
+                await client.remove_reaction({"message_id": message_id, "emoji_name": emote})
 
 
     @classmethod
