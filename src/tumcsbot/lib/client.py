@@ -17,7 +17,7 @@ from dataclasses import dataclass
 import logging
 import re
 from collections.abc import Iterable as IterableClass
-from typing import AsyncGenerator, Callable, cast, Any, IO, Iterable, Final, final
+from typing import AsyncGenerator, Callable, cast, Any, IO, Iterable, final
 from urllib.parse import quote
 
 from sqlalchemy import Boolean, Column, String
@@ -133,12 +133,7 @@ class AsyncClient:
 
         while True:
             try:
-                result = await loop.run_in_executor(
-                    self._executor,
-                    lambda: self._client.call_endpoint(
-                        url, method, request, longpolling, files, timeout
-                    ),
-                )
+                result = await loop.run_in_executor(self._executor, self._client.call_endpoint, url, method, request, longpolling, files, timeout)
             except asyncio.CancelledError as e:
                 self._executor.shutdown(cancel_futures=True)
                 raise e
@@ -244,10 +239,6 @@ class AsyncClient:
 
             for event in res["events"]:
                 last_event_id = max(last_event_id, int(event["id"]))
-
-                if event["type"] == "heartbeat":
-                    continue  # Skip heartbeat events
-
                 yield event  # yield the next relevant event
 
     async def get_messages(self, message_filters: dict[str, Any]) -> dict[str, Any]:
@@ -419,6 +410,8 @@ class AsyncClient:
         # Try to minimize the network traffic.
         if request is not None:
             request.update(client_gravatar=True, include_custom_profile_fields=False)
+        else:
+            request = dict(client_gravatar=False, include_custom_profile_fields=False)
         return await self.call_endpoint(
             url="users",
             method="GET",
