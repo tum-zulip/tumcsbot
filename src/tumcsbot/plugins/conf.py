@@ -3,6 +3,7 @@
 # See LICENSE file for copyright and license details.
 # TUM CS Bot - https://github.com/ro-i/tumcsbot
 
+import asyncio
 from inspect import cleandoc
 from typing import Any, AsyncGenerator, Iterable
 
@@ -20,6 +21,7 @@ from tumcsbot.plugin_decorators import (
     Privilege,
     response_type,
 )
+from tumcsbot.plugins.userinput import UserInput
 
 class ConfPlugin(PluginCommandMixin, Plugin):
     """
@@ -60,9 +62,10 @@ class ConfPlugin(PluginCommandMixin, Plugin):
         """
         Set a configuration variable.
         """
-        if not Conf.is_bot_owner(await sender.id):
+        if not Conf.is_bot_owner(sender.id):
             raise UserNotPrivilegedException("You must be the bot owner to set configuration variables.")
         Conf.set(args.key, args.value)
+        yield DMResponse(f"Configuration variable '{args.key}' set to '{args.value}'.")
         
     @command
     @privilege(Privilege.ADMIN)
@@ -79,3 +82,4 @@ class ConfPlugin(PluginCommandMixin, Plugin):
         Remove a configuration variable.
         """
         Conf.remove(args.key)
+        yield DMResponse(f"Configuration variable '{args.key}' removed.")
