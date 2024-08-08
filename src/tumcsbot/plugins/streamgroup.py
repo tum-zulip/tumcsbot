@@ -118,7 +118,15 @@ class Streamgroup(PluginCommandMixin, Plugin):
             self.logger.debug("User reacted to a claimed message")
             return await self.handle_reaction_event(data)
         if data["type"] == "stream":
-            self.logger.info("New stream was created")
+            op = data["op"]
+            if op == "create":
+                op = "created"
+            elif op == "remove":
+                op = "deleted"
+            else:
+                op = "unkown operation (" + op + ")"
+
+            self.logger.info(f"Streams {', '.join([f'#**{s['name']}**' for s in data['streams']])} {op}")
             return await self.handle_stream_event(data)
         self.logger.debug("%s", event)
         return await self.handle_message(data["message"])
@@ -151,24 +159,24 @@ class Streamgroup(PluginCommandMixin, Plugin):
         self, event: dict[str, Any]
     ) -> Response | Iterable[Response]:
         # user_id: int = event["user_id"]
-
+# 
         # for stream in event["streams"]:
         #    name: str = stream["name"]
-
-            # Get all the groups this stream belongs to.
+# 
+        #    # Get all the groups this stream belongs to.
         #    group_ids: list[str] = Streamgroup._get_group_ids_from_stream(name)
-            # Get all user ids to subscribe to this new stream ...
+        #    # Get all user ids to subscribe to this new stream ...
         #    user_ids: list[int] = Streamgroup._get_group_subscribers(group_ids)
-            # ... and subscribe them.
+        #    # ... and subscribe them.
         #    sender: ZulipUser = ZulipUser(user_id)
         #    await sender
         #    sender.client.subscribe_users(user_ids, name)
-
+# 
         return Response.none()
 
-    def is_responsible(self, event: Event) -> bool:
+    async def is_responsible(self, event: Event) -> bool:
         return (
-            super().is_responsible(event)
+            await super().is_responsible(event)
             or (
                 event.data["type"] == "reaction"
                 and event.data["op"] in ["add", "remove"]
@@ -216,7 +224,10 @@ class Streamgroup(PluginCommandMixin, Plugin):
             )
 
         if len(groups) == 0:
-            raise DMError(f"No stream groups found")
+            if opts.a:
+                raise DMError(f"No Stream groups found")
+            else:
+                raise DMError(f"You are not in any Streamgroups")
 
         for group in groups:
             group_id = group.StreamGroupId

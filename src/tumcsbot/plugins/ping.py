@@ -23,7 +23,7 @@ class Ping(Plugin):
     def handle_event(self, event: Event) -> Response | Iterable[Response]:
         return Response.build_reaction(event.data["message"], "wave")
 
-    def is_responsible(self, event: Event) -> bool:
+    async def is_responsible(self, event: Event) -> bool:
         return event.data["type"] == "message" and (
             (
                 # Only handle command messages if the command is empty.

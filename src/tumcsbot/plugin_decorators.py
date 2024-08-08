@@ -323,8 +323,8 @@ class command:
             opts: CommandParser.Opts,
             message: dict[str, Any],
         ) -> list[Response] | Iterable[Response] | Response:
-            self.logger.debug(
-                "Calling %s with %s and %s", self.plugin_name(), opts, args
+            self.logger.info(
+                "%s calls %s with %s and %s", sender.mention_silent, self.plugin_name(), args, opts 
             )
             responses = []
             successful = []
@@ -398,7 +398,6 @@ class command:
                     f"Error: {e}",
                 )
             except DMError as e:
-                self.logger.exception(e)
                 return Response.build_message(
                     message,
                     str(e),

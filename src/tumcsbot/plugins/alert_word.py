@@ -40,23 +40,16 @@ class AlertWord(PluginCommandMixin, Plugin):
         # Replace markdown links by their textual representation.
         self._markdown_links: re.Pattern[str] = re.compile(r"\[([^\]]*)\]\([^\)]+\)")
 
-        self._received_command: bool = False
     
-    def is_responsible(self, event: Event) -> bool:
+    async def is_responsible(self, event: Event) -> bool:
         # First check whether the command mixin part is responsible.
-        if super().is_responsible(event):
-            self._received_command = True
+        if await super().is_responsible(event) and event.data["message"].get("command_name", None) == "alert_word":
             return True
 
-        # Do not react on own messages or on private messages where we
-        # are not the only recipient.
         return (
             event.data["type"] == "message"
             and event.data["message"]["sender_id"] != self.client.id
-            and (
-                event.data["message"]["type"] == "stream"
-                or self.client.is_only_pm_recipient(event.data["message"])
-            )
+            and event.data["message"]["type"] == "stream"
         )
 
     def _get_bindings(self) -> list[tuple[re.Pattern[str], str]]:
@@ -135,8 +128,7 @@ class AlertWord(PluginCommandMixin, Plugin):
         yield Response.ok(message)
 
     async def handle_event(self, event: Event) -> Response | Iterable[Response]:
-        if self._received_command:
-            self._received_command = False
+        if event.data["type"] == "message" and event.data["message"].get("command_name", None) == "alert_word":
             return await self.handle_message(event.data["message"])
 
         if not self._bindings:

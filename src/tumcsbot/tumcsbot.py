@@ -12,6 +12,7 @@ a private message or a message starting with @mentioning the bot.
 
 from __future__ import annotations
 import asyncio
+import difflib
 import logging
 import signal
 from graphlib import TopologicalSorter
@@ -28,6 +29,7 @@ from tumcsbot.plugin import (
     Event,
     Plugin,
     EventType,
+    PluginTable,
     get_zulip_events_from_plugins,
 )
 from tumcsbot.lib.utils import LOGGING_FORMAT
@@ -213,13 +215,33 @@ class TumCSBot:
                         logging.exception(exc)
                         continue
                     
+                    found_responsible = False
                     for plugin in self.plugins.values():
-                        if plugin.is_responsible(event):
+                        if await plugin.is_responsible(event):
                             logging.debug("push event to plugin %s", plugin.plugin_name())
                             plugin.push_event(event)
+                            found_responsible = True
 
+                    if not found_responsible:
+                        if command_name := event.data.get("message", {}).get("command_name", None):
+                            with DB.session() as session:
+                                command_names = [str(cmd.name) for cmd in session.query(PluginTable).all()]
+                        
+                            matches = difflib.get_close_matches(command_name, command_names, n=2)
+
+                            if matches:
+                                matches = [f"`{match}`" for match in matches]
+                                await self.client.send_response(response.Response.build_message(event.data["message"],
+                                    f"Command not found. Did you mean {' or '.join(matches)}?",
+                                ))
+                            else:
+                                await self.client.send_response(response.Response.build_reaction(event.data["message"], "question"))
+                
         except asyncio.exceptions.CancelledError:
             pass
+
+        except Exception as exc:
+            logging.exception(exc)
 
         logging.info("stoping bot")
 

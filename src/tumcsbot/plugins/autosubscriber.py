@@ -35,8 +35,8 @@ class AutoSubscriber(Plugin):
                 if stream.Subscribed != 1:
                     asyncio.run(self._handle_stream(stream.StreamName, False))
 
-    def is_responsible(self, event: Event) -> bool:
-        return super().is_responsible(event) and (
+    async def is_responsible(self, event: Event) -> bool:
+        return await super().is_responsible(event) and (
             event.data["op"] == "create"
             or event.data["op"] == "update"
             or event.data["op"] == "delete"

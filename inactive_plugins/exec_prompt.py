@@ -95,9 +95,9 @@ class ExecPrompt(Plugin):
 
         return Response.none()
 
-    def is_responsible(self, event: Event) -> bool:
+    async def is_responsible(self, event: Event) -> bool:
         return (
-            super().is_responsible(event)
+            await super().is_responsible(event)
             and event.data["type"] == "reaction"
             and event.data["op"] == "add"
             and event.data["emoji_name"] == self._approve_emoji

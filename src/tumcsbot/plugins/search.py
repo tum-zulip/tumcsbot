@@ -44,3 +44,4 @@ class Search(PluginCommandMixin, Plugin):
         # Remove requesting message.
         await self.client.delete_message(message["id"])
         yield DMResponse(self.msg_template.format(url))
+    

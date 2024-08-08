@@ -148,8 +148,6 @@ class Plugin(threading.Thread, ABC):
         self.running: bool = False
 
         self.bot = bot
-        self.streamlog_name = Conf.get("StreamLog")
-
         # call custom init code
         self._init_plugin()
 
@@ -167,7 +165,7 @@ class Plugin(threading.Thread, ABC):
 
 
     
-    def is_responsible(self, event: Event) -> bool:
+    async def is_responsible(self, event: Event) -> bool:
         """Check if the plugin is responsible for the given Zulip event.
 
         Provide a minimal default implementation for such a
@@ -207,19 +205,12 @@ class Plugin(threading.Thread, ABC):
                         except Exception as e:
                             self.logger.exception(e)
                             self.logger.error("Error while handling event. Ignoring.")
-                            if self.streamlog_name:
-                                streamlog_id = await self.client.get_stream_id_by_name(self.streamlog_name)
-                                if streamlog_id:
-                                    await self.client.send_message(
-                                        streamlog_id,
-                                        f"```spoiler {self.plugin_name()}: Error while handling event\n````\n{e}\n````\n---\n````\n{event}\n````\n```\n",
-                                    )
 
                     
                     asyncio.create_task(handler())
                 self.queue.task_done()
         except asyncio.CancelledError:
-            self.logger.info("loop cancelled")
+            self.logger.debug("loop cancelled")
 
     @final
     def stop(self):
@@ -363,13 +354,13 @@ class PluginCommandMixin(Plugin):
         """
         return await self.handle_message(event.data["message"])
 
-    def is_responsible(self, event: Event) -> bool:
+    async def is_responsible(self, event: Event) -> bool:
         """A default implementation for command plugins.
 
         May need to be overriden to meet more enhanced requirements.
         """
         return (
-            super().is_responsible(event)
+            await super().is_responsible(event)
             and "message" in event.data
             and "command_name" in event.data["message"]
             and event.data["message"]["command_name"] == self.plugin_name()

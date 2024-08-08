@@ -67,8 +67,8 @@ class ModerationReactionHandler(Plugin):
     }
     # pylint: enable=line-too-long
 
-    def is_responsible(self, event: Event) -> bool:
-        return super().is_responsible(event) or (
+    async def is_responsible(self, event: Event) -> bool:
+        return await super().is_responsible(event) or (
             event.data["type"] == "reaction"
             and event.data["op"] == "add"
             and event.data["user_id"] != self.client.id
