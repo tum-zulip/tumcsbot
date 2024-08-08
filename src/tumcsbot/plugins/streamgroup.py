@@ -4,6 +4,7 @@
 # TUM CS Bot - https://github.com/ro-i/tumcsbot
 
 from inspect import cleandoc
+import logging
 from typing import Any, Iterable, AsyncGenerator
 from sqlalchemy import Column, String, Integer, ForeignKey
 import sqlalchemy
@@ -52,6 +53,12 @@ class StreamGroup(TableBase):  # type: ignore
         back_populates="_streamgroup",
         single_parent=True,
     )
+
+    _course = relationship(
+        "CourseDB",
+        back_populates="_streams",
+    )
+   
 
     @hybrid_property
     def streams(self) -> list[ZulipStream]:
@@ -105,7 +112,7 @@ class GroupClaimAll(TableBase):  # type: ignore
 
 class Streamgroup(PluginCommandMixin, Plugin):
     """
-    Manage SteamGroups.
+    Manage StreamGroups.
     """
 
     # ========================================================================================================================
@@ -1417,7 +1424,7 @@ class Streamgroup(PluginCommandMixin, Plugin):
         announcement_msg: str = Streamgroup._build_announcement_message(session)
 
         # Remove the requesting message.
-        await sender.client.delete_message(message["id"])
+        response = await sender.client.delete_message(message["id"])
 
         # Send own message.
         botMessage: dict[str, Any] = await sender.client.send_response(

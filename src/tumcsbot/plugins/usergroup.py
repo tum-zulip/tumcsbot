@@ -60,6 +60,18 @@ class UserGroup(TableBase): # type: ignore
         back_populates="_usergroup"
     )
 
+    _courseT = relationship(
+        "CourseDB",  
+        back_populates="_tutors",
+        foreign_keys="CourseDB.TutorsUserGroup"
+    )
+
+    _courseI = relationship(
+        "CourseDB",  
+        back_populates="_instructors",
+        foreign_keys="CourseDB.InstructorsUserGroup"
+    )
+
 
 class UserGroupMember(TableBase): # type: ignore
     """Represents a user group member in the system."""

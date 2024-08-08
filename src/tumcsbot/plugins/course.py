@@ -6,10 +6,11 @@
 from collections.abc import Iterable as IterableClass
 from inspect import cleandoc
 import re
+import logging
+
 from sqlite3 import IntegrityError
 from typing import cast, Any, Callable, Iterable
-from xmlrpc.client import Boolean
-from sqlalchemy import Column, String, Integer, ForeignKey, UniqueConstraint, update
+from sqlalchemy import Column, String, Integer, ForeignKey, UniqueConstraint, update, Boolean
 from sqlalchemy.orm import relationship, Mapped
 from sqlalchemy.ext.hybrid import hybrid_property
 from tumcsbot.lib.regex import Regex
@@ -21,6 +22,7 @@ from tumcsbot.lib.command_parser import CommandParser
 from tumcsbot.lib.db import DB, TableBase, Session, TableBase, serialize_model
 from tumcsbot.plugin_decorators import *
 from tumcsbot.plugins.usergroup import UserGroup, Usergroup
+from tumcsbot.plugins.userinput import UserInput
 from tumcsbot.plugins.streamgroup import StreamGroup, Streamgroup
 from tumcsbot.plugins.streams import Streams
 from tumcsbot.lib.types import (
@@ -38,19 +40,6 @@ from tumcsbot.lib.types import (
 )
 
 
-class TimeSlots(TableBase):
-    """Represents a Tutor in the system."""
-
-    __tablename__ = "Tutors"
-
-    User = Column(ZulipUser, primary_key=True)
-    TimeSlot = Column(String, nullable=True)
-
-    Course = Column(
-        Integer, ForeignKey("CourseDB.CourseId", ondelete="CASCADE"), primary_key=True
-    )
-
-
 class CourseDB(TableBase):
     """Represents a course in the system."""
 
@@ -59,6 +48,7 @@ class CourseDB(TableBase):
     CourseId = Column(Integer, primary_key=True, autoincrement=True)
     CourseName = Column(String, unique=True)
     CourseDescription = Column(String, nullable=True)
+    CourseLanguage = Column(String, nullable=False)
 
     Streams = Column(
         String,
@@ -70,36 +60,24 @@ class CourseDB(TableBase):
         Integer, ForeignKey("UserGroups.GroupId", ondelete="CASCADE"), nullable=False
     )
 
-    IstructorsUserGroup = Column(
-        Integer, ForeignKey("UserGroups.GroupId", ondelete="CASCADE"), nullable=True
+    InstructorsUserGroup = Column(
+        Integer, ForeignKey("UserGroups.GroupId", ondelete="CASCADE"), nullable=False
     )
 
     TutorStream = Column(ZulipStream, nullable=True)
     InstructorStream = Column(ZulipStream, nullable=True)
 
-    ModerationConfigId = Column(Integer, ForeignKey("ModerationConfig.ModerationConfigId"))
-    AllowDeleteActionForTutors = Column(Boolean, default=False)
-
-    _time_slots = relationship(
-        "TimeSlots", back_populates="_course", cascade="all, delete-orphan"
-    )
-
-    _moderation_config = relationship("ModerationConfig", back_populates="_course")
-
     _streams = relationship(
-        "StreamGroup", back_populates="_course", cascade="all, delete-orphan"
+        "StreamGroup", back_populates="_course", cascade="all, delete-orphan", single_parent=True,
     )
     _tutors = relationship(
-        "UserGroup", back_populates="_course", cascade="all, delete-orphan"
+        "UserGroup", back_populates="_courseT", cascade="all, delete-orphan", single_parent=True, foreign_keys="CourseDB.TutorsUserGroup"
     )
 
+    _instructors = relationship(
+        "UserGroup", back_populates="_courseI", cascade="all, delete-orphan", single_parent=True, foreign_keys="CourseDB.InstructorsUserGroup"
+    )
 
-# !!! INFO !!!! 
-# relationships to add in UserGroup and StreamGroup when Course-Plugin is activated:
-#
-# StreamGroup:  _course = relationship("CourseDB", back_populates="_streams")
-# Usergroup:    _course = relationship("CourseDB", back_populates="_tutors")
-#
 
 class Course(PluginCommandMixin, Plugin):
     """
@@ -120,7 +98,30 @@ class Course(PluginCommandMixin, Plugin):
         opts: CommandParser.Opts,
         message: dict[str, Any],
     ) -> AsyncGenerator[response_type, None]:
-        pass
+        """
+        List all Courses with their associated streams.
+        """
+        response: str = (
+            "Course Name | Emoji | Streams \n---- | ---- | ----"
+        )
+
+        courses: list[CourseDB] = session.query(CourseDB).all()
+      
+
+        if len(courses) == 0:
+            raise DMError(f"No courses found")
+
+        for course in courses:
+            course_name = course.CourseName
+            streams: list[str] = await Course._get_stream_names(session, sender.client, course)
+            emoji: str = Course._get_emoji(course, session)
+           
+            streams_concat: str = ", ".join(f"`{s}`" for s in streams)
+            response += (
+                f"\n{course_name} | {emoji} :{emoji}: | {streams_concat}"
+            )
+
+        yield DMResponse(response)
 
     @command
     @privilege(Privilege.ADMIN)
@@ -131,11 +132,6 @@ class Course(PluginCommandMixin, Plugin):
         long_opt="instructors",
         description="The course has an additional Stream for Instructors.",
     )
-    @opt(
-        "s",
-        long_opt="standard",
-        description="Add standard steams to the course (Allgemein, Organisation, Feedback, Ankündigungen, Technik, Memes)."
-    )
     async def create_empty(
         self,
         sender: ZulipUser,
@@ -145,72 +141,198 @@ class Course(PluginCommandMixin, Plugin):
         message: dict[str, Any],
     ) -> AsyncGenerator[response_type, None]:
         """
-        Create an empty course
+        Create a new empty course
         """
         name: str = args.name
         streamgroup_emoji: str = args.emoji
+        streams : StreamGroup | None = None
 
         if (
             session.query(CourseDB).filter(CourseDB.CourseName == name).first()
             is not None
         ):
-            raise DMError(f"Course `{name}` already exists")
+            result = await self.client.send_response(Response.build_message(message, content=f"Course `{name}` already exists. Dou you want to replace it with an empty course?"))
+            if result["result"] != "success":
+                raise DMError("Could not send message to user")
+        
+            result, msg = await UserInput.confirm(self.client, result["id"])
+            if not result:
+                yield DMResponse("Ok, I will not create a new course. Please choose another name.")
+                return
         
         if (
             session.query(StreamGroup).filter(StreamGroup.StreamGroupEmote==streamgroup_emoji).first()
             is not None
         ):
-            raise DMError(f"Course with :{streamgroup_emoji}: already exists")
+            result = await self.client.send_response(Response.build_message(message, content=f"A Streamgroup with :{streamgroup_emoji}: already exists. Dou you want to replace it with an empty Streamgroup for your course?"))
+            if result["result"] != "success":
+                raise DMError("Could not send message to user")
+        
+            result, msg = await UserInput.confirm(self.client, result["id"])
+            if not result:
+                res = await self.client.send_response(Response.build_message(message, content=f"Do you want to use the existing Streamgroup with :{streamgroup_emoji}: for your course?"))
+                if res["result"] != "success":
+                    raise DMError("Could not send message to user")
+                
+                res, msg = await UserInput.confirm(self.client, res["id"])
+                if not res:
+                    yield DMResponse(f"Ok, I will not create a new course then. Please choose another emote because :{streamgroup_emoji}: is already in use :botsad:")
+                    return
+                else:
+                    streams : StreamGroup = session.query(StreamGroup).filter(StreamGroup.StreamGroupEmote==streamgroup_emoji).first()
+            else: 
+                sg : StreamGroup = session.query(StreamGroup).filter(StreamGroup.StreamGroupEmote==streamgroup_emoji).first()
+                Streamgroup._delete_group(session, sg)
+
+        resLan = await self.client.send_response(Response.build_message(message, content=f"Is your course held in English or German?"))
+        lan, _ = await UserInput.i8n_german_or_english(self.client, resLan["id"])
 
         try:
             # get a corresponding (empty) Streamgroup
-            streamgroup_name: str = "streams_" + name
-            streams: StreamGroup = Streamgroup._create_and_get_group(
-                session, streamgroup_name, streamgroup_emoji
-            )
-
-            if opts.s:
-                await Course.add_standard_streams(self, sender,session, message, name, streams)
+            if not streams:
+                streamgroup_name: str = "streams_" + name
+                streams: StreamGroup = Streamgroup._create_and_get_group(
+                    session, streamgroup_name, streamgroup_emoji
+                )
 
             # get a corresponding (empty) Usergroup
-            usergroup_name: str = "tutors_" + name
-            tutors: Usergroup = Usergroup.create_and_get_group(session, usergroup_name)
+            usergroup_name_tut: str = "tutors_" + name
+
+            if (
+                session.query(UserGroup).filter(UserGroup.GroupName == usergroup_name_tut).first()
+                is not None
+            ):
+                result = await self.client.send_response(Response.build_message(message, content=f"Usergroup for Tutors of this course already exists. Dou you want to replace it with a new empty Usergroup for your course?"))
+                if result["result"] != "success":
+                    Streamgroup._delete_group(session, streams)
+                    raise DMError("Could not send message to user")
+            
+                result, msg = await UserInput.confirm(self.client, result["id"])
+                if not result:
+                    Streamgroup._delete_group(session, streams)
+                    raise DMError("Ok, I will not create a new course then. Please choose another name.")
+                else:
+                    ug : UserGroup = session.query(UserGroup).filter(UserGroup.GroupName == usergroup_name_tut).first()
+                    Usergroup.delete_group(session, ug)
+                
+            tutors = Usergroup.create_and_get_group(session, usergroup_name_tut)
+
+            # get a corresponding (empty) Usergroup
+            usergroup_name_ins: str = "instructors_" + name
+
+            if (
+                session.query(UserGroup).filter(UserGroup.GroupName == usergroup_name_ins).first()
+                is not None
+            ):
+                result = await self.client.send_response(Response.build_message(message, content=f"Usergroup for Instructors of this course already exists. Dou you want to replace it with a new empty Usergroup for your course?"))
+                if result["result"] != "success":
+                    Streamgroup._delete_group(session, streams)
+                    raise DMError("Could not send message to user")
+            
+                result, msg = await UserInput.confirm(self.client, result["id"])
+                if not result:
+                    Streamgroup._delete_group(session, streams)
+                    Usergroup.delete_group(session, tutors)
+                    raise DMError("Ok, I will not create a new course then. Please choose another name.")
+                else:
+                    ug : UserGroup = session.query(UserGroup).filter(UserGroup.GroupName == usergroup_name_ins).first()
+                    Usergroup.delete_group(session, ug)
+        
+            instructors = Usergroup.create_and_get_group(session, usergroup_name_ins)
 
             # get a corresponding (empty) Stream for Tutors
-            tutors_stream_name: str = name + "-Tutoren"
-            tutors_stream_desc: str = f"Interner Stream für {name}-Tutoren"
-            await self.invoke_other_cmd(
-                Streams.create,
-                sender,
-                session,
-                message,
-                name=tutors_stream_name,
-                description=tutors_stream_desc,
+            tutors_stream_name : str = name + "-Tutors"
+            tutors_stream_desc : list[str] = [f"Internal Stream for {name}-Tutors"]
+            if lan == "de":
+                tutors_stream_name: str = name + "-Tutoren"
+                tutors_stream_desc: list[str] = [f"Interner Stream für {name}-Tutoren"]
+
+            tut_ex = await sender.client.get_stream_id_by_name(tutors_stream_name)
+
+            if tut_ex is not None:
+                result = await self.client.send_response(Response.build_message(message, content=f"Stream for Tutors of this course already exists. Dou you want to replace it with a new empty Stream for your course?"))
+                if result["result"] != "success":
+                    Streamgroup._delete_group(session, streams)
+                    Usergroup.delete_group(session, tutors)
+                    Usergroup.delete_group(session, instructors)
+                    raise DMError("Could not send message to user")
+            
+                result, msg = await UserInput.confirm(self.client, result["id"])
+                if not result:
+                    Streamgroup._delete_group(session, streams)
+                    Usergroup.delete_group(session, tutors)
+                    Usergroup.delete_group(session, instructors)
+                    raise DMError("Ok, I will not create a new course then. Please choose another name.")
+                else:
+                    await sender.client.delete_stream(tut_ex)
+
+            result: dict[str, Any] = await sender.client.add_subscriptions(
+                streams=[{"name": tutors_stream_name, "description": " ".join(tutors_stream_desc)}]
             )
+            if result["result"] != "success":
+                Streamgroup._delete_group(session, streams)
+                Usergroup.delete_group(session, tutors)
+                Usergroup.delete_group(session, instructors)
+                raise DMError(result["msg"])
+            
+            
             tutors_stream: ZulipStream = ZulipStream(f"#**{tutors_stream_name}**")
             await tutors_stream
+            Streamgroup._add_zulip_streams(session, [tutors_stream], streams)
 
             # get a corresponding (empty) Stream for Instructors or None
             instructor_stream: ZulipStream | None = None
             if opts.i:
+
                 instructor_stream_name: str = name + "-Instructors"
-                instructor_stream_desc: str = f"Interner Stream für Intructors von {name}"
-                await self.invoke_other_cmd(
-                    Streams.create,
-                    sender,
-                    session,
-                    message,
-                    name=instructor_stream_name,
-                    description=instructor_stream_desc,
+                instructor_stream_desc: list[str] = [f"Internal Stream for Instructors of {name}"]
+                if lan == "de":
+                    instructor_stream_name: str = name + "-Instructors"
+                    instructor_stream_desc: list[str] = [f"Interner Stream für {name}-Instructors"]
+
+                ins_ex = await sender.client.get_stream_id_by_name(instructor_stream_name)
+
+                if ins_ex is not None:
+                    result = await self.client.send_response(Response.build_message(message, content=f"Stream for Instructors of this course already exists. Dou you want to replace it with a new empty Stream for your course?"))
+                    if result["result"] != "success":
+                        Streamgroup._delete_group(session, streams)
+                        Usergroup.delete_group(session, tutors)
+                        Usergroup.delete_group(session, instructors)
+                        await sender.client.delete_stream(await tutors_stream.id)
+                        raise DMError("Could not send message to user")
+                
+                    result, msg = await UserInput.confirm(self.client, result["id"])
+                    if not result:
+                        Streamgroup._delete_group(session, streams)
+                        Usergroup.delete_group(session, tutors)
+                        Usergroup.delete_group(session, instructors)
+                        await sender.client.delete_stream(tutors_stream.id)
+                        raise DMError("Ok, I will not create a new course then. Please choose another name.")
+                    else:
+                        await sender.client.delete_stream(ins_ex)
+
+                result: dict[str, Any] = await sender.client.add_subscriptions(
+                    streams=[{"name": instructor_stream_name, "description": " ".join(instructor_stream_desc)}]
                 )
-                instructor_stream: ZulipStream = ZulipStream(f"#**{tutors_stream_name}**")
+                if result["result"] != "success":
+                    Streamgroup._delete_group(session, streams)
+                    Usergroup.delete_group(session, tutors)
+                    Usergroup.delete_group(session, instructors)
+                    await sender.client.delete_stream(tutors_stream.id)
+                    raise DMError(result["msg"])
+
+                
+                instructor_stream: ZulipStream = ZulipStream(f"#**{instructor_stream_name}**")
                 await instructor_stream
+                Streamgroup._add_zulip_streams(session, [instructor_stream], streams)
  
             # create and add a Course to the DB
             course: CourseDB = CourseDB(
                 CourseName=name,
-                Streams=streams,
-                Tutors=tutors,
+                CourseLanguage=lan,
+                Streams=streams.StreamGroupId,
+                TutorsUserGroup=tutors.GroupId,
+                InstructorsUserGroup=instructors.GroupId,
                 TutorStream=tutors_stream,
                 InstructorStream=instructor_stream
             )
@@ -218,7 +340,7 @@ class Course(PluginCommandMixin, Plugin):
             session.add(course)
             session.commit()
 
-        except (DMError, sqlalchemy.exc.IntegrityError) as e:
+        except (sqlalchemy.exc.IntegrityError) as e:
             session.rollback()
             raise DMError(f"Something went wrong when creating the course `{name}` :botsweat:")
 
@@ -241,6 +363,12 @@ class Course(PluginCommandMixin, Plugin):
         description="The name of a Usergroup containing the tutors for this course.",
     )
     @opt(
+        "i",
+        long_opt="instructors",
+        type=UserGroup.GroupName,
+        description="The name of a Usergroup containing the instructors for this course.",
+    )
+    @opt(
         "tuts",
         long_opt="tutor_stream",
         type=ZulipStream,
@@ -252,11 +380,6 @@ class Course(PluginCommandMixin, Plugin):
         type=ZulipStream,
         description="The course has an additional Stream for Instructors.",
     )
-    @opt(
-        "s",
-        long_opt="standard",
-        description="Add standard steams to the course (Allgemein, Organisation, Feedback, Ankündigungen, Technik, Memes)."
-    )
     async def create(
         self,
         sender: ZulipUser,
@@ -266,36 +389,62 @@ class Course(PluginCommandMixin, Plugin):
         message: dict[str, Any],
     ) -> AsyncGenerator[response_type, None]:
         """
-        Create a course with corresponding contents
+        Create a new course with corresponding contents
         """
         name: str = args.name
         streamgroup_emoji: str = args.emoji
+        streams: StreamGroup | None = None
 
         if (
             session.query(CourseDB).filter(CourseDB.CourseName == name).first()
             is not None
         ):
-            raise DMError(f"Course `{name}` already exists")
+            result = await self.client.send_response(Response.build_message(message, content=f"Course `{name}` already exists. Dou you want to replace it with the new course?"))
+            if result["result"] != "success":
+                raise DMError("Could not send message to user")
+        
+            result, msg = await UserInput.confirm(self.client, result["id"])
+            if not result:
+                yield DMResponse("Ok, I will not create a new course. Please choose another name.")
+                return
         
         if (
             session.query(StreamGroup).filter(StreamGroup.StreamGroupEmote==streamgroup_emoji).first()
             is not None
         ):
-            raise DMError(f"Course with :{streamgroup_emoji}: already exists")
+            result = await self.client.send_response(Response.build_message(message, content=f"A Streamgroup with :{streamgroup_emoji}: already exists. Dou you want to replace it with a new Streamgroup for your course?"))
+            if result["result"] != "success":
+                raise DMError("Could not send message to user")
+        
+            result, msg = await UserInput.confirm(self.client, result["id"])
+            if not result:
+                res = await self.client.send_response(Response.build_message(message, content=f"Do you want to use the existing Streamgroup with :{streamgroup_emoji}: for your course?"))
+                if res["result"] != "success":
+                    raise DMError("Could not send message to user")
+                
+                res, msg = await UserInput.confirm(self.client, res["id"])
+                if not res:
+                    yield DMResponse(f"Ok, I will not create a new course then. Please choose another emote because :{streamgroup_emoji}: is already in use :botsad:")
+                    return
+                else:
+                    streams : StreamGroup = session.query(StreamGroup).filter(StreamGroup.StreamGroupEmote==streamgroup_emoji).first()
+            else: 
+                sg : StreamGroup = session.query(StreamGroup).filter(StreamGroup.StreamGroupEmote==streamgroup_emoji).first()
+                Streamgroup._delete_group(session, sg)
+
+        resLan = await self.client.send_response(Response.build_message(message, content=f"Is your course held in English or German?"))
+        lan, _ = await UserInput.i8n_german_or_english(self.client, resLan["id"])
 
         try:
             # get corresponding Streamgroup
-            streams: StreamGroup
-            if opts.s:
-                streams = opts.s
-            else:
-                streamgroup_name: str = "streams_" + name
-                streams = Streamgroup._create_and_get_group(
-                    session, streamgroup_name, streamgroup_emoji
-                )
-
-            if opts.s:
-                await Course.add_standard_streams(self, sender,session, message, name, streams)
+            if not  streams:
+                if opts.s:
+                    streams = opts.s
+                else:
+                    streamgroup_name: str = "streams_" + name
+                    streams = Streamgroup._create_and_get_group(
+                        session, streamgroup_name, streamgroup_emoji
+                    )
 
             # get corresponding Usergroup
             tutors: Usergroup
@@ -303,53 +452,154 @@ class Course(PluginCommandMixin, Plugin):
                 tutors = opts.t
             else:
                 usergroup_name: str = "tutors_" + name
+
+                if (
+                    session.query(UserGroup).filter(UserGroup.GroupName == usergroup_name).first()
+                    is not None
+                ):
+                    result = await self.client.send_response(Response.build_message(message, content=f"Usergroup for Tutors of this course already exists. Dou you want to replace it with a new empty Usergroup for your course?"))
+                    if result["result"] != "success":
+                        Streamgroup._delete_group(session, streams)
+                        raise DMError("Could not send message to user")
+                
+                    result, msg = await UserInput.confirm(self.client, result["id"])
+                    if not result:
+                        Streamgroup._delete_group(session, streams)
+                        raise DMError("Ok, I will not create a new course then. Please choose another name.")
+                    else:
+                        ug : UserGroup = session.query(UserGroup).filter(UserGroup.GroupName == usergroup_name).first()
+                        Usergroup.delete_group(session, ug)
+                    
                 tutors = Usergroup.create_and_get_group(session, usergroup_name)
+
+            # get corresponding Usergroup
+            instructors: Usergroup
+            if opts.i:
+                instructors = opts.i
+            else:
+                usergroup_name: str = "instructors_" + name
+
+                if (
+                    session.query(UserGroup).filter(UserGroup.GroupName == usergroup_name).first()
+                    is not None
+                ):
+                    result = await self.client.send_response(Response.build_message(message, content=f"Usergroup for Instructors of this course already exists. Dou you want to replace it with a new empty Usergroup for your course?"))
+                    if result["result"] != "success":
+                        Streamgroup._delete_group(session, streams)
+                        raise DMError("Could not send message to user")
+                
+                    result, msg = await UserInput.confirm(self.client, result["id"])
+                    if not result:
+                        Streamgroup._delete_group(session, streams)
+                        Usergroup.delete_group(session, tutors)
+                        raise DMError("Ok, I will not create a new course then. Please choose another name.")
+                    else:
+                        ug : UserGroup = session.query(UserGroup).filter(UserGroup.GroupName == usergroup_name).first()
+                        Usergroup.delete_group(session, ug)
+            
+                instructors = Usergroup.create_and_get_group(session, usergroup_name)
 
             # get corresponding Stream for Tutors
             tutors_stream: ZulipStream
             if opts.tuts:
                 tutors_stream = opts.tuts
             else:
-                tutors_stream_name: str = name + "-Tutoren"
-                tutors_stream_desc: str = f"Interner Stream für {name}-Tutoren"
-                await self.invoke_other_cmd(
-                    Streams.create,
-                    sender,
-                    session,
-                    message,
-                    name=tutors_stream_name,
-                    description=tutors_stream_desc,
+                tutors_stream_name: str = name + "-Tutors"
+                tutors_stream_desc: list[str] = [f"Internal Stream for {name}-Tutors"]
+                if lan == "de":
+                    tutors_stream_name: str = name + "-Tutoren"
+                    tutors_stream_desc: list[str] = [f"Interner Stream für {name}-Tutoren"]
+               
+                tut_ex = await sender.client.get_stream_id_by_name(tutors_stream_name)
+
+                if tut_ex is not None:
+                    result = await self.client.send_response(Response.build_message(message, content=f"Stream for Tutors of this course already exists. Dou you want to replace it with a new empty Stream for your course?"))
+                    if result["result"] != "success":
+                        Streamgroup._delete_group(session, streams)
+                        Usergroup.delete_group(session, tutors)
+                        Usergroup.delete_group(session, instructors)
+                        raise DMError("Could not send message to user")
+                
+                    result, msg = await UserInput.confirm(self.client, result["id"])
+                    if not result:
+                        Streamgroup._delete_group(session, streams)
+                        Usergroup.delete_group(session, tutors)
+                        Usergroup.delete_group(session, instructors)
+                        raise DMError("Ok, I will not create a new course then. Please choose another name.")
+                    else:
+                        await sender.client.delete_stream(tut_ex)
+
+                result: dict[str, Any] = await sender.client.add_subscriptions(
+                    streams=[{"name": tutors_stream_name, "description": " ".join(tutors_stream_desc)}]
                 )
+                if result["result"] != "success":
+                    Streamgroup._delete_group(session, streams)
+                    Usergroup.delete_group(session, tutors)
+                    Usergroup.delete_group(session, instructors)
+                    raise DMError(result["msg"])
+              
                 tutors_stream = ZulipStream(f"#**{tutors_stream_name}**")
                 await tutors_stream
 
-            # get a corresponding (empty) Stream for Instructors or None
+
+            # get a corresponding Stream for Instructors or None
             instructor_stream: ZulipStream | None = None
             if opts.ins:
                 instructor_stream = opts.ins
             else:
                 instructor_stream_name: str = name + "-Instructors"
-                instructor_stream_desc: str = f"Interner Stream für Intructors von {name}"
-                await self.invoke_other_cmd(
-                    Streams.create,
-                    sender,
-                    session,
-                    message,
-                    name=instructor_stream_name,
-                    description=instructor_stream_desc,
+                instructor_stream_desc: list[str] = [f"Internal Stream for Instructors of {name}"]
+                if lan == "de":
+                    instructor_stream_name: str = name + "-Instructors"
+                    instructor_stream_desc: list[str] = [f"Interner Stream für {name}-Instructors"]
+
+                ins_ex = await sender.client.get_stream_id_by_name(instructor_stream_name)
+
+                if ins_ex is not None:
+                    result = await self.client.send_response(Response.build_message(message, content=f"Stream for Instructors of this course already exists. Dou you want to replace it with a new empty Stream for your course?"))
+                    if result["result"] != "success":
+                        Streamgroup._delete_group(session, streams)
+                        Usergroup.delete_group(session, tutors)
+                        Usergroup.delete_group(session, instructors)
+                        await sender.client.delete_stream(await tutors_stream.id)
+                        raise DMError("Could not send message to user")
+                
+                    result, msg = await UserInput.confirm(self.client, result["id"])
+                    if not result:
+                        Streamgroup._delete_group(session, streams)
+                        Usergroup.delete_group(session, tutors)
+                        Usergroup.delete_group(session, instructors)
+                        await sender.client.delete_stream(tutors_stream.id)
+                        raise DMError("Ok, I will not create a new course then. Please choose another name.")
+                    else:
+                        await sender.client.delete_stream(ins_ex)
+
+                result: dict[str, Any] = await sender.client.add_subscriptions(
+                    streams=[{"name": instructor_stream_name, "description": " ".join(instructor_stream_desc)}]
                 )
-                instructor_stream = ZulipStream(f"#**{tutors_stream_name}**")
+                if result["result"] != "success":
+                    Streamgroup._delete_group(session, streams)
+                    Usergroup.delete_group(session, tutors)
+                    Usergroup.delete_group(session, instructors)
+                    await sender.client.delete_stream(tutors_stream.id)
+                    raise DMError(result["msg"])
+                
+                instructor_stream = ZulipStream(f"#**{instructor_stream_name}**")
                 await instructor_stream
+
+            Streamgroup._add_zulip_streams(session, [tutors_stream, instructor_stream], streams)
  
             # create and add a Course to the DB
             course: CourseDB = CourseDB(
                 CourseName=name,
-                Streams=streams,
-                Tutors=tutors,
+                CourseLanguage=lan,
+                Streams=streams.StreamGroupId,
+                TutorsUserGroup=tutors.GroupId,
+                InstructorsUserGroup=instructors.GroupId,
                 TutorStream=tutors_stream,
                 InstructorStream=instructor_stream
             )
-
+         
             session.add(course)
             session.commit()
 
@@ -358,12 +608,85 @@ class Course(PluginCommandMixin, Plugin):
             await sender.client.subscribe_users(user_ids=tut_list,
                                                 stream_name=tutors_stream.name,
                                                 allow_private_streams=True)
+            
+            # subscribe instructors to Instructorstream
+            if opt.ins:
+                ins_list: list[int] = Usergroup.get_user_ids_for_group(session,instructors)
+                await sender.client.subscribe_users(user_ids=ins_list,
+                                                    stream_name=instructor_stream.name,
+                                                    allow_private_streams=True)
 
-        except (DMError, sqlalchemy.exc.IntegrityError) as e:
+        except (sqlalchemy.exc.IntegrityError) as e:
             session.rollback()
             raise DMError(f"Something went wrong when creating the course `{name}` :botsweat:")
 
         yield DMResponse(f"Course `{name}` created :bothappypad:")
+
+
+    @command
+    @privilege(Privilege.ADMIN)
+    @arg("course", type=CourseDB.CourseName,description="The name of the Course to add the streams to.")
+    @opt(
+        "a",
+        long_opt="all",
+        description="Add all standard steams to the course (Allgemein, Organisation, Feedback, Ankündigungen, Technik, Memes)."
+    )
+    @opt(
+        "g",
+        long_opt="general",
+        description="Add a general stream."
+    )
+    @opt(
+        "o",
+        long_opt="orga",
+        description="Add a stream for Organization."
+    )
+    @opt(
+        "f",
+        long_opt="feedback",
+        description="Add a stream for Feedback."
+    )
+    @opt(
+        "n",
+        long_opt="announcements",
+        description="Add a stream for Announcements."
+    )
+    @opt(
+        "m",
+        long_opt="memes",
+        description="Add a stream for Memes."
+    )
+    @opt(
+        "t",
+        long_opt="tech",
+        description="Add a stream for Tech-Support."
+    )
+    async def add_default_streams(
+        self,
+        sender: ZulipUser,
+        session: Session,
+        args: CommandParser.Args,
+        opts: CommandParser.Opts,
+        message: dict[str, Any],
+    ) -> AsyncGenerator[response_type, None]:
+        """
+        Add standard streams to a given course. If Streams with the same names already exist, they will be transferred and not replaced with new ones.
+        """
+        course: CourseDB = args.course 
+        lan : str = course.CourseLanguage
+        streams_id: str = course.Streams
+        stremgroup: StreamGroup = session.query(StreamGroup).filter(StreamGroup.StreamGroupId==streams_id).first()
+
+        if opts.a:
+            async for msg in Course.add_standard_streams(self, sender, session, message, course.CourseName, stremgroup, lan):
+                yield msg
+            
+        else:
+            async for msg in Course.add_standard_streams(self, sender, session, message, course.CourseName, stremgroup, lan, opts.g, opts.o, opts.f, opts.n, opts.m, opts.t):
+                yield msg
+
+        yield DMResponse(f"Standard Streams added to Course `{course.CourseName}`.")
+        
 
     @command
     @privilege(Privilege.ADMIN)
@@ -377,6 +700,11 @@ class Course(PluginCommandMixin, Plugin):
         "t",
         long_opt="tutors",
         description="Delete also Usergroup of Tutors.",
+    )
+    @opt(
+        "i",
+        long_opt="instructors",
+        description="Delete also Usergroup of Instructors.",
     )
     @opt(
         "tuts",
@@ -399,7 +727,8 @@ class Course(PluginCommandMixin, Plugin):
         
         course: CourseDB = args.course 
         streams_id: str = course.Streams
-        tut_ug_id:int = course.Tutors
+        tut_ug_id:int = course.TutorsUserGroup
+        ins_ug_id:int = course.InstructorsUserGroup
         tut_s: ZulipStream = course.TutorStream
         ins_s: ZulipStream = course.InstructorStream
 
@@ -411,23 +740,36 @@ class Course(PluginCommandMixin, Plugin):
             raise DMError(f"Could not delete Course `{course.CourseName}`.") from e
         
         if opts.s:
-            await self.invoke_other_cmd(
+            async for msg in self.invoke_other_cmd(
                 Streamgroup.delete,
                 sender,
                 session,
                 message,
                 group_id=streams_id
-                )
+            ):
+                yield msg
         
         if opts.t:
             tut_ug_name:str = Usergroup.get_name_by_id(session,tut_ug_id)
-            await self.invoke_other_cmd(
+            async for msg in self.invoke_other_cmd(
                 Usergroup.delete,
                 sender,
                 session,
                 message,
                 group=tut_ug_name
-                )
+            ):
+                yield msg
+            
+        if opts.i:
+            ins_ug_name:str = Usergroup.get_name_by_id(session,ins_ug_id)
+            async for msg in self.invoke_other_cmd(
+                Usergroup.delete,
+                sender,
+                session,
+                message,
+                group=ins_ug_name
+            ):
+                yield msg
             
         if opts.tuts:
             await sender.client.delete_stream(tut_s.id)
@@ -506,9 +848,20 @@ class Course(PluginCommandMixin, Plugin):
             message: dict[str, Any],
         ) -> AsyncGenerator[response_type, None]:
             """
-            Clear a course (Strems/Tutors), but keep the underlying components (Streamgroup/UserGroup).
+            Clear a course (Streams/Tutors), but keep the underlying components (Streamgroup/UserGroup).
             """
             course: CourseDB = args.course
+
+            if opts.s:
+                sg : StreamGroup = session.query(StreamGroup).filter(StreamGroup.StreamGroupId==course.Streams).first()
+                streams : list[str] = Streamgroup._get_stream_names(session, sender.client, [sg])
+                Streamgroup._remove_streams(session, sender, sg, streams)
+            
+            if opts.t:
+                tutors: UserGroup = session.query(UserGroup).filter(UserGroup.GroupId==course.TutorsUserGroup).first()
+                users : list[ZulipUser] = Usergroup.get_users_for_group(session, tutors)
+                for user in users:
+                    Usergroup.remove_user_from_group(session, user ,tutors)
 
 
 
@@ -516,88 +869,136 @@ class Course(PluginCommandMixin, Plugin):
     #       CLASS METHODS
     # ========================================================================================================================
     @staticmethod
-    async def add_standard_streams(plugin:Plugin, sender:ZulipUser, session:Session, message:dict[str, Any], name:str, sg:StreamGroup):
+    async def add_standard_streams(plugin:Plugin, sender:ZulipUser, session:Session, message:dict[str, Any], name:str, sg:StreamGroup, lan:str
+                                   , g: bool = True, o: bool = True, f: bool = True, n: bool = True, m: bool = True, t: bool = True):
+        
+        allg_stream = None
+        org_stream = None
+        fb_stream = None
+        ank_stream = None
+        tech_stream = None
+        memes_stream = None
+
         # get a corresponding Streams
-        allg_name: str = name + "-Allgemein"
-        allg_desc: str = f"Willkommen im allgemeinen Zulip Stream von dem Kurs {name}"
-        await plugin.invoke_other_cmd(
-            Streams.create,
-            sender,
-            session,
-            message,
-            name=allg_name,
-            description=allg_desc,
-        )
-        allg_stream: ZulipStream = ZulipStream(f"#**{allg_name}**")
-        await allg_stream
+        if g:
+            allg_name: str = name + "-General"
+            allg_desc: list[str] = [f"Welcome to the Stream for general info to the course {name}"]
+            if lan == "de":
+                allg_name: str = name + "-Allgemein"
+                allg_desc: list[str] = [f"Willkommen im allgemeinen Zulip Stream von dem Kurs {name}"]
 
-        org_name: str = name + "-Organisation"
-        org_desc: str = f"Willkommen im Orga-Zulip Stream von dem Kurs {name}"
-        await plugin.invoke_other_cmd(
-            Streams.create,
-            sender,
-            session,
-            message,
-            name=org_name,
-            description=org_desc,
-        )
-        org_stream: ZulipStream = ZulipStream(f"#**{org_name}**")
-        await org_stream
+            ex = await sender.client.get_stream_id_by_name(allg_name)
 
-        fb_name: str = name + "-Feedback"
-        fb_desc: str = f"Willkommen im Feedback Zulip Stream von dem Kurs {name}"
-        await plugin.invoke_other_cmd(
-            Streams.create,
-            sender,
-            session,
-            message,
-            name=fb_name,
-            description=fb_desc,
-        )
-        fb_stream: ZulipStream = ZulipStream(f"#**{fb_name}**")
-        await fb_stream
+            if ex is None:
+                    result: dict[str, Any] = await sender.client.add_subscriptions(
+                        streams=[{"name": allg_name, "description": " ".join(allg_desc)}]
+                    )
+                    if result["result"] != "success":
+                        yield DMResponse(result["msg"])
 
-        ank_name: str = name + "-Ankündigungen"
-        ank_desc: str = f"Willkommen im Zulip Stream für Ankündigungen von dem Kurs {name}"
-        await plugin.invoke_other_cmd(
-            Streams.create,
-            sender,
-            session,
-            message,
-            name=ank_name,
-            description=ank_desc,
-        )
-        ank_stream: ZulipStream = ZulipStream(f"#**{ank_name}**")
-        await ank_stream
+            allg_stream: ZulipStream = ZulipStream(f"#**{allg_name}**")
+            await allg_stream
 
-        tech_name: str = name + "-Technik"
-        tech_desc: str = f"Willkommen im Technik Zulip Stream von dem Kurs {name}"
-        await plugin.invoke_other_cmd(
-            Streams.create,
-            sender,
-            session,
-            message,
-            name=tech_name,
-            description=tech_desc,
-        )
-        tech_stream: ZulipStream = ZulipStream(f"#**{tech_name}**")
-        await tech_name
+        if o:
+            org_name: str = name + "-Organization"
+            org_desc: list[str] = [f"Welcome to the organizational Stream of the course {name}"]
+            if lan == "de":
+                org_name: str = name + "-Organisation"
+                org_desc: list[str] = [f"Willkommen im Orga-Zulip Stream von dem Kurs {name}"]
 
-        memes_name: str = name + "-Memes"
-        memes_desc: str = f"Willkommen im Meme Zulip Stream von dem Kurs {name}"
-        await plugin.invoke_other_cmd(
-            Streams.create,
-            sender,
-            session,
-            message,
-            name=memes_name,
-            description=memes_desc,
-        )
-        memes_stream: ZulipStream = ZulipStream(f"#**{memes_name}**")
-        await memes_stream
+            ex = await sender.client.get_stream_id_by_name(org_name)
+
+            if ex is None:
+                    result: dict[str, Any] = await sender.client.add_subscriptions(
+                        streams=[{"name": org_name, "description": " ".join(org_desc)}]
+                    )
+                    if result["result"] != "success":
+                        yield DMResponse(result["msg"])
+                    
+            org_stream: ZulipStream = ZulipStream(f"#**{org_name}**")
+            await org_stream
+
+        if f:
+            fb_name: str = name + "-Feedback"
+            fb_desc: list[str] = [f"Welcome to the Stream for Feedback to the course {name}"]
+            if lan == "de":
+                fb_name: str = name + "-Feedback"
+                fb_desc: list[str] = [f"Willkommen im Feedback Zulip Stream von dem Kurs {name}"]
+            
+
+            ex = await sender.client.get_stream_id_by_name(fb_name)
+
+            if ex is None:
+                    result: dict[str, Any] = await sender.client.add_subscriptions(
+                        streams=[{"name": fb_name, "description": " ".join(fb_desc)}]
+                    )
+                    if result["result"] != "success":
+                        yield DMResponse(result["msg"])
+
+            fb_stream: ZulipStream = ZulipStream(f"#**{fb_name}**")
+            await fb_stream
+
+        if n:
+            ank_name: str = name + "-Announcements"
+            ank_desc: list[str] = [f"Welcome to the Stream for Announcements for the course {name}"]
+            if lan == "de":
+                ank_name: str = name + "-Ankündigungen"
+                ank_desc: list[str] = [f"Willkommen im Zulip Stream für Ankündigungen von dem Kurs {name}"]
+            
+            ex = await sender.client.get_stream_id_by_name(ank_name)
+
+            if ex is None:
+                    result: dict[str, Any] = await sender.client.add_subscriptions(
+                        streams=[{"name": ank_name, "description": " ".join(ank_desc)}]
+                    )
+                    if result["result"] != "success":
+                        yield DMResponse(result["msg"])
+
+            ank_stream: ZulipStream = ZulipStream(f"#**{ank_name}**")
+            await ank_stream
+
+        if t:
+            tech_name: str = name + "-TechSupport"
+            tech_desc: list[str] = [f"Welcome to the Stream for Tech-Support in the course {name}"]
+            if lan == "de":
+                tech_name: str = name + "-Technik"
+                tech_desc: list[str] = [f"Willkommen im Technik Zulip Stream von dem Kurs {name}"]
+           
+            ex = await sender.client.get_stream_id_by_name(tech_name)
+
+            if ex is None:
+                    result: dict[str, Any] = await sender.client.add_subscriptions(
+                        streams=[{"name": tech_name, "description": " ".join(tech_desc)}]
+                    )
+                    if result["result"] != "success":
+                        yield DMResponse(result["msg"])
+
+            tech_stream: ZulipStream = ZulipStream(f"#**{tech_name}**")
+            await tech_stream
+
+        if m:
+            memes_name: str = name + "-Memes"
+            memes_desc: list[str] = [f"Welcome to the Stream for top-quality Memes of the course {name}"]
+            if lan == "de":
+                memes_name: str = name + "-Memes"
+                memes_desc: list[str] = [f"Willkommen im Meme Zulip Stream von dem Kurs {name}"]
+            
+            ex = await sender.client.get_stream_id_by_name(memes_name)
+
+            if ex is None:
+                    result: dict[str, Any] = await sender.client.add_subscriptions(
+                        streams=[{"name": memes_name, "description": " ".join(memes_desc)}]
+                    )
+                    if result["result"] != "success":
+                        yield DMResponse(result["msg"])
+
+            memes_stream: ZulipStream = ZulipStream(f"#**{memes_name}**")
+            await memes_stream
+
+        to_add = [ s for s in [allg_stream, org_stream, fb_stream, ank_stream, tech_stream, memes_stream] if s is not None ]
 
         Streamgroup._add_zulip_streams(session,
-                                       [allg_stream, org_stream, fb_stream, ank_stream, tech_stream, memes_stream],
+                                       to_add,
                                        sg)
         
 
@@ -639,31 +1040,63 @@ class Course(PluginCommandMixin, Plugin):
         Get the StreamGroup of a given Course.
         """
         id: int = course.Streams
-        return session.query(StreamGroup).filter(StreamGroup.CouseId == id).one()
+        return session.query(StreamGroup).filter(StreamGroup.StreamGroupId == id).one()
+    
+    @staticmethod
+    def _get_emoji(course: CourseDB, session: Session) -> str:
+        """
+        Get the Emoji of the StreamGroup associated with a given Course.
+        """
+        sg : StreamGroup = Course._get_streamgroup(course, session)
+        return sg.StreamGroupEmote
 
     @staticmethod
     def _get_tutorgroup(course: CourseDB, session: Session) -> UserGroup:
         """
         Get the Tutor-UserGroup of a given Course.
         """
-        id: int = course.Tutors
+        id: int = course.TutorsUserGroup
         return session.query(UserGroup).filter(UserGroup.GroupId == id).one()
 
     @staticmethod
-    async def _get_tutors(course: CourseDB, session: Session) -> list[ZulipUser]:
+    def _get_tutors(course: CourseDB, session: Session) -> list[ZulipUser]:
         """
         Get the Tutors of a Course a list of ZulipUsers.
         """
         ug: UserGroup = Course._get_tutorgroup(course, session)
         return Usergroup.get_users_for_group(session, ug)
+    
+    @staticmethod
+    def _get_instructorgroup(course: CourseDB, session: Session) -> UserGroup:
+        """
+        Get the Tutor-UserGroup of a given Course.
+        """
+        id: int = course.InstructorsUserGroup
+        return session.query(UserGroup).filter(UserGroup.GroupId == id).one()
 
     @staticmethod
-    async def _get_streams(course: CourseDB, session: Session) -> list[ZulipStream]:
+    def _get_instructors(course: CourseDB, session: Session) -> list[ZulipUser]:
         """
-        Get the Streams of a Course a list of ZulipStreams.
+        Get the Tutors of a Course a list of ZulipUsers.
+        """
+        ug: UserGroup = Course._get_instructorgroup(course, session)
+        return Usergroup.get_users_for_group(session, ug)
+
+    @staticmethod
+    def _get_streams(course: CourseDB, session: Session) -> list[ZulipStream]:
+        """
+        Get the Streams of a Course as list of ZulipStreams.
         """
         sg: StreamGroup = Course._get_streamgroup(course, session)
         return Streamgroup._get_streams(session, sg)
+    
+    @staticmethod
+    async def _get_stream_names(session: Session, client: AsyncClient, course: CourseDB) -> list[str]:
+        """
+        Get the Stream Names of a Course as list of strings.
+        """
+        sg: StreamGroup = Course._get_streamgroup(course, session)
+        return await Streamgroup._get_stream_names(session, client, [sg])
     
     @staticmethod
     def _update_streamgroup(course: CourseDB, session: Session, group:StreamGroup) -> None:
@@ -694,7 +1127,7 @@ class Course(PluginCommandMixin, Plugin):
         if (oldTG == group):
             raise DMError("The given Usergroup is already set as Tutorgroup for this course.")
         
-        stmt = update(CourseDB).where(CourseDB.CourseId==course.CourseId).values(Tutors=group)
+        stmt = update(CourseDB).where(CourseDB.CourseId==course.CourseId).values(TutorsUserGroup=group.GroupId)
         try:
             session.execute(stmt)
             session.query(UserGroup).filter(UserGroup.GroupId==oldTG.GroupId).delete()
@@ -702,6 +1135,24 @@ class Course(PluginCommandMixin, Plugin):
         except sqlalchemy.exc.IntegrityError as e:
             session.rollback()
             raise DMError("Could not update Tutors :botsad:")
+        
+    @staticmethod
+    def _update_instructorgroup(course: CourseDB, session: Session, group: UserGroup) -> None:
+        """
+        Set the Tutor-UserGroup of a given Course.
+        """
+        oldIG : UserGroup = Course._get_instructorgroup(course, session)
+        if (oldIG == group):
+            raise DMError("The given Usergroup is already set as Instructorgroup for this course.")
+        
+        stmt = update(CourseDB).where(CourseDB.CourseId==course.CourseId).values(InstructorsUserGroup=group)
+        try:
+            session.execute(stmt)
+            session.query(UserGroup).filter(UserGroup.GroupId==oldIG.GroupId).delete()
+            session.commit()
+        except sqlalchemy.exc.IntegrityError as e:
+            session.rollback()
+            raise DMError("Could not update Instructors :botsad:")
 
     @staticmethod
     async def _update_tutorstream(course:CourseDB, session:Session, client:AsyncClient, stream: ZulipStream) -> None:
