@@ -23,8 +23,8 @@ from typing import Any, Iterable, Type, TypeVar
 from zulip import Client as ZulipClient
 from tumcsbot.lib import response
 from tumcsbot.lib import utils
-from tumcsbot.lib.db import DB
 from tumcsbot.lib.client import AsyncClient, PlublicStreams, PluginContext
+from tumcsbot.lib.db import DB
 from tumcsbot.plugin import (
     Event,
     Plugin,
@@ -94,6 +94,9 @@ class TumCSBot:
         # get plugin context
         client = ZulipClient(config_file=zuliprc, insecure=True)
         profile = client.get_profile()
+        if profile["result"] != "success":
+            raise Exception("Could not get profile of bot.") from Exception(profile)
+        
         self.plugin_context = PluginContext(
             bot_id=profile["user_id"],
             bot_mention=f"@**{profile['full_name']}**",
@@ -207,8 +210,6 @@ class TumCSBot:
 
                 # todo: handle other event types
                 if event.type == EventType.ZULIP:
-                    if event.data["type"] == "heartbeat":
-                        continue
                     try:
                         event.data = self.zulip_event_preprocess(event.data)
                     except Exception as exc:
@@ -222,7 +223,7 @@ class TumCSBot:
                             plugin.push_event(event)
                             found_responsible = True
 
-                    if not found_responsible:
+                    if not found_responsible and event.data["type"] != "heartbeat":
                         if command_name := event.data.get("message", {}).get("command_name", None):
                             with DB.session() as session:
                                 command_names = [str(cmd.name) for cmd in session.query(PluginTable).all()]
