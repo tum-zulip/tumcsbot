@@ -27,15 +27,24 @@ class UserInput(Plugin):
 
     pending_inputs: dict[int, asyncio.Queue] = {}
 
+    zulip_events = ["reaction", "message"]
+
     async def _get_previous_message(self, message: dict[str, Any]) -> dict[str, Any]:
-        response = await self.client.get_messages({"anchor": ["message_id"], "num_before": 1, "num_after": 0, "narrow": [{"operator": "sender", "operand": self.client.id}]})
+        response = await self.client.get_messages({"anchor": message["id"], "num_before": 1, "num_after": 0, "narrow": [{"operator": "sender", "operand": self.client.id}]})
         if response["result"] != "success":
+            logging.error(f"Could not get previous message: {response}")
             return {}
 
         msg = response["messages"][0]
 
+        print(msg["display_recipient"], message["display_recipient"])
+
         if msg["display_recipient"] != message["display_recipient"]:
             return {}
+        
+        print("-" * 80)
+        print(msg)
+        print("-" * 80)
         
         return msg
 
@@ -50,7 +59,7 @@ class UserInput(Plugin):
         return (event.data["type"] == "message"
                 and "message" in event.data
                 and len(list(UserInput.pending_inputs.keys())) > 0
-                and (await self._get_previous_message(event.data["message"]["id"])).get("id", -1) in UserInput.pending_inputs)
+                and (await self._get_previous_message(event.data["message"])).get("id", -1) in UserInput.pending_inputs)
 
     async def is_responsible(self, event: Event) -> bool:
         return (
@@ -65,7 +74,7 @@ class UserInput(Plugin):
             q = UserInput.pending_inputs[mid]
 
         elif event.data["type"] == "message":
-            prior = await self._get_previous_message(event.data["message"]["id"])
+            prior = await self._get_previous_message(event.data["message"])
             prior_id = prior.get("id", -1)
             q = UserInput.pending_inputs[prior_id]
 
