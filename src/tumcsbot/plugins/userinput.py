@@ -115,8 +115,9 @@ class UserInput(Plugin):
         await asyncio.sleep(.5)
 
         for emote in emotes_to_choose:
-            result = await client.send_response(Response.build_reaction_from_id(message_id, emote))
+            result = await client.send_response(Response.build_reaction({"id": message_id}, emote))
             if result["result"] != "success":
+                logging.error(result)
                 raise Exception(f"Could not send reaction to user: {emote}")
 
         # todo: handle if message_nak or message_ack was not successful
