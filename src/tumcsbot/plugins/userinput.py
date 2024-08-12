@@ -27,16 +27,17 @@ class UserInput(Plugin):
 
     pending_inputs: dict[int, asyncio.Queue] = {}
 
-    async def _get_previous_message(self, message_id: int) -> dict[str, Any]:
-        response = await self.client.get_messages({"anchor": message_id, "num_before": 1, "num_after": 0, "narrow": [{"operator": "sender", "operand": self.client.id}]})
+    async def _get_previous_message(self, message: dict[str, Any]) -> dict[str, Any]:
+        response = await self.client.get_messages({"anchor": ["message_id"], "num_before": 1, "num_after": 0, "narrow": [{"operator": "sender", "operand": self.client.id}]})
         if response["result"] != "success":
             return {}
+
+        msg = response["messages"][0]
+
+        if msg["display_recipient"] != message["display_recipient"]:
+            return {}
         
-        print("-" * 80)
-        print(response)
-        print("-" * 80)
-        
-        return response["messages"][0]
+        return msg
 
     async def is_responsible_reaction(self, event: Event) -> bool:
         return (event.data["type"] == "reaction"
