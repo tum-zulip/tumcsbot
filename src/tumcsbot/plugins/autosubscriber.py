@@ -25,6 +25,8 @@ from tumcsbot.tumcsbot import PlublicStreams
 
 class AutoSubscriber(Plugin):
     """Keep the bot subscribed to all public streams."""
+
+    zulip_events = ["stream"]
     
     def _init_plugin(self) -> None:
         self._db: DB = DB()
