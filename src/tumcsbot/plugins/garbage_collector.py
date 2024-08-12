@@ -18,12 +18,22 @@ from inspect import cleandoc
 import logging
 import time
 from typing import Any, Iterable
+
+from sqlalchemy import Column
 from tumcsbot.lib.conf import Conf
+from tumcsbot.lib.db import DB, TableBase
 from tumcsbot.lib.response import Response
 from tumcsbot.lib.types import ZulipUser, ZulipStream
 from tumcsbot.plugin import Event,Plugin
 from tumcsbot.plugins.userinput import UserInput
 
+
+class GarbageCollectorIgnoreStreamsTable(TableBase):
+    __tablename__ = "GarbageCollectorIgnoreStreams"
+
+    Stream = Column(ZulipStream, unique=True, primary_key=True, autoincrement=False)
+
+    
 
 
 class GarbageCollector(Plugin):
@@ -95,7 +105,15 @@ class GarbageCollector(Plugin):
                 streams_to_collect: dict[int, ZulipStream] = {}
                 stream_admin_members: dict[int, frozenset[ZulipUser]] = {}
                 admins = await self._get_admin_users()
+
+                with DB.session() as session:
+                    ignore = session.query(GarbageCollectorIgnoreStreamsTable.Stream).all()
+                    ignore = [s.Stream.id for s in ignore]
+
                 for stream in strams["streams"]:
+                    if stream["stream_id"] in ignore:
+                        continue
+                    
                     if await self._stream_requires_collection(stream, threshhold):
                         stream = ZulipStream(stream["stream_id"])
                         await stream
@@ -116,17 +134,22 @@ class GarbageCollector(Plugin):
                     admins = stream_admin_members[streams[0].id]
                     streams_by_admins[key] = (streams, admins)
 
+                gc_tasks = []
                 for streams, admins in streams_by_admins.values():
-                    await self._garbage_collect(streams, bot_owner, admins, time_to_responde)
+                    gc_tasks.append(self._garbage_collect(streams, bot_owner, admins, time_to_responde))
 
-                await asyncio.sleep(60)
+                
+                # await all tasks
+                await asyncio.gather(*gc_tasks)
+
+                await asyncio.sleep(10)
         except asyncio.CancelledError:
             pass
         except Exception as e:
             logging.exception(e)
 
             # wait before starting the next task to avoid rate limiting
-            await asyncio.sleep(1)
+            await asyncio.sleep(60)
         finally:
             self._garbage_collector_task = None
 
@@ -182,7 +205,7 @@ class GarbageCollector(Plugin):
         for stream in streams:
             self.pending_garbage_collections.append(stream.id)
 
-        content = GarbageCollector.ASK_TO_KEEP_STREAMS.format(', '.join([user.mention for user in admins_in_streams]), ', '.join([stream.mention for stream in streams]), bot_owner.mention)
+        content = GarbageCollector.ASK_TO_KEEP_STREAMS.format(', '.join([user.mention for user in admins_in_streams if user.id != self.client.id]), ', '.join([stream.mention for stream in streams]), bot_owner.mention)
         response = await self.client.send_response(Response.build_message(None, content=content, to=[u.id for u in admins_in_streams], msg_type="private"))
 
         if response["result"] != "success":
@@ -191,9 +214,9 @@ class GarbageCollector(Plugin):
         
         m_id = response["id"]
 
-        result, _ = await UserInput.confirm(self.client, m_id, timeout=time_to_responde)
+        result, _ = await UserInput.choose(self.client, m_id, ["trash_can", "floppy_disk"], timeout=time_to_responde)
 
-        if not result:
+        if result is not None and result == "trash_can":
             for stream in streams:
                 self.pending_garbage_collections.remove(stream.id)
                 logging.info("deleting stream %s", stream.name)

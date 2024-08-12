@@ -3,15 +3,19 @@
 # See LICENSE file for copyright and license details.
 # TUM CS Bot - https://github.com/ro-i/tumcsbot
 
+import asyncio
+import logging
 from typing import Any, Iterable
 
 from tumcsbot.lib.command_parser import CommandParser
 from tumcsbot.lib.conf import Conf
 from tumcsbot.lib.response import Response
-from tumcsbot.lib.types import DMResponse, Privilege, ZulipUser
+from tumcsbot.lib.types import DMResponse, PartialError, PartialSuccess, Privilege, ZulipStream, ZulipUser
 from tumcsbot.plugin import Event, Plugin, PluginCommandMixin
 from tumcsbot.plugin_decorators import arg, command, opt, privilege
 
+from tumcsbot.plugins.garbage_collector import GarbageCollectorIgnoreStreamsTable
+from tumcsbot.plugins.userinput import UserInput
 
 class GCConfig(PluginCommandMixin, Plugin):
     """
@@ -115,3 +119,67 @@ class GCConfig(PluginCommandMixin, Plugin):
         Conf.set("garbage_collector_time_to_responde_seconds", str(time_to_responde))
 
         yield DMResponse(f"Time to responde set to {time_to_responde} seconds.")
+
+
+    @command
+    @arg("streams", ZulipStream, description="The streams to ignore by the garbage collector", greedy=True)
+    async def ignore(
+        self,
+        sender: ZulipUser,
+        session,
+        args: CommandParser.Args,
+        opts: CommandParser.Opts,
+        message: dict[str, Any],
+    ) -> Iterable[Response]:
+        """
+        Ignore streams by the garbage collector.
+        """
+        streams = args.streams
+
+        already_ignored = session.query(GarbageCollectorIgnoreStreamsTable).all()
+        already_ignored = [s.Stream.id for s in already_ignored]
+        try:
+            for stream in streams:
+                if stream.id in already_ignored:
+                    yield PartialError(f"{stream.mention} is already ignored.")
+                    continue
+
+                session.add(GarbageCollectorIgnoreStreamsTable(Stream=stream))
+                yield PartialSuccess(f"{stream.mention} is now ignored.")
+
+            session.commit()
+        except Exception as e:
+            session.rollback()
+            logging.exception(e)
+            yield DMResponse(f"Error: {e}")
+            return
+        
+        for s in streams:
+            await s
+
+
+    @command
+    async def test(
+        self,
+        sender: ZulipUser,
+        _session,
+        args: CommandParser.Args,
+        opts: CommandParser.Opts,
+        message: dict[str, Any],
+    ) -> Iterable[Response]:
+        response1 = await self.client.send_response(Response.build_message(message, "Test successful."))
+
+        response2 = await self.client.send_response(Response.build_message(None, "Test successful.", to=[sender.id, 10], msg_type="private"))
+
+        coro1 = UserInput.choose(self.client, response1["id"], ["check", "cross_mark"])
+        coro2 = UserInput.choose(self.client, response2["id"], ["check", "cross_mark"])
+
+
+        res = await asyncio.gather(coro1, coro2)
+
+        emote1, msg1 = res[0]
+        emote2, msg2 = res[1]
+
+        yield DMResponse(f"Test successful. {emote1} {emote2}")
+        yield DMResponse(f"{msg1}")
+        yield DMResponse(f"{msg2}")
