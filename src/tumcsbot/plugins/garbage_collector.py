@@ -43,8 +43,9 @@ class GarbageCollector(Plugin):
                                     Hi {},
                                     The stream(s) {} has/have been inactive for a while and should be deleted if it/they is/are not needed anymore.
                                     This helps to keep the stream list clean and organized.
-                                    If you want to keep the stream, please react with :check: to this message.
-                                    Otherwise, i will delete the stream for you in a week.
+                                    If you want to keep the stream, please react with :floppy_disk: to this message.
+                                    You can also react with :trash_can: to delete the stream.
+                                    If you do not respond within a week, the stream will be deleted. 
                                    
                                     If you have any questions, feel free to ask the {}.
                                     Have a nice day! 
@@ -123,7 +124,7 @@ class GarbageCollector(Plugin):
                         stream_admin_members[stream.id] =  frozenset(admin_members)
 
                     # wait before starting the next task to avoid rate limiting
-                    await asyncio.sleep(.2)
+                    await asyncio.sleep(2)
                     
                 
                 streams_by_admins: dict[frozenset[int], tuple[list[ZulipStream], list[ZulipUser]]] = {}
@@ -136,7 +137,10 @@ class GarbageCollector(Plugin):
 
                 gc_tasks = []
                 for streams, admins in streams_by_admins.values():
+                    # wait to avoid rate limiting
+                    await asyncio.sleep(30)
                     gc_tasks.append(self._garbage_collect(streams, bot_owner, admins, time_to_responde))
+
 
                 
                 # await all tasks
@@ -214,26 +218,39 @@ class GarbageCollector(Plugin):
         
         m_id = response["id"]
 
+        # wait for user client to process the message
+        await asyncio.sleep(.2)
         result, _ = await UserInput.choose(self.client, m_id, ["trash_can", "floppy_disk"], timeout=time_to_responde)
 
         if result is not None and result == "trash_can":
             for stream in streams:
+                # wait before starting the next task to avoid rate limiting
+                await asyncio.sleep(10)
+
                 self.pending_garbage_collections.remove(stream.id)
                 logging.info("deleting stream %s", stream.name)
                 await self.client.call_endpoint(url="streams/%d" % (stream.id,), method="DELETE", request={},)
                 if response["result"] != "success":
                     logging.error("could not delete stream %s", stream.name)
+
+                await self.client.send_response(Response.build_message(None, content=f"The stream {stream.mention} has been deleted.", to=[u.id for u in admins_in_streams], msg_type="private"))
+
         else:
             for stream in streams:
+                # wait before starting the next task to avoid rate limiting
+                await asyncio.sleep(10)
+
                 self.pending_garbage_collections.remove(stream.id)
                 logging.info("keeping stream %s", stream.name)
 
                 # send message to stream so that is not deleted in the future
-                content = "Algthough the stream was inactive, it will not be deleted for now.\nHave a nice day!"
+                content = "Although the stream was inactive, it will not be deleted for now.\nHave a nice day!"
                 response = await self.client.send_response(Response.build_message(None, content=content, to=stream.id, msg_type="stream", subject="Keep Stream"))
-                print(response)
+
                 if response["result"] != "success":
                     logging.error("could not send message to stream %s", stream.name)
-                    return
+
+        await self.client.delete_message(m_id)
+
 
 
