@@ -15,7 +15,7 @@ receive events for all public streams.
 
 import asyncio
 import logging
-from typing import Any, Iterable, Literal
+from typing import Any, Callable, Iterable, Literal
 
 from tumcsbot.lib.client import AsyncClient
 from tumcsbot.lib.response import Response
@@ -39,12 +39,10 @@ class UserInput(Plugin):
 
         print(msg["display_recipient"], message["display_recipient"])
 
+        # todo: not not compare dict directly
+
         if msg["display_recipient"] != message["display_recipient"]:
             return {}
-        
-        print("-" * 80)
-        print(msg)
-        print("-" * 80)
         
         return msg
 
@@ -134,9 +132,32 @@ class UserInput(Plugin):
             for emote in emotes_to_choose:
                 await client.remove_reaction({"message_id": message_id, "emoji_name": emote})
 
+    
+    @classmethod
+    async def reaction(cls, message_id: int, timeout: int = 10) -> tuple[str | None, dict[str, Any]]:
+        """Ask the user for a reaction."""
+
+        q = asyncio.Queue(1)
+        cls.pending_inputs[message_id] = q
+
+        try:
+            response = await cls._wait_for_queue(q, timeout)
+            q.task_done()
+            if "emoji_name" not in response:
+                return None, response
+            return response["emoji_name"], response
+        except asyncio.TimeoutError:
+            return None, {}
+        
 
     @classmethod
-    async def short_text_response(cls, message_id: int, timeout: int = 10, max_length=32, min_length=1, allow_spaces=False) -> tuple[str | None, dict[str, Any]]:
+    async def specific_reaction(cls, message_id: int, emote: str, timeout: int = 10) -> tuple[bool, dict[str, Any]]:
+        result, response = await cls.reaction(message_id, timeout)
+        return result == emote, response
+
+
+    @classmethod
+    async def short_text_response(cls, client: AsyncClient, message_id: int, timeout: int = 10, max_length=32, min_length=1, allow_spaces=False) -> tuple[str | None, dict[str, Any]]:
         """Ask the user for a short text."""
 
         q = asyncio.Queue(1)
@@ -147,6 +168,9 @@ class UserInput(Plugin):
             q.task_done()
             
             if "message" not in response:
+                return None, response
+            
+            if response["message"]["sender_id"] == client.id:
                 return None, response
             
             content: str = response["message"]["content"]
