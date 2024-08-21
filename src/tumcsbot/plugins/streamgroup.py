@@ -204,8 +204,8 @@ class Streamgroup(PluginCommandMixin, Plugin):
                 
                 group_ids: list[str] = Streamgroup._get_group_ids_from_stream_id(id)
 
-                self.logger.info(f"Stream {name} being deleted from groups {group_ids}")
-                print("_"*300)
+                if group_ids:
+                    self.logger.info(f"Stream {name} being deleted from groups {group_ids}")
               
                 for group_id in group_ids:
                     with DB.session() as session:
@@ -1717,7 +1717,7 @@ class Streamgroup(PluginCommandMixin, Plugin):
         result: list[int] = []
         with DB.session() as session:
             for g_id in groups:
-                u_group: UserGroup = Streamgroup._get_usergroup_by_id(g_id)
+                u_group: UserGroup = Streamgroup._get_usergroup_by_id(session, g_id)
                 res: list[int] = Usergroup.get_user_ids_for_group(session, u_group)
                 result.extend(res)
         return result
