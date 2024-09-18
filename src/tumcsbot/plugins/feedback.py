@@ -43,7 +43,7 @@ class Feedback(PluginCommandMixin, Plugin):
 
     @command
     @privilege(Privilege.USER)
-    async def feedback(
+    async def send(
         self,
         sender: ZulipUser,
         session: Session,
@@ -61,7 +61,7 @@ class Feedback(PluginCommandMixin, Plugin):
         if prompt1["result"] != "success":
             raise DMError("Could not send message to user")
 
-        result1, _ = await UserInput.short_text_response(prompt1["id"], timeout=60)
+        result1, _ = await UserInput.short_text_response(self.client, prompt1["id"], timeout=60)
         if result1 is None:
             raise DMError("No response from user")
         else:
@@ -73,8 +73,7 @@ class Feedback(PluginCommandMixin, Plugin):
                 f"Uuups, it looks like the course `{course.name}` does not support anonymous feedback :botsad:"
             )
         
-        feedbackStream : ZulipStream = ZulipStream(course.FeedbackStream)
-        await feedbackStream
+        await course.FeedbackStream
 
     
         # TODO: @Janez Rotman
@@ -86,7 +85,7 @@ class Feedback(PluginCommandMixin, Plugin):
         if prompt2["result"] != "success":
             raise DMError("Could not send message to user")
 
-        result2, _ = await UserInput.short_text_response(prompt2["id"], timeout=60)
+        result2, _ = await UserInput.short_text_response(self.client, prompt2["id"], timeout=60, allow_spaces=True,max_length=max_topic_length)
         if result2 is not None and len(result2) <= max_topic_length:
             topic = result2
 
@@ -95,12 +94,12 @@ class Feedback(PluginCommandMixin, Plugin):
         if prompt3["result"] != "success":
             raise DMError("Could not send message to user")
         
-        result3, _ = await UserInput.short_text_response(prompt3["id"], timeout=600)
+        result3, _ = await UserInput.short_text_response(self.client, prompt3["id"], timeout=600, allow_spaces=True)
         if result3 is None:
             raise DMError("No response from user")
         else:
             response = await self.client.send_message({"type": "stream",
-                                            "to": feedbackStream.id, 
+                                            "to": course.FeedbackStream.id, 
                                             "topic": topic, 
                                             "content": result3
                                             })

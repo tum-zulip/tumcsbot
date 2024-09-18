@@ -1974,8 +1974,9 @@ class Course(PluginCommandMixin, Plugin):
 
             Streamgroup._add_zulip_streams(session, to_add, sg)
 
-            if opt.fa:
-                session.query(CourseDB).filter(CourseDB.CourseName == name).update({'FeedbackStream': s})
+            if fa:
+                fb = next(s for s in to_add if f"{name} - Feedback" in s.name)
+                session.query(CourseDB).filter(CourseDB.CourseName == name).update({'FeedbackStream': fb})
                 session.commit()
 
 
