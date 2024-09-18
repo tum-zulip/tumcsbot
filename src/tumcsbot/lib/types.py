@@ -11,10 +11,10 @@ from sqlalchemy.types import TypeDecorator, Integer
 from sqlalchemy.ext.mutable import Mutable
 import sqlalchemy
 
-from tumcsbot.lib.client import AsyncClient
 from tumcsbot.lib.command_parser import CommandParser
 from tumcsbot.lib.regex import Regex
-
+from tumcsbot.lib.client import AsyncClient
+from tumcsbot.lib.response import Response
 
 class DMError(Exception):
     pass
@@ -156,7 +156,7 @@ class SqlAlchemyMixinFactory:
 
             @property
             def comparator_factory(self) -> Any:
-                return Mutable.Comparator # type: ignore
+                return Mutable.Comparator  # type: ignore
 
             @comparator_factory.setter
             def comparator_factory(self, value: type) -> None:
@@ -211,8 +211,7 @@ class ZulipUser(
                 raise ZulipUserNotFound(
                     f"Invalid user identifier `{identifier}`, use the same format as in the Zulip UI. (`@**<username>**`)"
                 )
-            
-            
+
             uname, uid = cast(tuple[str, int], mapping)
             self._name = uname
             self._id = uid
@@ -237,7 +236,7 @@ class ZulipUser(
 
         if self._privileged is None:
             self._privileged = await self.client.user_is_privileged(self._id)
-        
+
         return None
 
     def __await__(self) -> Generator[Any, None, None]:
@@ -292,7 +291,7 @@ class ZulipUser(
 
 
 class ZulipChannel(
-    SqlAlchemyMixinFactory.from_type(Integer), AsyncClientMixin, YAMLSerializableMixin
+    SqlAlchemyMixinFactory.from_type(Integer), AsyncClientMixin, YAMLSerializableMixin  # type: ignore
 ):
     """
     Inferface for Zulip channels that dynamically fetches the user ID and name and can be used as a type in the database.
@@ -323,12 +322,12 @@ class ZulipChannel(
             raise ValueError("Channel ID and name not set.")
 
         if self._id is None:
-            result = await self.client.get_channel_id_by_name(self.mention)
-            if result is None:
+            id_result = await self.client.get_channel_id_by_name(self.mention)
+            if id_result is None:
                 raise ZulipChannelNotFound(
                     f"Channel {self.mention} could be not found."
                 )
-            self._id = result
+            self._id = id_result
         if self._name is None:
             result = await self.client.get_channel_by_id(self._id)
             if result is None:
@@ -348,7 +347,7 @@ class ZulipChannel(
         return {"name": self.name}
 
     @staticmethod
-    def get_db_value(value) -> int:
+    def get_db_value(value: Any) -> int:
         if isinstance(value, ZulipChannel):
             return value.id
         return int(value)
@@ -381,6 +380,7 @@ response_type = (
     | ReactionResponse
     | PartialSuccess
     | PartialError
+    | Response
 )
 
 arg_type = (
@@ -485,6 +485,8 @@ class OptConfig:
 
     @property
     def syntax(self) -> str:
+        if self.ty is None:
+            raise ValueError("Type of option not set.")
         try:
             type_name = self.ty.__name__
         except AttributeError:

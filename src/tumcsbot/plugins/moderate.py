@@ -12,7 +12,7 @@ change the alert words and specify the emojis to use for the reactions.
 
 from enum import Enum
 from inspect import cleandoc
-from typing import Any, AsyncGenerator
+from typing import Any, AsyncGenerator, cast
 
 from sqlalchemy import Column, ForeignKey, Integer, String, UniqueConstraint
 from sqlalchemy.orm import relationship, Mapped
@@ -317,7 +317,7 @@ class Moderate(PluginCommandMixin, Plugin):
                 session.query(ModerationConfig)
                 .join(GroupAuthorization)
                 .join(UserGroup)
-                .filter(UserGroup._members.any(UserGroupMember.User == user))
+                .filter(UserGroup._members.any(UserGroupMember.User == user)) # type: ignore
                 .all()
             )
 
@@ -396,7 +396,7 @@ class Moderate(PluginCommandMixin, Plugin):
         group: UserGroup | None = opts.group
         channel: ZulipChannel | None = opts.channel
 
-        if not group and not channel:
+        if group is None and channel is None:
             raise DMError("Error: At least a channel or a group must be specified.")
 
         if group and channel:
@@ -404,7 +404,7 @@ class Moderate(PluginCommandMixin, Plugin):
                 "Error: Either a group or channels must be specified, not both."
             )
 
-        if group:
+        if group is not None:
             if (
                 session.query(ModerationConfig)
                 .filter(GroupAuthorization.GroupId == group.GroupId)
@@ -437,9 +437,10 @@ class Moderate(PluginCommandMixin, Plugin):
                 f"Notified members of group '{group.GroupName}' about the new moderation rights."
             )
         else:
+            channel = cast(ZulipChannel, channel)
             if (
                 session.query(ModerationConfig)
-                .filter(ChannelAuthorization.Channel == channel)
+                .filter(ChannelAuthorization.Channel == channel) # type: ignore
                 .first()
             ):
                 raise DMError(
@@ -723,7 +724,7 @@ class Moderate(PluginCommandMixin, Plugin):
         _message: dict[str, Any],
     ) -> AsyncGenerator[response_type, None]:
         cfg = self.load_yaml_from_string(args.config)
-        model = await deserialize_model(session, cfg)
+        model = await deserialize_model(session, ModerationConfig, cfg)
         if (
             session.query(ModerationConfig)
             .filter(ModerationConfig.ModerationConfigName == model.ModerationConfigName)
@@ -761,7 +762,7 @@ class Moderate(PluginCommandMixin, Plugin):
             if len(emotes) == 0:
                 msg = "*No reactions configured*\n"
             else:
-                msg = ", ".join(emotes) + "\n"
+                msg = ", ".join(str(e) for e in emotes) + "\n"
         return msg
 
     @staticmethod

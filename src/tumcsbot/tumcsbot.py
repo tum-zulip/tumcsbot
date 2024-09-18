@@ -18,25 +18,19 @@ import signal
 from graphlib import TopologicalSorter
 import sys
 import threading
-from typing import Any, Iterable, Type, TypeVar
+from typing import Any, Iterable, Type, TypeVar, Callable
 
 from zulip import Client as ZulipClient
 from tumcsbot.lib import response
 from tumcsbot.lib import utils
-from tumcsbot.lib.client import AsyncClient, PlublicChannels, PluginContext
+from tumcsbot.lib.client import AsyncClient, PlublicChannels, PluginContext, Event, EventType
 from tumcsbot.lib.db import DB
 from tumcsbot.plugin import (
-    Event,
     Plugin,
-    EventType,
     PluginTable,
     get_zulip_events_from_plugins,
 )
 from tumcsbot.lib.utils import LOGGING_FORMAT
-
-
-class EventQueue(asyncio.Queue[Event]):
-    pass
 
 
 T = TypeVar("T")
@@ -91,7 +85,7 @@ class TumCSBot:
 
         # Init the event queue. The loopback queue for the thread plugins
         # simply is the central event queue.
-        self.event_queue: EventQueue = asyncio.Queue()
+        self.event_queue: asyncio.Queue[Event] = asyncio.Queue()
 
         # get plugin context
         client = ZulipClient(config_file=zuliprc, insecure=True)
@@ -113,7 +107,7 @@ class TumCSBot:
 
         asyncio.run(self.init_db())
 
-        self.event_listener: asyncio.Task | None = None
+        self.event_listener: asyncio.Task[Callable] | None = None
 
         # Cleanup properly on SIGTERM and SIGINT.
         for s in [signal.SIGINT, signal.SIGTERM]:

@@ -34,5 +34,5 @@ class Source(PluginCommandMixin, Plugin):
         Execute a SELECT SQL command in the bot's database.
         """
         sql = args.sql
-        result = session.execute(text("SELECT " + " ".join(sql))).fetchall()
+        result = session.execute(text("SELECT " + " ".join(sql))).fetchall() # type: ignore
         yield DMResponse("```" + "\n".join(str(row) for row in result) + "```")

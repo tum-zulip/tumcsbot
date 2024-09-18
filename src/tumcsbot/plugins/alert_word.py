@@ -12,7 +12,7 @@ change the alert words and specify the emojis to use for the reactions.
 
 from random import randint
 import re
-from typing import Any, AsyncGenerator, Iterable
+from typing import Any, AsyncGenerator, Iterable, cast
 from sqlalchemy import Column, String
 
 from tumcsbot.lib.response import Response
@@ -20,8 +20,9 @@ from tumcsbot.lib.regex import Regex
 from tumcsbot.lib.command_parser import CommandParser
 from tumcsbot.lib.db import DB, Session, TableBase
 from tumcsbot.lib.types import Privilege, ZulipUser, DMResponse, response_type
-from tumcsbot.plugin import Event, PluginCommandMixin, Plugin
+from tumcsbot.plugin import PluginCommandMixin, Plugin
 from tumcsbot.plugin_decorators import command, privilege, arg
+from tumcsbot.lib.client import Event
 
 
 class Alert(TableBase):  # type: ignore
@@ -49,7 +50,7 @@ class AlertWord(PluginCommandMixin, Plugin):
         ):
             return True
 
-        return (
+        return cast(bool,
             event.data["type"] == "message"
             and event.data["message"]["sender_id"] != self.client.id
             and event.data["message"]["type"] == "stream"
@@ -63,10 +64,10 @@ class AlertWord(PluginCommandMixin, Plugin):
         with DB.session() as session:
             for alert in session.query(Alert).all():
                 try:
-                    pattern: re.Pattern[str] = re.compile(alert.Phrase)
+                    pattern: re.Pattern[str] = re.compile(cast(str, alert.Phrase))
                 except re.error:
                     continue
-                bindings.append((pattern, alert.Emoji))
+                bindings.append((pattern, cast(str, alert.Emoji)))
 
         return bindings
 
@@ -100,7 +101,7 @@ class AlertWord(PluginCommandMixin, Plugin):
         session: Session,
         args: CommandParser.Args,
         _opts: CommandParser.Opts,
-        message: dict[str, Any],
+        _message: dict[str, Any],
     ) -> AsyncGenerator[response_type, None]:
         """
         Add an alert word / phrase together with the emoji the bot \
@@ -126,7 +127,7 @@ class AlertWord(PluginCommandMixin, Plugin):
         session: Session,
         args: CommandParser.Args,
         _opts: CommandParser.Opts,
-        message: dict[str, Any],
+        _message: dict[str, Any],
     ) -> AsyncGenerator[response_type, None]:
         """
         Remove an alert word / phrase.

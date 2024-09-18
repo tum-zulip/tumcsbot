@@ -61,10 +61,10 @@ class Channels(PluginCommandMixin, Plugin):
     async def archive(
         self,
         sender: ZulipUser,
-        session: Session,
+        _session: Session,
         args: CommandParser.Args,
-        opts: CommandParser.Opts,
-        message: dict[str, Any],
+        _opts: CommandParser.Opts,
+        _message: dict[str, Any],
     ) -> AsyncGenerator[response_type, None]:
         """
         Archive the given channels.

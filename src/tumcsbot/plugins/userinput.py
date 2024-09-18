@@ -7,10 +7,10 @@ import asyncio
 import logging
 from typing import Any, Callable, Iterable, Literal
 
-from tumcsbot.lib.client import AsyncClient
+from tumcsbot.lib.client import AsyncClient, Event
 from tumcsbot.lib.response import Response
 from tumcsbot.lib.types import DMError, ZulipUser
-from tumcsbot.plugin import Event, Plugin
+from tumcsbot.plugin import Plugin
 
 
 class UserInput(Plugin):

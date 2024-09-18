@@ -1,6 +1,6 @@
 from os.path import isabs
 from contextlib import contextmanager
-from typing import Generator, TypeVar, Any
+from typing import Generator, Any
 import yaml
 
 
@@ -156,8 +156,6 @@ def deserialize_model(session: Session, model_class: type, data: dict[str, Any] 
     """Deserialize data into an SQLAlchemy model, handling relationships."""
     print(f"{'     ' * indent}Deserializing: {model_class.__name__} with data: {data}")
     model = model_class()
-    state: sqlalchemy.orm.InstanceState = inspect(model) # type: ignore # todo: fix type
-    mapper: sqlalchemy.orm.Mapper = state.mapper # type: ignore # todo: fix type
 
     if not isinstance(data, dict):
         data = {data: None}
@@ -218,7 +216,7 @@ def export_yaml(obj: Any) -> str:
         serialized_data = serialize_model(obj)
         return yaml.dump(serialized_data, allow_unicode=True)
     except Exception as e:
-        raise ValueError(f"Failed to export object to YAML") from e
+        raise ValueError("Failed to export object to YAML") from e
 
 
 def import_yaml(session: Session, model_class: type, yaml_str: str) -> Any:
@@ -226,7 +224,7 @@ def import_yaml(session: Session, model_class: type, yaml_str: str) -> Any:
     try:
         data = yaml.safe_load(yaml_str)
     except yaml.YAMLError as e:
-        raise ValueError(f"Failed to parse YAML") from e
+        raise ValueError("Failed to parse YAML") from e
 
     name = data.get("name")
     try:

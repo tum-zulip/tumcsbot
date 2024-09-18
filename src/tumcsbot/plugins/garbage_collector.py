@@ -14,8 +14,9 @@ from tumcsbot.lib.conf import Conf
 from tumcsbot.lib.db import DB, TableBase
 from tumcsbot.lib.response import Response
 from tumcsbot.lib.types import ZulipUser, ZulipChannel
-from tumcsbot.plugin import Event, Plugin
+from tumcsbot.plugin import Plugin
 from tumcsbot.plugins.userinput import UserInput
+from tumcsbot.lib.client import Event
 
 
 class GarbageCollectorIgnoreChannelsTable(TableBase):  # type: ignore

@@ -24,16 +24,17 @@ import json
 import logging
 from abc import ABC, abstractmethod
 import threading
-from typing import Any, Callable, Iterable, Type, TypeVar, final
+from typing import Any, Callable, Iterable, Type, TypeVar, final, AsyncGenerator, cast, Coroutine
 
 from sqlalchemy import Column, String
 
-from tumcsbot.lib.client import AsyncClient, PluginContext
+from tumcsbot.lib.client import AsyncClient, PluginContext, Event, EventType
 from tumcsbot.lib.conf import Conf
-from tumcsbot.lib.response import Response, StrEnum
+from tumcsbot.lib.response import Response
 from tumcsbot.lib.command_parser import CommandParser
-from tumcsbot.lib.db import DB, TableBase
-from tumcsbot.lib.types import AsyncClientMixin, CommandConfig, ZulipUser
+from tumcsbot.lib.db import DB, TableBase, Session
+from tumcsbot.lib.types import AsyncClientMixin, CommandConfig, ZulipUser, response_type
+
 
 
 class PluginTable(TableBase):  # type: ignore
@@ -43,82 +44,6 @@ class PluginTable(TableBase):  # type: ignore
     syntax = Column(String, nullable=True)
     description = Column(String, nullable=True)
     config = Column(String, nullable=True)
-
-
-@final
-class EventType(StrEnum):
-    # todo: GET_USAGE = "get_usage"
-    # todo: RET_USAGE = "ret_usage"
-    START = "start"
-    STOP = "stop"
-    RESTART = "restart"
-    ZULIP = "zulip"
-
-
-@final
-class Event:
-    """Represent an event.
-
-    Parameters:
-    sender    The sender of the event. If the event requires an answer,
-              the sender will also be the recipient of the answer, if
-              `reply_to` is not specified.
-    type      The type of event. See EventType.
-    data      Additional event data.
-    dest      The destination of this event. If no destination is
-              specified, the event will be broadcasted.
-    reply_to  If the event requires an answer, send it to the specified
-              entity instead of sending it back to the original sender.
-    """
-
-    def __init__(
-        self,
-        sender: str,
-        type: EventType,
-        data: Any = None,
-        dest: str | None = None,
-        reply_to: str | None = None,
-    ) -> None:
-        self.sender: str = sender
-        self.type: EventType = type
-        self.data: Any = data
-        self.dest: str | None = dest
-        self.reply_to: str = reply_to if reply_to is not None else sender
-
-    def __repr__(self) -> str:
-        return json.dumps(
-            {
-                "sender": self.sender,
-                "type": self.type,
-                "data": str(self.data),
-                "dest": self.dest,
-                "reply_to": self.reply_to,
-            }
-        )
-
-    @classmethod
-    def stop_event(cls, sender: str, dest: str | None = None) -> Event:
-        return cls(sender, type=EventType.STOP, dest=dest)
-
-    @classmethod
-    def zulip_event(
-        cls,
-        sender: str,
-        data: Any,
-        dest: str | None = None,
-        reply_to: str | None = None,
-    ) -> Event:
-        return cls(
-            sender, type=EventType.ZULIP, data=data, dest=dest, reply_to=reply_to
-        )
-
-    @classmethod
-    def restart_event(cls, sender: str, dest: str | None = None) -> Event:
-        return cls(sender, type=EventType.RESTART, dest=dest)
-
-    @classmethod
-    def start_event(cls, sender: str, dest: str | None = None) -> Event:
-        return cls(sender, type=EventType.START, dest=dest)
 
 
 T = TypeVar("T")
@@ -138,7 +63,10 @@ class Plugin(threading.Thread, ABC):
     zulip_events: list[str] = []
 
     def __init__(
-        self, bot, plugin_context: PluginContext, client: AsyncClient | None = None
+        self,
+        bot: Any,
+        plugin_context: PluginContext,
+        client: AsyncClient | None = None
     ) -> None:
         """Use _init_plugin for custom init code."""
         super().__init__(name=self.plugin_name(), daemon=True)
@@ -154,7 +82,7 @@ class Plugin(threading.Thread, ABC):
             AsyncClient(self.plugin_context) if client is None else client
         )
 
-        self.queue: asyncio.Queue = asyncio.Queue()
+        self.queue: asyncio.Queue[Event] = asyncio.Queue()
 
         # Set the running flag.
         self.running: bool = False
@@ -171,14 +99,17 @@ class Plugin(threading.Thread, ABC):
 
     async def invoke_other_cmd(
         self,
-        _fn: Callable[[ZulipUser, Session, dict[str, Any], Any], AsyncGenerator[respnse_type, None]],
+        _fn: Callable[[ZulipUser, Session, dict[str, Any], Any], AsyncGenerator[response_type, None]],
         sender: ZulipUser,
-        session: Any,
+        session: Session,
         message: dict[str, Any] | None = None,
-        **kwargs,
-    ) -> AsyncGenerator[respnse_type, None]:
+        **kwargs: Any,
+    ) -> AsyncGenerator[response_type, None]:
         # split bound method into class and method
-        invoker = _fn.invoke
+        invoker = getattr(_fn, "invoke")
+        if invoker is None:
+            raise AttributeError(f"{_fn} has no attribute 'invoke'")
+        
         async for result in invoker(sender, session, message, **kwargs):
             yield result
 
@@ -228,14 +159,14 @@ class Plugin(threading.Thread, ABC):
             self.logger.debug("loop cancelled")
 
     @final
-    def stop(self):
+    def stop(self) -> None:
         self.running = False
         for task in asyncio.all_tasks(self.loop):
             task.cancel()
         self.loop.call_soon_threadsafe(self.loop.stop)
 
     @final
-    def run(self):
+    def run(self) -> None:
         self.running = True
         self.loop = asyncio.new_event_loop()
         asyncio.set_event_loop(self.loop)
@@ -282,9 +213,9 @@ class PluginCommandMixin(Plugin):
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
 
-        syntax = getattr(self, "syntax", None)
+        self.syntax = getattr(self, "syntax", None)
         description = cleandoc(self.__doc__) if self.__doc__ else None
-        description = getattr(self, "description", description)
+        self.description = getattr(self, "description", description)
 
         self._tumcs_bot_commands.name = self.plugin_name()
         self._tumcs_bot_commands.description = description
@@ -294,8 +225,8 @@ class PluginCommandMixin(Plugin):
             session.merge(
                 PluginTable(
                     name=self.plugin_name(),
-                    syntax=syntax,
-                    description=description,
+                    syntax=self.syntax,
+                    description=self.description,
                     config=json.dumps(asdict(self._tumcs_bot_commands), default=str),
                 )
             )
@@ -317,7 +248,7 @@ class PluginCommandMixin(Plugin):
         The syntax string is formatted as code (using backticks)
         automatically.
         """
-        return (self.plugin_name(), self.syntax, self.description)
+        return (self.plugin_name(), cast(str, self.syntax), cast(str, self.description))
 
     async def handle_message(
         self, message: dict[str, Any]
@@ -350,7 +281,7 @@ class PluginCommandMixin(Plugin):
                     CommandParser.Opts,
                     dict[str, Any],
                 ],
-                Response | Iterable[Response],
+                Coroutine[Any, Any, Response | Iterable[Response]],
             ] = getattr(self, command)
             AsyncClientMixin.set_client(self.client)
             sender = ZulipUser(

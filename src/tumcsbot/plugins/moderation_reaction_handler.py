@@ -15,8 +15,9 @@ from typing import Any, Iterable, Callable
 
 from tumcsbot.lib.response import Response
 from tumcsbot.lib.types import ZulipChannel, ZulipUser
-from tumcsbot.plugin import Event, Plugin
+from tumcsbot.plugin import Plugin
 from tumcsbot.lib.db import DB
+from tumcsbot.lib.client import Event
 
 
 from tumcsbot.plugins.moderate import (

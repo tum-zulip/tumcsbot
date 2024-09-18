@@ -3,7 +3,7 @@
 # See LICENSE file for copyright and license details.
 # TUM CS Bot - https://github.com/ro-i/tumcsbot
 
-from typing import Any, AsyncGenerator
+from typing import Any, AsyncGenerator, cast
 
 from tumcsbot.lib.response import Response
 from tumcsbot.plugin import Plugin, PluginCommandMixin
@@ -18,6 +18,7 @@ from tumcsbot.lib.types import (
     Privilege,
     response_type,
     ZulipUser,
+    ZulipChannel,
 )
 
 
@@ -64,7 +65,8 @@ class Feedback(PluginCommandMixin, Plugin):
                 f"Uuups, it looks like the course `{course.name}` does not support anonymous feedback :botsad:"
             )
 
-        await course.FeedbackChannel
+        fbc = cast(ZulipChannel, course.FeedbackChannel)
+        await fbc
 
         # TODO: @Janez Rotman
         max_topic_length = 60
@@ -107,7 +109,7 @@ class Feedback(PluginCommandMixin, Plugin):
             response = await self.client.send_message(
                 {
                     "type": "stream",
-                    "to": course.FeedbackChannel.id,
+                    "to": fbc.id,
                     "topic": topic,
                     "content": result3,
                 }

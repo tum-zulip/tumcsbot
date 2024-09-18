@@ -62,7 +62,7 @@ async def process_arg(
     greedy: bool,
     optional: bool,
     ty: Any,
-    args: CommandParser.Args,
+    args: CommandParser.Args | CommandParser.Opts,
     session: Session,
 ) -> None:
     if greedy and not optional:
@@ -72,7 +72,7 @@ async def process_arg(
                 f"Error: At least one argument is required for `{name}`.",
             )
 
-    async def handle_argument(value) -> Any:
+    async def handle_argument(value: Any) -> Any:
         if isinstance(ty, sqlalchemy.orm.InstrumentedAttribute):
             obj = session.query(ty.class_).filter(ty == value).first()
             if not optional and obj is None:
@@ -346,8 +346,11 @@ class command:
             responses = []
             successful = []
             errors = []
+            outer_self_fn = outer_self.fn
+            if outer_self_fn is None:
+                raise ValueError("fn is not set")
             try:
-                async for response in outer_self.fn(
+                async for response in outer_self_fn(
                     self, sender, session, args, opts, message
                 ):
                     self.logger.debug("Collected Response: %s", response)
@@ -400,8 +403,12 @@ class command:
                     elif isinstance(response, PartialError):
                         self.logger.debug("Collected PartialError: %s", response.info)
                         errors.append(response.info)
-                    else:
+                    elif isinstance(response, Response):
                         responses.append(response)
+                    else:
+                        raise ValueError(
+                            f"Invalid response type: {type(response)} for {response}"
+                        )
             except StopIteration:
                 pass
             except UserNotPrivilegedException as e:

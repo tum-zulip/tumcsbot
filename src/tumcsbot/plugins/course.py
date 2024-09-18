@@ -8,11 +8,9 @@ from collections.abc import Iterable as IterableClass
 import difflib
 from inspect import cleandoc
 import inspect
-import re
 import logging
 from typing import Any, AsyncGenerator, TypeVar
 
-from sqlite3 import IntegrityError
 from typing import Coroutine, Literal, cast, Any, Callable, Iterable, AsyncGenerator
 import sqlalchemy
 from sqlalchemy import (
@@ -20,20 +18,18 @@ from sqlalchemy import (
     String,
     Integer,
     ForeignKey,
-    UniqueConstraint,
     update,
-    Boolean,
 )
 from sqlalchemy.orm import relationship, Mapped
 from sqlalchemy.ext.hybrid import hybrid_property
 from tumcsbot.lib.regex import Regex
 
 from tumcsbot.lib.response import Response
-from tumcsbot.lib.client import AsyncClient
-from tumcsbot.plugin import Event, Plugin, PluginCommandMixin
+from tumcsbot.lib.client import AsyncClient, Event
+from tumcsbot.plugin import Plugin, PluginCommandMixin
 from tumcsbot.lib.command_parser import CommandParser
 from tumcsbot.lib.db import DB, TableBase, Session, TableBase, serialize_model
-from tumcsbot.plugin_decorators import *
+from tumcsbot.plugin_decorators import command, privilege, arg, opt
 from tumcsbot.plugins.usergroup import UserGroup, Usergroup
 from tumcsbot.plugins.userinput import UserInput
 from tumcsbot.plugins.channelgroup import ChannelGroup, Channelgroup
@@ -1083,9 +1079,11 @@ class Course(PluginCommandMixin, Plugin):
         tut_ug_id = int(course.TutorsUserGroup)
         ins_ug_id = int(course.InstructorsUserGroup)
 
-        tut_s: ZulipChannel = await course.TutorChannel.get()
+        tut_s = cast(ZulipChannel, course.TutorChannel)
+        await tut_s 
 
-        ins_s: ZulipChannel = await course.InstructorChannel
+        ins_s = cast(ZulipChannel, course.InstructorChannel)
+        await ins_s 
 
         try:
             session.query(CourseDB).filter(
@@ -1624,14 +1622,14 @@ class Course(PluginCommandMixin, Plugin):
                             names = result2ct.split(",")
 
                             for name in names:
-                                real_name : str | None = Regex.get_user_name(name)
+                                real_name = Regex.get_user_name(name)
                                 if real_name is None:
                                     await dm(
                                         f"Could not find a user with the name {name}."
                                     )
                                     continue
                                 try:
-                                    user = ZulipUser(real_name)
+                                    user = ZulipUser(cast(str, real_name))
                                     await user
                                     Usergroup.add_user_to_group(
                                         session, user, courseTutors
@@ -2150,7 +2148,7 @@ class Course(PluginCommandMixin, Plugin):
             session.commit()
         except sqlalchemy.exc.IntegrityError as e:
             session.rollback()
-            raise DMError("Could not update Channelgroup :botsad:")
+            raise DMError("Could not update Channelgroup :botsad:") from e
 
     @staticmethod
     def _update_tutorgroup(
@@ -2176,7 +2174,7 @@ class Course(PluginCommandMixin, Plugin):
             session.commit()
         except sqlalchemy.exc.IntegrityError as e:
             session.rollback()
-            raise DMError("Could not update Tutors :botsad:")
+            raise DMError("Could not update Tutors :botsad:") from e
 
     @staticmethod
     def _update_instructorgroup(
@@ -2254,6 +2252,6 @@ class Course(PluginCommandMixin, Plugin):
             session.commit()
         except sqlalchemy.exc.IntegrityError as e:
             session.rollback()
-            raise DMError("Could not update Instructor-Channel :botsad:")
+            raise DMError("Could not update Instructor-Channel :botsad:") from e
 
         await client.delete_channel(oldIS.id)

@@ -13,7 +13,7 @@ change the alert words and specify the emojis to use for the reactions.
 # TODO: replacement for zulip usergroups. Replace as soon as api allows bot requests for usergroups
 
 import logging
-from typing import Any, AsyncGenerator
+from typing import Any, AsyncGenerator, cast
 from sqlalchemy import Column, Integer, String, ForeignKey
 import sqlalchemy
 from sqlalchemy.orm import relationship, Mapped
@@ -411,7 +411,7 @@ class Usergroup(PluginCommandMixin, Plugin):
     ) -> None:
         if (
             session.query(UserGroupMember)
-            .filter(UserGroupMember.User == user)
+            .filter(UserGroupMember.User == user)  # type: ignore[arg-type]
             .filter(UserGroupMember.GroupId == group.GroupId)
             .first()
             is None
@@ -420,9 +420,10 @@ class Usergroup(PluginCommandMixin, Plugin):
                 f"{user.mention_silent} is not in usergroup '{group.GroupName}'"
             )
         try:
-            session.query(UserGroupMember).filter(UserGroupMember.User == user).filter(
-                UserGroupMember.GroupId == group.GroupId
-            ).delete()
+            session.query(UserGroupMember) \
+                .filter(UserGroupMember.User == user) \
+                .filter(UserGroupMember.GroupId == group.GroupId) \
+                .delete() # type: ignore[arg-type]
             session.commit()
         except sqlalchemy.exc.IntegrityError as e:
             session.rollback()
@@ -451,10 +452,10 @@ class Usergroup(PluginCommandMixin, Plugin):
     @staticmethod
     def get_groups_for_user(session: Session, user: ZulipUser) -> list[UserGroup]:
         return (
-            session.query(UserGroup)
-            .filter(UserGroup.GroupId == UserGroupMember.GroupId)
-            .filter(UserGroupMember.User == user)
-            .all()
+            session.query(UserGroup) \
+            .filter(UserGroup.GroupId == UserGroupMember.GroupId) \
+            .filter(UserGroupMember.User == user) \
+            .all() # type: ignore
         )
 
     @staticmethod
@@ -476,5 +477,5 @@ class Usergroup(PluginCommandMixin, Plugin):
             .filter(UserGroupMember.GroupId == group.GroupId)
             .all()
         ):
-            users.append(s.User)
+            users.append(cast(ZulipUser, s.User))
         return users

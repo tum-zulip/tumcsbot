@@ -17,10 +17,10 @@ import asyncio
 from typing import Iterable
 
 from tumcsbot.lib.response import Response
-from tumcsbot.plugin import Event, Plugin
+from tumcsbot.plugin import Plugin
 from tumcsbot.lib.db import DB
 
-from tumcsbot.lib.client import PlublicChannels
+from tumcsbot.lib.client import PlublicChannels, Event
 
 
 class AutoSubscriber(Plugin):

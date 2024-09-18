@@ -6,7 +6,8 @@
 from typing import Any, Iterable
 
 from tumcsbot.lib.response import Response
-from tumcsbot.plugin import Event, PluginCommandMixin,Plugin
+from tumcsbot.plugin import PluginCommandMixin, Plugin
+from tumcsbot.lib.client import Event
 
 
 class Restart(PluginCommandMixin, Plugin):

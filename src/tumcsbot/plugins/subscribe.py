@@ -16,9 +16,10 @@ from tumcsbot.lib.types import (
     DMResponse,
     ZulipChannel,
     response_type,
+    ZulipUser,
 )
 from tumcsbot.lib.command_parser import CommandParser
-from tumcsbot.plugin import PluginCommandMixin, Plugin, ZulipUser
+from tumcsbot.plugin import PluginCommandMixin, Plugin
 from tumcsbot.plugin_decorators import (
     command,
     privilege,
@@ -109,7 +110,7 @@ class Subscribe(PluginCommandMixin, Plugin):
         _session: Session,
         args: CommandParser.Args,
         _opts: CommandParser.Opts,
-        message: dict[str, Any],
+        _message: dict[str, Any],
     ) -> AsyncGenerator[response_type, None]:
         """
         Subscribe all users with the specified email addresses to the destination channel. \
@@ -143,7 +144,7 @@ class Subscribe(PluginCommandMixin, Plugin):
         _session: Session,
         args: CommandParser.Args,
         _opts: CommandParser.Opts,
-        message: dict[str, Any],
+        _message: dict[str, Any],
     ) -> AsyncGenerator[response_type, None]:
         """
         Subscribe all users to the destination channel.

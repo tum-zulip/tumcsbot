@@ -15,21 +15,95 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass
 import logging
 import re
+import json
 from collections.abc import Iterable as IterableClass
-from typing import AsyncGenerator, Callable, cast, Any, IO, Iterable, final
+from typing import AsyncGenerator, Callable, cast, Any, IO, Iterable, final, Coroutine
 from urllib.parse import quote
 
-from anyio import Event
 from sqlalchemy import Boolean, Column, String
 
-import urllib3
-import urllib3.util
 from zulip import Client as ZulipClient
 
 from tumcsbot.lib.db import DB, TableBase
-from tumcsbot.lib.response import Response, MessageType
+from tumcsbot.lib.response import Response, MessageType, StrEnum
 from tumcsbot.lib.regex import Regex
 from tumcsbot.lib.utils import channel_names_equal
+
+
+@final
+class EventType(StrEnum):
+    # todo: GET_USAGE = "get_usage"
+    # todo: RET_USAGE = "ret_usage"
+    START = "start"
+    STOP = "stop"
+    RESTART = "restart"
+    ZULIP = "zulip"
+
+
+@final
+class Event:
+    """Represent an event.
+
+    Parameters:
+    sender    The sender of the event. If the event requires an answer,
+              the sender will also be the recipient of the answer, if
+              `reply_to` is not specified.
+    type      The type of event. See EventType.
+    data      Additional event data.
+    dest      The destination of this event. If no destination is
+              specified, the event will be broadcasted.
+    reply_to  If the event requires an answer, send it to the specified
+              entity instead of sending it back to the original sender.
+    """
+
+    def __init__(
+        self,
+        sender: str,
+        type: EventType,
+        data: Any = None,
+        dest: str | None = None,
+        reply_to: str | None = None,
+    ) -> None:
+        self.sender: str = sender
+        self.type: EventType = type
+        self.data: Any = data
+        self.dest: str | None = dest
+        self.reply_to: str = reply_to if reply_to is not None else sender
+
+    def __repr__(self) -> str:
+        return json.dumps(
+            {
+                "sender": self.sender,
+                "type": self.type,
+                "data": str(self.data),
+                "dest": self.dest,
+                "reply_to": self.reply_to,
+            }
+        )
+
+    @classmethod
+    def stop_event(cls, sender: str, dest: str | None = None) -> Event:
+        return cls(sender, type=EventType.STOP, dest=dest)
+
+    @classmethod
+    def zulip_event(
+        cls,
+        sender: str,
+        data: Any,
+        dest: str | None = None,
+        reply_to: str | None = None,
+    ) -> Event:
+        return cls(
+            sender, type=EventType.ZULIP, data=data, dest=dest, reply_to=reply_to
+        )
+
+    @classmethod
+    def restart_event(cls, sender: str, dest: str | None = None) -> Event:
+        return cls(sender, type=EventType.RESTART, dest=dest)
+
+    @classmethod
+    def start_event(cls, sender: str, dest: str | None = None) -> Event:
+        return cls(sender, type=EventType.START, dest=dest)
 
 
 @final
@@ -51,7 +125,7 @@ class PluginContext:
     bot_id: int
     bot_mention: str
     zuliprc: str
-    push_loopback: Callable[[Event], None]
+    push_loopback: Callable[[Event], Coroutine[Any, Any, None]]
     logging_level: Any
 
 

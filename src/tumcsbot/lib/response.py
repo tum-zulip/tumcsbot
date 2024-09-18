@@ -155,7 +155,9 @@ class Response:
         Return a Response object.
         """
         if message is None and (
-            msg_type is None or to is None or (msg_type == "channel" and subject is None)
+            msg_type is None
+            or to is None
+            or (msg_type == "channel" and subject is None)
         ):
             return cls.none()
 
@@ -172,7 +174,7 @@ class Response:
 
         if msg_type == "channel":
             msg_type = "channel"
-        
+
         # 'subject' field is ignored for private messages
         # see https://zulip.com/api/send-message#parameter-topic
         return cls(
