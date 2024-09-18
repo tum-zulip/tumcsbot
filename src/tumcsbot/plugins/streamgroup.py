@@ -460,7 +460,7 @@ class Streamgroup(PluginCommandMixin, Plugin):
     @arg(
         "group_id",
         StreamGroup.StreamGroupId,
-        description="The identifier of the Streamgroup the users shoud get subscribed to.",
+        description="The identifier of the Streamgroup the users should get subscribed to.",
     )
     @arg(
         "user",
@@ -505,7 +505,7 @@ class Streamgroup(PluginCommandMixin, Plugin):
     @arg(
         "streamgroup_id",
         StreamGroup.StreamGroupId,
-        description="The identifier of the Streamgroup the users shoud get subscribed to.",
+        description="The identifier of the Streamgroup the users should get subscribed to.",
     )
     @arg(
         "usergroup",
@@ -599,7 +599,7 @@ class Streamgroup(PluginCommandMixin, Plugin):
     @arg(
         "group_id",
         StreamGroup.StreamGroupId,
-        description="The identifier of the Streamgroup the users shoud get unsubscribed from.",
+        description="The identifier of the Streamgroup the users should get unsubscribed from.",
     )
     @arg(
         "user",
@@ -657,7 +657,7 @@ class Streamgroup(PluginCommandMixin, Plugin):
     @arg(
         "streamgroup_id",
         StreamGroup.StreamGroupId,
-        description="The identifier of the Streamgroup the users shoud get unsubscribed from.",
+        description="The identifier of the Streamgroup the users should get unsubscribed from.",
     )
     @arg(
         "usergroup",
@@ -769,7 +769,7 @@ class Streamgroup(PluginCommandMixin, Plugin):
         message: dict[str, Any],
     ) -> AsyncGenerator[response_type, None]:
         """
-        Make the message, written in a stream and adressed to @**TUMCSBot**, "special" for a given Streamgroup.
+        Make the message, written in a stream and addressed to @**TUMCSBot**, "special" for a given Streamgroup.
         If a user reacts on a "special" message with the emoji that is assigned to the group the message is special for, the user gets subscribed to all streams belonging to this group
         """
         group: StreamGroup | None = args.group_id
@@ -961,7 +961,7 @@ class Streamgroup(PluginCommandMixin, Plugin):
         message: dict[str, Any],
     ) -> AsyncGenerator[response_type, None]:
         """
-        By writing the message in a stream adressed to @**TUMCSBot**, a "special" message from the bot for all Streamgroups with a list of all existing groups is triggered.
+        By writing the message in a stream addressed to @**TUMCSBot**, a "special" message from the bot for all Streamgroups with a list of all existing groups is triggered.
         """
 
         if message["type"] != "stream":
