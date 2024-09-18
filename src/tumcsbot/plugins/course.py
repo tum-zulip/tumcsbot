@@ -1196,6 +1196,8 @@ class Course(PluginCommandMixin, Plugin):
                 course, session, self.client, inschannel
             )
 
+        yield DMResponse(f"Course `{course.CourseName}` updated.")
+
     @command
     @privilege(Privilege.ADMIN)
     @arg(
@@ -1258,7 +1260,7 @@ class Course(PluginCommandMixin, Plugin):
         """
         courseName: str | None = None
         courseEmoji: str | None = None
-        courseLan: str | None = None
+        courseLan: Literal["en", "de"] | None = None
         courseChannels: ChannelGroup | None = None
         courseTutors: UserGroup | None = None
         courseInstructors: UserGroup | None = None
@@ -1297,7 +1299,7 @@ class Course(PluginCommandMixin, Plugin):
             )
             return result
 
-        async def short_text_input(msg: str, timeout: int = 60) -> str:
+        async def short_text_input(msg: str, timeout: int = 60) -> str | None:
             server_response = await dm(msg)
             user_response, _ = await or_exit(
                 UserInput.short_text_response(
@@ -1398,28 +1400,28 @@ class Course(PluginCommandMixin, Plugin):
             if user_response:
                 # use existing channelgroup
                 while True:
-                    user_response = await short_text_input(
+                    sg_name = await short_text_input(
                         "Please provide the name of the Channelgroup."
                     )
-                    if user_response is None:
+                    if sg_name is None:
                         continue
 
                     sg = (
                         session.query(ChannelGroup)
-                        .filter(ChannelGroup.ChannelGroupId == user_response)
+                        .filter(ChannelGroup.ChannelGroupId == sg_name)
                         .one_or_none()
                     )
                     if sg is None:
-                        sgs = session.query(ChannelGroup.ChannelGroupId).all()
-                        closest = difflib.get_close_matches(user_response, sgs, n=1)
+                        sgs : list[str] = [ str(id) for id in session.query(ChannelGroup.ChannelGroupId).all() ]
+                        closest = difflib.get_close_matches(sg_name, sgs, n=1)
 
                         if closest:
                             await dm(
-                                f"A Channelgroup with the name `{user_response}` does not exist. Did you mean `{closest[0]}`?"
+                                f"A Channelgroup with the name `{sg_name}` does not exist. Did you mean `{closest[0]}`?"
                             )
                         else:
                             await dm(
-                                f"A Channelgroup with the name `{user_response}` does not exist."
+                                f"A Channelgroup with the name `{sg_name}` does not exist."
                             )
 
                         continue
@@ -1433,14 +1435,14 @@ class Course(PluginCommandMixin, Plugin):
 
                 while True:
 
-                    user_response = await short_text_input(
+                    sg_emoji = await short_text_input(
                         "What is the emoji representing the course?"
                     )
 
-                    if user_response is None:
+                    if sg_emoji is None:
                         continue
                     else:
-                        emote = Regex.get_emoji_name(user_response)
+                        emote = Regex.get_emoji_name(sg_emoji)
                         if emote is None:
                             await dm("Please provide a valid emoji.")
                             continue
@@ -1458,22 +1460,22 @@ class Course(PluginCommandMixin, Plugin):
                                 f"A course with the emote :{emote}: already exists. Please choose another emoji."
                             )
 
-                user_response = await confirm_input(
+                sg_emoji_conf = await confirm_input(
                     f"Do you want to create the Channelgroup {courseEmoji} from a list of Channel-Name-Regexes?"
                 )
-                if user_response:
+                if sg_emoji_conf:
                     # enter list of names
                     while True:
 
-                        user_response = await short_text_input(
+                        sg_regex = await short_text_input(
                             "Please enter a list of Channels in the format 'ChannelNameRegex1,ChannelNameRegex2, ..., ChannelNameRegexN'"
                         )
-                        if user_response is None:
+                        if sg_regex is None:
                             continue
                         else:
                             # parse Channel Names
-                            channelgroup_name: str = "channels_" + courseName
-                            courseChannels: ChannelGroup = (
+                            channelgroup_name = "channels_" + courseName
+                            courseChannels = (
                                 Channelgroup._create_and_get_group(
                                     session, channelgroup_name, courseEmoji
                                 )
@@ -1484,8 +1486,13 @@ class Course(PluginCommandMixin, Plugin):
                                 )
                             )
 
-                            channels = user_response.split(",")
-                            await Channelgroup.add_channels(
+                            if courseChannels is None:
+                                raise DMError(
+                                    "Could not create Channelgroup for course."
+                                )
+                            
+                            channels = sg_regex.split(",")
+                            await Channelgroup._add_channels(
                                 self.client, session, sender, courseChannels, channels
                             )
                             break
@@ -1516,6 +1523,12 @@ class Course(PluginCommandMixin, Plugin):
             resultF = await confirm_input(
                 "Do you want the Feedback-Channel of your course to allow anonymous Feedback?"
             )
+
+            if courseChannels is None:
+                raise DMError("Could not create Channelgroup for course.")
+            
+            if courseLan is None:
+                raise DMError("Could not determine the language of the course.")
 
             # wizard adds Feedback and Announcement per default to improve the communication between instructors and students (they have to be removed manually)
             await Course.add_standard_channels(
@@ -1591,7 +1604,7 @@ class Course(PluginCommandMixin, Plugin):
                         break
                     else:
                         vers += 1
-                        usergroup_name_tut = usergroup_name_tut[:-1] + vers
+                        usergroup_name_tut = usergroup_name_tut[:-1] + str(vers)
 
                 result2bt = await confirm_input(
                     f"Do you want to create the Usergroup from a list of Tutor-Names?"
@@ -1609,7 +1622,7 @@ class Course(PluginCommandMixin, Plugin):
                             names = result2ct.split(",")
 
                             for name in names:
-                                real_name = Regex.get_user_name(name)
+                                real_name : str | None = Regex.get_user_name(name)
                                 if real_name is None:
                                     await dm(
                                         f"Could not find a user with the name {name}."
@@ -1681,7 +1694,7 @@ class Course(PluginCommandMixin, Plugin):
                         break
                     else:
                         vers += 1
-                        usergroup_name_ins = usergroup_name_ins[:-1] + vers
+                        usergroup_name_ins = usergroup_name_ins[:-1] + str(vers)
 
                 result2bi = await confirm_input(
                     f"Do you want to create the Usergroup from a list of Instructor-Names?"
@@ -1699,7 +1712,7 @@ class Course(PluginCommandMixin, Plugin):
                             names = result2ci.split(",")
 
                             for name in names:
-                                real_name = Regex.get_user_name(name)
+                                real_name : str | None = Regex.get_user_name(name)
                                 if real_name is None:
                                     await dm(
                                         f"Could not find a user with the name {name}."
@@ -1797,10 +1810,10 @@ class Course(PluginCommandMixin, Plugin):
                 ins_ex = await self.client.get_channel_id_by_name(instructor_channel_name)
 
                 if ins_ex is not None:
-                    result = await confirm_input(
+                    result1 = await confirm_input(
                         f"Channel for Instructor of this course already exists. Dou you want to replace it with a new Channel for your course?"
                     )
-                    if not result:
+                    if not result1:
                         while True:
                             res = await short_text_input(
                                 "Please choose another name for the Instructor-Channel."
@@ -1819,7 +1832,8 @@ class Course(PluginCommandMixin, Plugin):
                                     )
 
                     else:
-                        await self.client.delete_channel(tut_ex)
+                        if ins_ex is not None:
+                            await self.client.delete_channel(ins_ex)
 
                 instructor_ids = Usergroup.get_user_ids_for_group(
                     session, courseInstructors
@@ -2222,7 +2236,7 @@ class Course(PluginCommandMixin, Plugin):
         """
         Set the Instructor-Channel of a given Course.
         """
-        oldIS: ZulipChannel = course.InstructorChannel
+        oldIS: ZulipChannel = await course.InstructorChannel
         if oldIS == channel:
             raise DMError(
                 "The given Channel is already set as Instructor-Channel for this course."
