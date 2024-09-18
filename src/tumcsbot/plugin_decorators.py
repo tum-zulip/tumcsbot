@@ -6,10 +6,10 @@ from inspect import cleandoc
 
 import sqlalchemy
 
-from tumcsbot.lib.command_parser import CommandParser
 from tumcsbot.lib.db import Session
 from tumcsbot.lib.response import Response
 from tumcsbot.plugin import PluginCommandMixin
+from tumcsbot.lib.command_parser import CommandParser
 from tumcsbot.lib.types import (
     ZulipChannelNotFound,
     ZulipUser,
@@ -454,7 +454,7 @@ class command:
             return responses
 
         async def invoke(sender: ZulipUser, session: Session, message: dict[str, Any], **kwargs: Any) -> AsyncGenerator[response_type, None]:
-            args_ns = Namespace(
+            args_ns = CommandParser.Args(
                 **{arg.name: kwargs.get(arg.name) for arg in self.meta.args}
             )
             opts_names = zip(
@@ -463,7 +463,7 @@ class command:
             )
             opts_dict = {s: kwargs.get(s) or kwargs.get(l) for s, l in opts_names}
             opts_dict.update({l: kwargs.get(l) or kwargs.get(s) for s, l in opts_names})
-            opts_ns = Namespace(**opts_dict)
+            opts_ns = CommandParser.Opts(**opts_dict)
             async for response in outer_self.fn(
                 self, sender, session, args_ns, opts_ns, message
             ):

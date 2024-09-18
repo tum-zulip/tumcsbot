@@ -171,12 +171,12 @@ class Plugin(threading.Thread, ABC):
 
     async def invoke_other_cmd(
         self,
-        _fn,
+        _fn: Callable[[ZulipUser, Session, dict[str, Any], Any], AsyncGenerator[respnse_type, None]],
         sender: ZulipUser,
         session: Any,
         message: dict[str, Any] | None = None,
         **kwargs,
-    ):
+    ) -> AsyncGenerator[respnse_type, None]:
         # split bound method into class and method
         invoker = _fn.invoke
         async for result in invoker(sender, session, message, **kwargs):

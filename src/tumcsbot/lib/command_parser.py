@@ -156,14 +156,14 @@ class CommandParser:
         subcommand: str = tokens[0]
         if subcommand not in self.commands:
             # find the closest matching subcommand
-            matches = difflib.get_close_matches(subcommand, self.commands.keys(), n=2)
-            matches = [f"`{m}`" for m in matches]
-            if len(matches) == 0:
+            close_matches = difflib.get_close_matches(subcommand, self.commands.keys(), n=2)
+            escaped = [f"`{m}`" for m in close_matches]
+            if len(escaped) == 0:
                 raise CommandParser.IllegalCommandParserState(
                     f"Subcommand `{subcommand}` not found. Available subcommands: {', '.join(self.commands.keys())}"
                 )
             raise CommandParser.IllegalCommandParserState(
-                f"Subcommand `{subcommand}` not found. Did you mean {' or '.join(matches)}?"
+                f"Subcommand `{subcommand}` not found. Did you mean {' or '.join(escaped)}?"
             )
 
         opts, positional, optional, greedy = self.commands[subcommand]

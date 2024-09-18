@@ -1,6 +1,6 @@
 from __future__ import annotations
 from abc import ABC, abstractmethod
-from typing import Any, AsyncGenerator, Callable, Coroutine
+from typing import Any, AsyncGenerator, Callable, Coroutine, cast
 
 from dataclasses import dataclass, field
 from enum import Enum
@@ -107,47 +107,60 @@ class AsyncClientMixin:
 class SqlAlchemyMixinFactory:
     @staticmethod
     def from_type(_impl: type) -> type:
-        class Mixin(TypeDecorator, ABC):
+        class Mixin(TypeDecorator, ABC):  # type: ignore
             cache_ok = True
             impl = _impl
             cls: type | None = None
 
-            def __init_subclass__(cls: type, **kwargs) -> None:
+            def __init_subclass__(cls: type, **kwargs: Any) -> None:
                 Mixin.cls = cls
 
-            def process_bind_param(self, value, dialect):
+            def process_bind_param(self, value: Any, dialect: Any) -> Any:
                 if value is None:
                     return None
 
                 if Mixin.cls is None:
                     raise ValueError("cls not set.")
 
-                return Mixin.cls.get_db_value(value)
+                get_db_value = getattr(Mixin.cls, "get_db_value", None)
+                if get_db_value is None:
+                    raise ValueError("get_db_value not set.")
 
-            def process_result_value(self, value, dialect):
+                return get_db_value(value)
+
+            def process_result_value(self, value: Any, dialect: Any) -> Any:
                 if value is None:
                     return None
 
+                if Mixin.cls is None:
+                    raise ValueError("cls not set.")
+
                 return Mixin.cls(value)
 
-            def copy_value(self, value):
+            def copy_value(self, value: Any) -> Any:
                 return value
 
-            def load_dialect_impl(self, dialect):
+            def load_dialect_impl(self, dialect: Any) -> Any:
                 return dialect.type_descriptor(_impl)
 
             @property
-            def python_type(self):
+            def python_type(self) -> type:
+                if Mixin.cls is None:
+                    raise ValueError("cls not set.")
                 return Mixin.cls
 
             @staticmethod
             @abstractmethod
-            def get_db_value(value):
+            def get_db_value(value: Any) -> Any:
                 pass
 
             @property
-            def comparator_factory(self):
-                return Mutable.Comparator
+            def comparator_factory(self) -> Any:
+                return Mutable.Comparator # type: ignore
+
+            @comparator_factory.setter
+            def comparator_factory(self, value: type) -> None:
+                raise NotImplementedError("comparator_factory is read-only")
 
         return Mixin
 
@@ -158,7 +171,7 @@ class YAMLSerializableMixin(ABC):
         raise NotImplementedError("Subclasses must implement __yaml__ method")
 
     @staticmethod
-    def to_yaml(dumper, obj):
+    def to_yaml(dumper: yaml.Dumper, obj: Any) -> Any:
         if isinstance(obj, YAMLSerializableMixin):
             return dumper.represent_mapping(
                 yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG, obj.__yaml__()
@@ -170,7 +183,7 @@ yaml.add_multi_representer(YAMLSerializableMixin, YAMLSerializableMixin.to_yaml)
 
 
 class ZulipUser(
-    SqlAlchemyMixinFactory.from_type(Integer), AsyncClientMixin, YAMLSerializableMixin
+    SqlAlchemyMixinFactory.from_type(Integer), AsyncClientMixin, YAMLSerializableMixin  # type: ignore
 ):
     """
     Inferface for Zulip users that dynamically fetches the user ID and name and can be used as a type in the database.
@@ -193,15 +206,18 @@ class ZulipUser(
             self._id = identifier
 
         elif isinstance(identifier, str):
-            uname, uid = Regex.get_user_name(identifier, get_user_id=True)
-            if uname is None:
+            mapping = Regex.get_user_name(identifier, get_user_id=True)
+            if mapping is None:
                 raise ZulipUserNotFound(
                     f"Invalid user identifier `{identifier}`, use the same format as in the Zulip UI. (`@**<username>**`)"
                 )
-            self._name: str | int = uname
-            self._id: int | None = uid
+            
+            
+            uname, uid = cast(tuple[str, int], mapping)
+            self._name = uname
+            self._id = uid
 
-    async def __ainit__(self):
+    async def __ainit__(self) -> Coroutine[None, None, None]:
         if self._name is None and self._id is None:
             raise ValueError("User ID and name not set.")
 
@@ -221,15 +237,17 @@ class ZulipUser(
 
         if self._privileged is None:
             self._privileged = await self.client.user_is_privileged(self._id)
+        
+        return None
 
-    def __await__(self):
+    def __await__(self) -> Generator[Any, None, None]:
         return self.__ainit__().__await__()
 
-    def __yaml__(self):
+    def __yaml__(self) -> dict[str, Any]:
         return {"name": self.name}
 
     @staticmethod
-    def get_db_value(value):
+    def get_db_value(value: Any) -> int:
         if isinstance(value, ZulipUser):
             result = value.id
         else:
@@ -319,7 +337,7 @@ class ZulipChannel(
                 )
             self._name = result["name"]
 
-    def __await__(self) -> Coroutine[None, None, None]:
+    async def __await__(self) -> Coroutine[None, None, None]:
         async for _ in self.__ainit__().__await__():
             pass
         return self

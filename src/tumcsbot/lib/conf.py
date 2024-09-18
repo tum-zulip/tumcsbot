@@ -15,13 +15,13 @@ class Conf:
     @staticmethod
     def get(key: str) -> str | None:
         with DB.session() as session:
-            result: str | None = session.query(ConfigTable).filter_by(Key=key).first()
-            return result.Value if result else None
+            result = session.query(ConfigTable).filter_by(Key=key).first()
+            return str(result.Value) if result else None
 
     @staticmethod
     def list() -> list[tuple[str, str]]:
         with DB.session() as session:
-            return [(t.Key, t.Value) for t in session.query(ConfigTable).all()]
+            return [(str(t.Key), str(t.Value)) for t in session.query(ConfigTable).all()]
 
     @staticmethod
     def remove(key: str) -> None:

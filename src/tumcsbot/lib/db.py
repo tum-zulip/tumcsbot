@@ -1,6 +1,6 @@
 from os.path import isabs
 from contextlib import contextmanager
-from typing import Generator
+from typing import Generator, TypeVar, Any
 import yaml
 
 
@@ -69,8 +69,8 @@ class DB:
 
 
 async def serialize_model(
-    obj, exclude_integer_primary_key: bool = True, exclude_tables=None
-):
+    obj: Any, exclude_integer_primary_key: bool = True, exclude_tables: list[sqlalchemy.Table] | None = None
+) -> dict[str, Any]:
     """Serialize an SQLAlchemy object, excluding redundant foreign keys."""
     if not isinstance(obj, TableBase):
         raise ValueError("Object must be an SQLAlchemy model")
@@ -78,8 +78,8 @@ async def serialize_model(
     if exclude_tables is None:
         exclude_tables = []
 
-    state: sqlalchemy.orm.InstanceState = inspect(obj)
-    mapper: sqlalchemy.orm.Mapper = state.mapper
+    state: sqlalchemy.orm.InstanceState = inspect(obj)  # type: ignore
+    mapper: sqlalchemy.orm.Mapper = state.mapper  # type: ignore
     exclude_tables.append(obj.__class__.__table__)
 
     # Determine which foreign keys to skip because they are handled by relationships
@@ -152,12 +152,12 @@ async def serialize_model(
     return attributes
 
 
-def deserialize_model(session, model_class, data, indent=0):
+def deserialize_model(session: Session, model_class: type, data: dict[str, Any] | str, indent: int = 0) -> Any:
     """Deserialize data into an SQLAlchemy model, handling relationships."""
     print(f"{'     ' * indent}Deserializing: {model_class.__name__} with data: {data}")
     model = model_class()
-    state: sqlalchemy.orm.InstanceState = inspect(model)
-    mapper: sqlalchemy.orm.Mapper = state.mapper
+    state: sqlalchemy.orm.InstanceState = inspect(model) # type: ignore # todo: fix type
+    mapper: sqlalchemy.orm.Mapper = state.mapper # type: ignore # todo: fix type
 
     if not isinstance(data, dict):
         data = {data: None}
@@ -212,7 +212,7 @@ def deserialize_model(session, model_class, data, indent=0):
     return model
 
 
-def export_yaml(obj):
+def export_yaml(obj: Any) -> str:
     """Export an SQLAlchemy object to a YAML string, with error handling."""
     try:
         serialized_data = serialize_model(obj)
@@ -221,7 +221,7 @@ def export_yaml(obj):
         raise ValueError(f"Failed to export object to YAML") from e
 
 
-def import_yaml(session, model_class, yaml_str):
+def import_yaml(session: Session, model_class: type, yaml_str: str) -> Any:
     """Import a YAML string into an SQLAlchemy object, with error handling."""
     try:
         data = yaml.safe_load(yaml_str)

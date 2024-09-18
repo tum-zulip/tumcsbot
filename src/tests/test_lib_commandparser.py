@@ -92,10 +92,7 @@ class CommandParserTestArgs(CommandParserTest):
         self.parser.add_subcommand("test2", args={"arg1": str, "arg2": str})
         result = self.parser.parse("test1 1")
         self.assertEqual(result[0], "test1")
-        result = cast(
-            tuple[str, CommandParser.Opts, CommandParser.Args],
-            self.parser.parse("test2 a b"),
-        )
+        result = self.parser.parse("test2 a b")
         self.assertEqual(result[0], "test2")
 
     def test_invalid_subcommands(self) -> None:

@@ -15,7 +15,7 @@ from tumcsbot.plugin import Event, Plugin
 
 class UserInput(Plugin):
 
-    pending_inputs: dict[int, asyncio.Queue] = {}
+    pending_inputs: dict[int, asyncio.Queue[dict[str, Any]]] = {}
 
     zulip_events = ["reaction", "message"]
 

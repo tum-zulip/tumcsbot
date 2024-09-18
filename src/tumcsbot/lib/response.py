@@ -171,7 +171,7 @@ class Response:
                 subject = message["subject"] if not private else ""
 
         if msg_type == "channel":
-            msg_type = "stream"
+            msg_type = "channel"
         
         # 'subject' field is ignored for private messages
         # see https://zulip.com/api/send-message#parameter-topic
