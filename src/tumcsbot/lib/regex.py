@@ -5,18 +5,18 @@ import regex
 class Regex:
     """Some widely used regex methods."""
 
-    _USER_ID_PATTERN: Final[re.Pattern[str]] = re.compile(
+    USER_ID_PATTERN: Final[re.Pattern[str]] = re.compile(
         r"data-user-id=\"(?P<id>\d+)\""
     )
-    _CHANNEL_ID_PATTERN: Final[re.Pattern[str]] = re.compile(
+    CHANNEL_ID_PATTERN: Final[re.Pattern[str]] = re.compile(
         r"data-stream-id=\"(?P<id>\d+)\""
     )
-    _USER_GROUP_ID_PATTERN: Final[re.Pattern[str]] = re.compile(
+    USER_GROUP_ID_PATTERN: Final[re.Pattern[str]] = re.compile(
         r"data-user-group-id=\"(?P<id>\d+)\""
     )  
 
     # todo: (jr) docuemnt why two different regex libraries are used
-    _ARGUMENT_PATTERN = regex.compile(
+    ARGUMENT_PATTERN = regex.compile(
         r"(?P<args>@_?\*\*.*?\*\*\s*|@_\*.*?\*\s*|#\*\*.*?\*\*\s*|'(\\\\|\\.|.)*?'\s*"
         + r"|```([\s\S]*?)```"
         + r'|"(\\\\|\\.|.)*?"\s*'

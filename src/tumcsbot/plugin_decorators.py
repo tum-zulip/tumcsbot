@@ -44,17 +44,17 @@ def get_meta(func: Any) -> SubCommandConfig:
     return func.__tumsbot_plugin_meta__
 
 
-def to_python_type(type) -> Any:
+def to_python_type(ty: type) -> Any:
     """Convert a SQLAlchemy InstrumentedAttribute (Column Type) to a Python type or return the original type if it is not a SQLAlchemy Column type."""
-    if isinstance(type, sqlalchemy.orm.InstrumentedAttribute):
-        columns = type.property.columns
+    if isinstance(ty, sqlalchemy.orm.InstrumentedAttribute):
+        columns = ty.property.columns
         if len(columns) != 1:
             raise ValueError(f"Expected exactly one column, got {len(columns)}")
 
         column = columns[0]
         return column.type.python_type
 
-    return type
+    return ty
 
 
 async def process_arg(
@@ -64,7 +64,7 @@ async def process_arg(
     ty: Any,
     args: CommandParser.Args,
     session: Session,
-):
+) -> None:
     if greedy and not optional:
         if len(getattr(args, name, [])) == 0:
             # todo: better error message
@@ -72,7 +72,7 @@ async def process_arg(
                 f"Error: At least one argument is required for `{name}`.",
             )
 
-    async def handle_argument(value):
+    async def handle_argument(value) -> Any:
         if isinstance(ty, sqlalchemy.orm.InstrumentedAttribute):
             obj = session.query(ty.class_).filter(ty == value).first()
             if not optional and obj is None:
@@ -83,7 +83,7 @@ async def process_arg(
             obj = value
 
         if hasattr(obj.__class__, "__await__"):
-            await obj
+            await obj # type: ignore
         return obj
 
     if greedy:
@@ -97,7 +97,7 @@ async def process_arg(
 
 def arg(
     name: str,
-    type: arg_type,
+    ty: arg_type,
     description: str | None = None,
     privilege: Privilege | None = None,
     greedy: bool = False,
@@ -108,7 +108,7 @@ def arg(
         if greedy and meta.args:
             raise ValueError("Greedy argument must be the last argument.")
 
-        python_type = to_python_type(type)
+        python_type = to_python_type(ty)
         meta.args.insert(
             0, ArgConfig(name, python_type, description, privilege, greedy, optional)
         )
@@ -126,7 +126,7 @@ def arg(
                 if not await sender.isPrivileged:
                     raise UserNotPrivilegedException()
 
-            await process_arg(name, greedy, optional, type, args, session)
+            await process_arg(name, greedy, optional, ty, args, session)
 
             # todo: does yield from work here?
             async for response in func(self, sender, session, args, opts, message):
@@ -140,13 +140,13 @@ def arg(
 def opt(
     opt: str,
     long_opt: str | None = None,
-    type: arg_type | None = None,
+    ty: arg_type | None = None,
     description: str | None = None,
     priv: Privilege | None = None,
 ) -> command_decorator_type:
     def decorator(func: command_func_type) -> command_func_type:
         meta = get_meta(func)
-        python_type = to_python_type(type)
+        python_type = to_python_type(ty)
         meta.opts.insert(
             0, OptConfig(opt, long_opt, python_type, description, priv)
         )
@@ -181,10 +181,11 @@ def opt(
             elif long_opt:
                 setattr(opts, opt, long_opt_value)
 
-            if type and opt_value:
-                await process_arg(opt, False, False, type, opts, session)
+            if ty and opt_value:
+                await process_arg(opt, False, False, ty, opts, session)
 
-            setattr(opts, long_opt, getattr(opts, opt, None))
+            if long_opt:
+                setattr(opts, long_opt, getattr(opts, opt, None))
 
             async for response in func(self, sender, session, args, opts, message):
                 yield response
@@ -271,18 +272,18 @@ class command:
     @property
     def args(self) -> dict[str, Any]:
         return {
-            arg.name: arg.type
+            arg.name: arg.ty
             for arg in self.meta.args
             if not arg.greedy and not arg.optional
         }
 
     @property
     def opts(self) -> dict[str, Any]:
-        opts = {opt.opt: opt.type for opt in self.meta.opts}
+        opts = {opt.opt: opt.ty for opt in self.meta.opts}
 
         opts.update(
             {
-                opt.long_opt: opt.type
+                opt.long_opt: opt.ty
                 for opt in self.meta.opts
                 if opt.long_opt is not None
             }
@@ -292,11 +293,11 @@ class command:
 
     @property
     def greedy(self) -> dict[str, Any]:
-        return {arg.name: arg.type for arg in self.meta.args if arg.greedy}
+        return {arg.name: arg.ty for arg in self.meta.args if arg.greedy}
 
     @property
     def optional_args(self) -> dict[str, Any]:
-        return {arg.name: arg.type for arg in self.meta.args if arg.optional}
+        return {arg.name: arg.ty for arg in self.meta.args if arg.optional}
 
     def __set_name__(self, owner, _) -> None:
 
@@ -330,7 +331,7 @@ class command:
         async def wrapper(
             self,
             sender: ZulipUser,
-            session,
+            session: Session,
             args: CommandParser.Args,
             opts: CommandParser.Opts,
             message: dict[str, Any],
@@ -452,7 +453,7 @@ class command:
                 )
             return responses
 
-        async def invoke(sender, session, message, **kwargs):
+        async def invoke(sender: ZulipUser, session: Session, message: dict[str, Any], **kwargs: Any) -> AsyncGenerator[response_type, None]:
             args_ns = Namespace(
                 **{arg.name: kwargs.get(arg.name) for arg in self.meta.args}
             )

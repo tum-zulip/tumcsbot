@@ -534,37 +534,37 @@ class Course(PluginCommandMixin, Plugin):
     @opt(
         "c",
         long_opt="channelgroup",
-        type=ChannelGroup.ChannelGroupId,
+        ty=ChannelGroup.ChannelGroupId,
         description="The id of a Channelgroup containing the Channels for this course.",
     )
     @opt(
         "t",
         long_opt="tutors",
-        type=UserGroup.GroupName,
+        ty=UserGroup.GroupName,
         description="The name of a Usergroup containing the tutors for this course.",
     )
     @opt(
         "i",
         long_opt="instructors",
-        type=UserGroup.GroupName,
+        ty=UserGroup.GroupName,
         description="The name of a Usergroup containing the instructors for this course.",
     )
     @opt(
         "tuts",
         long_opt="tutor_channel",
-        type=ZulipChannel,
+        ty=ZulipChannel,
         description="The course has an additional Channel for tutors.",
     )
     @opt(
         "ins",
         long_opt="instructor_channel",
-        type=ZulipChannel,
+        ty=ZulipChannel,
         description="The course has an additional Channel for Instructors.",
     )
     @opt(
         "fb",
         long_opt="feedback",
-        type=ZulipChannel,
+        ty=ZulipChannel,
         description="The course has an ANONYMOUS Feedback-Channel.",
     )
     async def create(
@@ -959,7 +959,7 @@ class Course(PluginCommandMixin, Plugin):
     @privilege(Privilege.ADMIN)
     @arg(
         "course",
-        type=CourseDB.CourseName,
+        ty=CourseDB.CourseName,
         description="The name of the Course to add the Channels to.",
     )
     @opt(
@@ -1033,7 +1033,7 @@ class Course(PluginCommandMixin, Plugin):
     @privilege(Privilege.ADMIN)
     @arg(
         "course",
-        type=CourseDB.CourseName,
+        ty=CourseDB.CourseName,
         description="The name of the Course to delete.",
     )
     @opt(
@@ -1138,31 +1138,31 @@ class Course(PluginCommandMixin, Plugin):
     @privilege(Privilege.ADMIN)
     @arg(
         "course",
-        type=CourseDB.CourseName,
+        ty=CourseDB.CourseName,
         description="The name of the Course to delete.",
     )
     @opt(
         "c",
         long_opt="channelgroup",
-        type=ChannelGroup.ChannelGroupId,
+        ty=ChannelGroup.ChannelGroupId,
         description="The id of an existing Channelgroup containing the Channels for this course.",
     )
     @opt(
         "t",
         long_opt="tutors",
-        type=UserGroup.GroupName,
+        ty=UserGroup.GroupName,
         description="The name of an existing Usergroup containing the tutors for this course.",
     )
     @opt(
         "tuts",
         long_opt="tutorial_channel",
-        type=ZulipChannel,
+        ty=ZulipChannel,
         description="The name of an existing Channel for Instructors.",
     )
     @opt(
         "ins",
         long_opt="instructor_channel",
-        type=ZulipChannel,
+        ty=ZulipChannel,
         description="The name of an existing Channel for Instructors.",
     )
     async def update(
@@ -1200,7 +1200,7 @@ class Course(PluginCommandMixin, Plugin):
     @privilege(Privilege.ADMIN)
     @arg(
         "course",
-        type=CourseDB.CourseName,
+        ty=CourseDB.CourseName,
         description="The name of the Course to delete.",
     )
     @opt("c", long_opt="channels", description="Remove the Channels from the Course.")

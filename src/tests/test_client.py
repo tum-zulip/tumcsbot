@@ -14,7 +14,7 @@ from tumcsbot.lib.client import AsyncClient as TUMCSBotClient
 
 def asSync(func: Callable[[Any], Any]) -> Callable[[Any], Any]:
     @wraps(func)
-    def wrapper(*args, **kwargs):
+    def wrapper(*args: Any, **kwargs: Any) -> Any:
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         result = loop.run_until_complete(func(*args, **kwargs))

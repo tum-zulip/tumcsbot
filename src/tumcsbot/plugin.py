@@ -154,7 +154,7 @@ class Plugin(threading.Thread, ABC):
             AsyncClient(self.plugin_context) if client is None else client
         )
 
-        self.queue = asyncio.Queue()
+        self.queue: asyncio.Queue = asyncio.Queue()
 
         # Set the running flag.
         self.running: bool = False
@@ -214,7 +214,7 @@ class Plugin(threading.Thread, ABC):
                     self.running = False
                 else:
                     # default handler
-                    async def handler():
+                    async def handler() -> None:
                         try:
                             responses = await self.handle_event(event)
                             await self.client.send_responses(responses)
@@ -244,8 +244,8 @@ class Plugin(threading.Thread, ABC):
         self.loop.close()
 
     @final
-    def push_event(self, event: Event):
-        def put():
+    def push_event(self, event: Event) -> None:
+        def put() -> None:
             self.queue.put_nowait(event)
 
         self.loop.call_soon_threadsafe(put)
@@ -354,7 +354,7 @@ class PluginCommandMixin(Plugin):
             ] = getattr(self, command)
             AsyncClientMixin.set_client(self.client)
             sender = ZulipUser(
-                id=message["sender_id"], name=message["sender_full_name"]
+                ID=message["sender_id"], name=message["sender_full_name"]
             )
             await sender
             with DB.session() as session:

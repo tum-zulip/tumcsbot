@@ -1,6 +1,6 @@
 from __future__ import annotations
 from abc import ABC, abstractmethod
-from typing import Any, AsyncGenerator, Callable
+from typing import Any, AsyncGenerator, Callable, Coroutine
 
 from dataclasses import dataclass, field
 from enum import Enum
@@ -10,7 +10,6 @@ import yaml
 from sqlalchemy.types import TypeDecorator, Integer
 from sqlalchemy.ext.mutable import Mutable
 import sqlalchemy
-from sqlalchemy.dialects.postgresql import INTEGER
 
 from tumcsbot.lib.client import AsyncClient
 from tumcsbot.lib.command_parser import CommandParser
@@ -107,18 +106,21 @@ class AsyncClientMixin:
 
 class SqlAlchemyMixinFactory:
     @staticmethod
-    def from_type(_impl) -> type:
+    def from_type(_impl: type) -> type:
         class Mixin(TypeDecorator, ABC):
             cache_ok = True
             impl = _impl
-            cls = None
+            cls: type | None = None
 
-            def __init_subclass__(cls, **kwargs):
+            def __init_subclass__(cls: type, **kwargs) -> None:
                 Mixin.cls = cls
 
             def process_bind_param(self, value, dialect):
                 if value is None:
                     return None
+
+                if Mixin.cls is None:
+                    raise ValueError("cls not set.")
 
                 return Mixin.cls.get_db_value(value)
 
@@ -138,8 +140,9 @@ class SqlAlchemyMixinFactory:
             def python_type(self):
                 return Mixin.cls
 
+            @staticmethod
             @abstractmethod
-            def get_db_value(self, value):
+            def get_db_value(value):
                 pass
 
             @property
@@ -151,7 +154,7 @@ class SqlAlchemyMixinFactory:
 
 class YAMLSerializableMixin(ABC):
 
-    def __yaml__(self):
+    def __yaml__(self) -> dict[str, Any]:
         raise NotImplementedError("Subclasses must implement __yaml__ method")
 
     @staticmethod
@@ -170,7 +173,7 @@ class ZulipUser(
     SqlAlchemyMixinFactory.from_type(Integer), AsyncClientMixin, YAMLSerializableMixin
 ):
     """
-    Inferface for Zulip users that dynamically fetches the user id and name and can be used as a type in the database.
+    Inferface for Zulip users that dynamically fetches the user ID and name and can be used as a type in the database.
     """
 
     cache_ok = True
@@ -179,9 +182,10 @@ class ZulipUser(
         self,
         identifier: str | int | None = None,
         name: str | None = None,
-        id: int | None = None,
+        ID: int | None = None,
     ) -> None:
-        self._id: int | None = id
+        super().__init__()
+        self._id: int | None = ID
         self._name: str | None = name
         self._privileged: bool | None = None
 
@@ -199,19 +203,20 @@ class ZulipUser(
 
     async def __ainit__(self):
         if self._name is None and self._id is None:
-            raise ValueError("User id and name not set.")
+            raise ValueError("User ID and name not set.")
 
         if self._id is None:
-            result = await self.client.get_user_id_by_name(self.mention)
-            if result is None:
+            uid = await self.client.get_user_id_by_name(self.mention)
+            if uid is None:
                 raise ZulipUserNotFound(
                     f"User {self.mention_silent} could be not found."
                 )
-            self._id = result
+            self._id = uid
+
         if self._name is None:
             result = await self.client.get_user_by_id(self._id)
             if result["result"] != "success":
-                raise ZulipUserNotFound(f"User with id {self._id} could be not found.")
+                raise ZulipUserNotFound(f"User with ID {self._id} could be not found.")
             self._name = result["user"]["full_name"]
 
         if self._privileged is None:
@@ -232,13 +237,13 @@ class ZulipUser(
         return result
 
     def __str__(self) -> str:
-        return f"ZulipUser(id: {self._id}, name: {self._name})"
+        return f"ZulipUser(ID: {self._id}, name: {self._name})"
 
     @property
     def id(self) -> int:
         if self._id is None:
             raise ValueError(
-                "User id not set. Did you forget to call `await` on the object?"
+                "User ID not set. Did you forget to call `await` on the object?"
             )
         return self._id
 
@@ -272,10 +277,12 @@ class ZulipChannel(
     SqlAlchemyMixinFactory.from_type(Integer), AsyncClientMixin, YAMLSerializableMixin
 ):
     """
-    Inferface for Zulip channels that dynamically fetches the user id and name and can be used as a type in the database.
+    Inferface for Zulip channels that dynamically fetches the user ID and name and can be used as a type in the database.
     """
 
     def __init__(self, identifier: str | int | None = None) -> None:
+        super().__init__()
+
         self._id: int | None = None
         self._name: str | None = None
 
@@ -288,36 +295,40 @@ class ZulipChannel(
                 raise ZulipChannelNotFound(
                     f"Invalid channel identifier `{identifier}`, use the same format as in the Zulip UI. (`#**<channel>**`)"
                 )
-            self._name: str | int = sname
+            self._name = sname
 
     def __str__(self) -> str:
-        return f"ZulipChannel(id: {self._id}, name: {self._name})"
+        return f"ZulipChannel(ID: {self._id}, name: {self._name})"
 
-    async def __ainit__(self):
+    async def __ainit__(self) -> Coroutine[None, None, None]:
         if self._name is None and self._id is None:
-            raise ValueError("Channel id and name not set.")
+            raise ValueError("Channel ID and name not set.")
 
         if self._id is None:
             result = await self.client.get_channel_id_by_name(self.mention)
             if result is None:
-                raise ZulipChannelNotFound(f"Channel {self.mention} could be not found.")
+                raise ZulipChannelNotFound(
+                    f"Channel {self.mention} could be not found."
+                )
             self._id = result
         if self._name is None:
             result = await self.client.get_channel_by_id(self._id)
-            if result == None:
+            if result is None:
                 raise ZulipChannelNotFound(
-                    f"Channel with id {self._id} could be not found: {result}"
+                    f"Channel with ID {self._id} could be not found: {result}"
                 )
             self._name = result["name"]
 
-    def __await__(self):
-        return self.__ainit__().__await__()
+    def __await__(self) -> Coroutine[None, None, None]:
+        async for _ in self.__ainit__().__await__():
+            pass
+        return self
 
-    def __yaml__(self):
+    def __yaml__(self) -> dict[str, Any]:
         return {"name": self.name}
 
     @staticmethod
-    def get_db_value(value):
+    def get_db_value(value) -> int:
         if isinstance(value, ZulipChannel):
             return value.id
         return int(value)
@@ -326,7 +337,7 @@ class ZulipChannel(
     def id(self) -> int:
         if self._id is None:
             raise ValueError(
-                "Channel id not set. Did you forget to call `await` on the object?"
+                "Channel ID not set. Did you forget to call `await` on the object?"
             )
         return self._id
 
@@ -420,7 +431,7 @@ class Privilege(Enum):
 @dataclass
 class ArgConfig:
     name: str
-    type: Callable[[Any], Any]
+    ty: Callable[[Any], Any]
     description: str | None = None
     privilege: Privilege | None = None
     greedy: bool = False
@@ -436,7 +447,7 @@ class ArgConfig:
     def from_dict(d: dict[str, Any]) -> "ArgConfig":
         return ArgConfig(
             name=d["name"],
-            type=d["type"],
+            ty=d["ty"],
             description=d["description"],
             privilege=Privilege.from_str(d["privilege"]),
             greedy=d["greedy"],
@@ -448,25 +459,25 @@ class ArgConfig:
 class OptConfig:
     opt: str
     long_opt: str | None = None
-    type: Callable[[Any], Any] | None = None
+    ty: Callable[[Any], Any] | None = None
     description: str | None = None
     privilege: Privilege | None = None
 
     @property
-    def syntax(self):
+    def syntax(self) -> str:
         try:
-            type_name = self.type.__name__
+            type_name = self.ty.__name__
         except AttributeError:
             type_name = "arg"
-        type = " <" + type_name + ">" if self.type is not None else ""
-        return "[-" + self.opt + type + "]"
+        ty = " <" + type_name + ">" if self.ty is not None else ""
+        return "[-" + self.opt + ty + "]"
 
     @staticmethod
     def from_dict(d: dict[str, Any]) -> "OptConfig":
         return OptConfig(
             opt=d["opt"],
             long_opt=d["long_opt"],
-            type=d["type"],
+            ty=d["ty"],
             description=d["description"],
             privilege=Privilege.from_str(d["privilege"]),
         )
@@ -486,7 +497,7 @@ class SubCommandConfig:
             name=d["name"],
             args=[ArgConfig.from_dict(arg) for arg in d["args"]],
             opts=[OptConfig.from_dict(opt) for opt in d["opts"]],
-            privilege=Privilege.from_str(d["privilege"]),
+            privilege=Privilege.from_str(d["privilege"]) or Privilege.USER,
             description=d["description"],
         )
 

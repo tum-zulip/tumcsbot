@@ -99,15 +99,16 @@ class AsyncClient:
                               channel.
     """
 
-    def __init__(self, plugin_context: PluginContext, *args, **kwargs) -> None:
+    def __init__(self, plugin_context: PluginContext, *args: Any, **kwargs: Any) -> None:
         self.id: int = plugin_context.bot_id
         self.ping: str = plugin_context.bot_mention
         self.ping_len: int = len(self.ping)
         self.register_params: dict[str, Any] = {}
-        self._client: ZulipClient = ZulipClient(
-            *args, config_file=plugin_context.zuliprc, insecure=True, **kwargs
-        )
+        kwargs["config_file"] = kwargs.get("config_file", plugin_context.zuliprc)
+        kwargs["insecure"] = True # todo: remove insecure=True
+        self._client: ZulipClient = ZulipClient(*args, **kwargs)
         self._executor = ThreadPoolExecutor()
+        self.verbose: bool = plugin_context.logging_level <= logging.DEBUG
 
     @property
     def base_url(self) -> str:
@@ -132,21 +133,6 @@ class AsyncClient:
         """
         result: dict[str, Any] = {}
         loop = asyncio.get_running_loop()
-
-        def html_escape(item: Any) -> Any:
-            if isinstance(item, list):
-                return [html_escape(i) for i in item]
-            elif isinstance(item, dict):
-                return {k: html_escape(v) for k, v in item.items()}
-            elif isinstance(item, str):
-                return urllib3.util.parse_url(item).url
-            elif isinstance(item, (int, float, bool, type(None))):
-                return item
-            
-            raise ValueError(f"unexpected type {type(item)}")
-        
-        #if request is not None:
-        #    request = html_escape(request)
 
         while True:
             try:
@@ -220,7 +206,7 @@ class AsyncClient:
                     res = await self.register(event_types, narrow, **kwargs)
                 if "error" in res["result"]:
                     if self.verbose:
-                        logging.error(f"Server returned error:\n{res['msg']}")
+                        logging.error("Server returned error: %s", res['msg'])
                     await asyncio.sleep(1)
                 else:
                     return res["queue_id"], res["last_event_id"]
@@ -442,7 +428,7 @@ class AsyncClient:
         result: dict[str, Any] = await self.call_endpoint(
             url=f"messages/{message_id}", method="GET"
         )
-        return result["message"]
+        return cast(dict[str, Any], result["message"])
 
     async def get_profile(
         self, request: dict[str, Any] | None = None
@@ -535,12 +521,10 @@ class AsyncClient:
         >>> await client.deregister('1482093786:3')
         {u'msg': u'', u'result': u'success'}
         """
-        request = dict(queue_id=queue_id)
-
         return await self.call_endpoint(
             url="events",
             method="DELETE",
-            request=request,
+            request={"queue_id": queue_id},
             timeout=timeout,
         )
 
@@ -724,9 +708,9 @@ class AsyncClient:
         )
 
     async def remove_subscriptions(
-        self, id: int, channels: Iterable[str]
+        self, ID: int, channels: Iterable[str]
     ) -> dict[str, Any]:
-        request = {"subscriptions": channels, "principals": [id]}
+        request = {"subscriptions": channels, "principals": [ID]}
 
         return await self.call_endpoint(
             url="users/me/subscriptions", method="DELETE", request=request
@@ -849,7 +833,7 @@ class AsyncClient:
         if result["result"] != "success":
             return None
 
-        match = re.search(Regex._USER_ID_PATTERN, result["rendered"])
+        match = re.search(Regex.USER_ID_PATTERN, result["rendered"])
         if not match:
             return None
         return int(match.groupdict()["id"])
@@ -863,7 +847,7 @@ class AsyncClient:
         if result["result"] != "success":
             return None
 
-        match = re.search(Regex._STREAM_ID_PATTERN, result["rendered"])
+        match = re.search(Regex.CHANNEL_ID_PATTERN, result["rendered"])
         if not match:
             return None
         return int(match.groupdict()["id"])
@@ -877,7 +861,7 @@ class AsyncClient:
         if result["result"] != "success":
             return None
 
-        match = re.search(Regex._USER_GROUP_ID_PATTERN, result["rendered"])
+        match = re.search(Regex.USER_GROUP_ID_PATTERN, result["rendered"])
         if not match:
             return None
         return int(match.groupdict()["id"])
@@ -912,7 +896,7 @@ class AsyncClient:
         """
 
         return await self.call_endpoint(
-            url="streams/{}".format(channel_data["stream_id"]),
+            url=f"streams/{channel_data["stream_id"]}",
             method="PATCH",
             request=channel_data,
         )

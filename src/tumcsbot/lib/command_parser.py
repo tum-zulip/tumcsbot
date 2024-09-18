@@ -124,7 +124,7 @@ class CommandParser:
             )
 
         # Split on tokens.
-        matches_opt: regex.regex.Match[str] | None = Regex._ARGUMENT_PATTERN.match(
+        matches_opt: regex.regex.Match[str] | None = Regex.ARGUMENT_PATTERN.match(
             command
         )
         if not matches_opt:

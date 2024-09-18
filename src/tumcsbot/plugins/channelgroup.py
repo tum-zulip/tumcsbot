@@ -667,8 +667,8 @@ class Channelgroup(PluginCommandMixin, Plugin):
             Usergroup.remove_user_from_group(session, user, members)
 
         if opts.t or not opts.k:
-            for id in user_ids:
-                await self.client.remove_subscriptions(id, channel_names)
+            for ID in user_ids:
+                await self.client.remove_subscriptions(ID, channel_names)
 
         yield DMResponse(
             f"You have unsubscribed the users from the channelgroup `{group.ChannelGroupId}`"
@@ -725,8 +725,8 @@ class Channelgroup(PluginCommandMixin, Plugin):
             Usergroup.remove_user_from_group(session, user, members)
 
         if opts.t or not opts.k:
-            for id in user_ids:
-                await self.client.remove_subscriptions(id, channel_names)
+            for ID in user_ids:
+                await self.client.remove_subscriptions(ID, channel_names)
 
         yield DMResponse(
             f"You have unsubscribed the users from the channelgroup `{group.ChannelGroupId}`"

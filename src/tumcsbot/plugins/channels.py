@@ -54,7 +54,7 @@ class Channels(PluginCommandMixin, Plugin):
     )
     @arg(
         "channel_names",
-        type=str,
+        ty=str,
         description="Channels that should be archived",
         greedy=True,
     )

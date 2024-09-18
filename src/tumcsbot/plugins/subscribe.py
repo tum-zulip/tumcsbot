@@ -130,7 +130,7 @@ class Subscribe(PluginCommandMixin, Plugin):
         ):
             raise DMError("Failed to subscribe all users.")
 
-        yield Response.ok(message)
+        yield DMResponse("Subscribed users.")
 
     @command
     @privilege(Privilege.ADMIN)
@@ -152,4 +152,4 @@ class Subscribe(PluginCommandMixin, Plugin):
         user_ids: list[int] = [user["user_id"] for user in result["members"]]
 
         await self.client.subscribe_users(user_ids, args.dest_channel)
-        yield Response.ok(message)
+        yield DMResponse("Subscribed all users.")

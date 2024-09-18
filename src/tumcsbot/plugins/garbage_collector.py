@@ -18,10 +18,10 @@ from tumcsbot.plugin import Event, Plugin
 from tumcsbot.plugins.userinput import UserInput
 
 
-class GarbageCollectorIgnoreChannelsTable(TableBase): # type: ignore
+class GarbageCollectorIgnoreChannelsTable(TableBase):  # type: ignore
     __tablename__ = "GarbageCollectorIgnoreChannels"
 
-    Channel = Column(ZulipChannel, unique=True, primary_key=True, autoincrement=False) # type: ignore
+    Channel = Column(ZulipChannel, unique=True, primary_key=True, autoincrement=False)  # type: ignore
 
 
 class GarbageCollector(Plugin):
@@ -57,6 +57,19 @@ class GarbageCollector(Plugin):
             )
         return []
 
+    def _getTimings(self) -> tuple[bool, int, int]:
+        threshhold = Conf.get("garbage_collector_no_activity_threshold_seconds")
+        time_to_responde = Conf.get("garbage_collector_time_to_responde_seconds")
+        if threshhold is None:
+            logging.error("garbage_collector_no_activity_threshold_seconds is not set")
+            return True, 0, 0
+
+        if time_to_responde is None:
+            logging.error("garbage_collector_time_to_responde_seconds is not set")
+            return True, 0, 0
+
+        return False, int(threshhold), int(time_to_responde)
+
     async def _garbage_collect_loop(self) -> None:
         try:
             while True:
@@ -65,24 +78,9 @@ class GarbageCollector(Plugin):
                     logging.error("could not get channels")
                     return
 
-                threshhold = Conf.get("garbage_collector_no_activity_threshold_seconds")
-                time_to_responde = Conf.get(
-                    "garbage_collector_time_to_responde_seconds"
-                )
-                if threshhold is None:
-                    logging.error(
-                        "garbage_collector_no_activity_threshold_seconds is not set"
-                    )
+                err, threshhold, time_to_responde = self._getTimings()
+                if err:
                     return
-
-                if time_to_responde is None:
-                    logging.error(
-                        "garbage_collector_time_to_responde_seconds is not set"
-                    )
-                    return
-
-                threshhold_val = int(threshhold)
-                time_to_responde_val = int(time_to_responde)
 
                 ZulipChannel.set_client(self.client)
                 ZulipUser.set_client(self.client)
@@ -91,7 +89,7 @@ class GarbageCollector(Plugin):
                 if bot_owner is None:
                     logging.error("bot_owner is not set")
                     return
-                
+
                 bot_owner = ZulipUser(int(bot_owner))
                 await bot_owner
 
@@ -109,7 +107,7 @@ class GarbageCollector(Plugin):
                     if channel["stream_id"] in ignore:
                         continue
 
-                    if await self._channel_requires_collection(channel, threshhold_val):
+                    if await self._channel_requires_collection(channel, threshhold):
                         channel = ZulipChannel(channel["stream_id"])
                         await channel
                         channels_to_collect[channel.id] = channel
@@ -129,21 +127,21 @@ class GarbageCollector(Plugin):
                     for users in channel_admin_members.values()
                 )
                 for key in keys:
-                    channels = [
+                    zchls = [
                         channels_to_collect[channel_id]
                         for channel_id, admins in channel_admin_members.items()
                         if frozenset(u.id for u in admins) == key
                     ]
-                    admins = channel_admin_members[channels[0].id]
-                    channels_by_admins[key] = (channels, admins)
+                    admins = list(channel_admin_members[zchls[0].id])
+                    channels_by_admins[key] = (zchls, admins)
 
                 gc_tasks = []
-                for channels, admins in channels_by_admins.values():
+                for zchls, admins in channels_by_admins.values():
                     # wait to avoid rate limiting
                     await asyncio.sleep(30)
                     gc_tasks.append(
                         self._garbage_collect(
-                            channels, bot_owner, admins, time_to_responde_val
+                            zchls, bot_owner, admins, time_to_responde
                         )
                     )
 
@@ -161,7 +159,9 @@ class GarbageCollector(Plugin):
         finally:
             self._garbage_collector_task = None
 
-    async def _channel_requires_collection(self, channel: dict, threshhold: int) -> bool:
+    async def _channel_requires_collection(
+        self, channel: dict[str, Any], threshhold: int
+    ) -> bool:
         if channel["stream_id"] in self.pending_garbage_collections:
             return False
 
@@ -187,6 +187,8 @@ class GarbageCollector(Plugin):
 
         if last_modified_date + threshhold < time.time():
             return True
+        
+        return False
 
     async def _get_admin_users(self) -> list[ZulipUser]:
         response = await self.client.call_endpoint(
@@ -196,11 +198,11 @@ class GarbageCollector(Plugin):
         )
         if response["result"] != "success":
             logging.error("could not get users")
-            return
+            return []
 
         users = response["members"]
         admin_users = [
-            ZulipUser(id=user["user_id"], name=user["full_name"])
+            ZulipUser(ID=user["user_id"], name=user["full_name"])
             for user in users
             if user["is_admin"]
         ]
@@ -219,7 +221,7 @@ class GarbageCollector(Plugin):
 
         if response["result"] != "success":
             logging.error("could not get subscribers for channel %s", channel.mention)
-            return
+            return []
 
         admins_in_channel = [
             user for user in admins if user.id in response["subscribers"]
@@ -309,7 +311,7 @@ class GarbageCollector(Plugin):
                         None,
                         content=content,
                         to=channel.id,
-                        msg_type="stream",
+                        msg_type="channel",
                         subject="Keep Channel",
                     )
                 )
