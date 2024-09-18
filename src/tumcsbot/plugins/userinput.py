@@ -84,7 +84,7 @@ class UserInput(Plugin):
         return Response.none()
 
     @staticmethod
-    async def _wait_for_queue(q: asyncio.Queue[disct[str, Any]], timeout: int) -> Any:
+    async def _wait_for_queue(q: asyncio.Queue[dict[str, Any]], timeout: int) -> Any:
         for _ in range(timeout):
             try:
                 return await asyncio.wait_for(q.get(), 1)
