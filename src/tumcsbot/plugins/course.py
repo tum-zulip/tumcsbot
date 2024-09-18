@@ -136,10 +136,10 @@ class Course(PluginCommandMixin, Plugin):
 
         for course in courses:
             course_name = course.CourseName
-            channels: list[str] = await Course._get_channel_names(
+            channels: list[str] = await Course.get_channel_names(
                 session, self.client, course
             )
-            emoji: str = Course._get_emoji(course, session)
+            emoji: str = Course.get_emoji(course, session)
 
             channels_concat: str = ", ".join(f"`{s}`" for s in channels)
             response += f"\n{course_name} | {emoji} :{emoji}: | {channels_concat}"
@@ -1997,7 +1997,7 @@ class Course(PluginCommandMixin, Plugin):
     # ========================================================================================================================
 
     @staticmethod
-    def _get_course_by_id(id: int, session: Session) -> CourseDB:
+    def get_course_by_id(id: int, session: Session) -> CourseDB:
         result: CourseDB | None = None
         result = session.query(CourseDB).filter(CourseDB.CourseId == id).one_or_none()
 
@@ -2009,7 +2009,7 @@ class Course(PluginCommandMixin, Plugin):
         )
 
     @staticmethod
-    def _get_course_by_name(name: str, session: Session) -> CourseDB:
+    def get_course_by_name(name: str, session: Session) -> CourseDB:
         result: CourseDB | None = None
         result = (
             session.query(CourseDB).filter(CourseDB.CourseName == name).one_or_none()
@@ -2023,7 +2023,7 @@ class Course(PluginCommandMixin, Plugin):
         )
 
     @staticmethod
-    def _get_channelgroup(course: CourseDB, session: Session) -> ChannelGroup:
+    def get_channelgroup(course: CourseDB, session: Session) -> ChannelGroup:
         """
         Get the ChannelGroup of a given Course.
         """
@@ -2031,15 +2031,15 @@ class Course(PluginCommandMixin, Plugin):
         return session.query(ChannelGroup).filter(ChannelGroup.ChannelGroupId == ID).one()
 
     @staticmethod
-    def _get_emoji(course: CourseDB, session: Session) -> str:
+    def get_emoji(course: CourseDB, session: Session) -> str:
         """
         Get the Emoji of the ChannelGroup associated with a given Course.
         """
-        sg: ChannelGroup = Course._get_channelgroup(course, session)
+        sg: ChannelGroup = Course.get_channelgroup(course, session)
         return str(sg.ChannelGroupEmote)
 
     @staticmethod
-    def _get_tutorgroup(course: CourseDB, session: Session) -> UserGroup:
+    def get_tutorgroup(course: CourseDB, session: Session) -> UserGroup:
         """
         Get the Tutor-UserGroup of a given Course.
         """
@@ -2047,15 +2047,15 @@ class Course(PluginCommandMixin, Plugin):
         return session.query(UserGroup).filter(UserGroup.GroupId == ID).one()
 
     @staticmethod
-    def _get_tutors(course: CourseDB, session: Session) -> list[ZulipUser]:
+    def get_tutors(course: CourseDB, session: Session) -> list[ZulipUser]:
         """
         Get the Tutors of a Course a list of ZulipUsers.
         """
-        ug: UserGroup = Course._get_tutorgroup(course, session)
+        ug: UserGroup = Course.get_tutorgroup(course, session)
         return Usergroup.get_users_for_group(session, ug)
 
     @staticmethod
-    def _get_instructorgroup(course: CourseDB, session: Session) -> UserGroup:
+    def get_instructorgroup(course: CourseDB, session: Session) -> UserGroup:
         """
         Get the Tutor-UserGroup of a given Course.
         """
@@ -2063,29 +2063,29 @@ class Course(PluginCommandMixin, Plugin):
         return session.query(UserGroup).filter(UserGroup.GroupId == ID).one()
 
     @staticmethod
-    def _get_instructors(course: CourseDB, session: Session) -> list[ZulipUser]:
+    def get_instructors(course: CourseDB, session: Session) -> list[ZulipUser]:
         """
         Get the Tutors of a Course a list of ZulipUsers.
         """
-        ug: UserGroup = Course._get_instructorgroup(course, session)
+        ug: UserGroup = Course.get_instructorgroup(course, session)
         return Usergroup.get_users_for_group(session, ug)
 
     @staticmethod
-    def _get_channels(course: CourseDB, session: Session) -> list[ZulipChannel]:
+    def get_channels(course: CourseDB, session: Session) -> list[ZulipChannel]:
         """
         Get the Channels of a Course as list of ZulipChannels.
         """
-        sg: ChannelGroup = Course._get_channelgroup(course, session)
+        sg: ChannelGroup = Course.get_channelgroup(course, session)
         return Channelgroup._get_channels(session, sg)
 
     @staticmethod
-    async def _get_channel_names(
+    async def get_channel_names(
         session: Session, client: AsyncClient, course: CourseDB
     ) -> list[str]:
         """
         Get the Channel Names of a Course as list of strings.
         """
-        sg: ChannelGroup = Course._get_channelgroup(course, session)
+        sg: ChannelGroup = Course.get_channelgroup(course, session)
         return await Channelgroup._get_channel_names(session, client, [sg])
 
     @staticmethod
@@ -2095,7 +2095,7 @@ class Course(PluginCommandMixin, Plugin):
         """
         Set the ChannelGroup of a given Course.
         """
-        oldSG: ChannelGroup = Course._get_channelgroup(course, session)
+        oldSG: ChannelGroup = Course.get_channelgroup(course, session)
         if oldSG == group:
             raise DMError("The given Channelgroup is already set for this course.")
 
@@ -2121,7 +2121,7 @@ class Course(PluginCommandMixin, Plugin):
         """
         Set the Tutor-UserGroup of a given Course.
         """
-        oldTG: UserGroup = Course._get_tutorgroup(course, session)
+        oldTG: UserGroup = Course.get_tutorgroup(course, session)
         if oldTG == group:
             raise DMError(
                 "The given Usergroup is already set as Tutorgroup for this course."
@@ -2147,7 +2147,7 @@ class Course(PluginCommandMixin, Plugin):
         """
         Set the Tutor-UserGroup of a given Course.
         """
-        oldIG: UserGroup = Course._get_instructorgroup(course, session)
+        oldIG: UserGroup = Course.get_instructorgroup(course, session)
         if oldIG == group:
             raise DMError(
                 "The given Usergroup is already set as Instructorgroup for this course."

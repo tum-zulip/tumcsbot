@@ -164,7 +164,6 @@ class Channelgroup(PluginCommandMixin, Plugin):
         emj: str = event["emoji_name"]
         user_id: int = event["user_id"]
         group_id: str | None = Channelgroup._get_group_id_from_emoji_event(emj)
-        self.logger.info(emj + " " + group_id)
 
         try:
             if group_id is None:
@@ -176,6 +175,7 @@ class Channelgroup(PluginCommandMixin, Plugin):
         except DMError as e:
             self.logger.info(f"Failed to (un)subscribe the user to Channelgroup")
             Response.build_message(
+                message=None,
                 content=f"Failed to (un)subscribe to Channelgroup {group_id} via Emote-Reaction :{emj}:",
                 to=user_id,
             )
@@ -188,30 +188,30 @@ class Channelgroup(PluginCommandMixin, Plugin):
 
         if event["op"] == "create":
             for channel in event["channels"]:
-                name: str = channel["name"]
-                id: int = channel["channel_id"]
+                name_c: str = channel["name"]
+                id_c: int = channel["channel_id"]
 
                 # Get all the groups this channel belongs to.
-                group_ids: list[str] = Channelgroup._get_group_ids_from_channel_id(id)
+                group_ids_c: list[str] = Channelgroup._get_group_ids_from_channel_id(id_c)
                 # Get all user ids to subscribe to this new channel ...
-                user_ids: list[int] = Channelgroup._get_group_subscribers(group_ids)
+                user_ids_c: list[int] = Channelgroup._get_group_subscribers(group_ids_c)
                 # ... and subscribe them.
-                self.client.subscribe_users(user_ids, name)
+                await self.client.subscribe_users(user_ids_c, name_c)
 
         elif event["op"] == "delete":
             for channel in event["channels"]:
                 # Channels
-                name: str = channel["name"]
-                id: int = channel["channel_id"]
+                name_d: str = channel["name"]
+                id_d: int = channel["channel_id"]
 
-                group_ids: list[str] = Channelgroup._get_group_ids_from_channel_id(id)
+                group_ids_d: list[str] = Channelgroup._get_group_ids_from_channel_id(id_d)
 
-                if group_ids:
+                if group_ids_d:
                     self.logger.info(
-                        f"Channel {name} being deleted from groups {group_ids}"
+                        f"Channel {name_d} being deleted from groups {group_ids_d}"
                     )
 
-                for group_id in group_ids:
+                for group_id in group_ids_d:
                     with DB.session() as session:
                         s: ChannelGroup = (
                             session.query(ChannelGroup)
@@ -219,14 +219,14 @@ class Channelgroup(PluginCommandMixin, Plugin):
                             .one()
                         )
                         await Channelgroup._remove_channels_by_id(
-                            session, self.client, s, [id]
+                            session, self.client, s, [id_d]
                         )
 
                 # messages
                 with DB.session() as session:
                     claims: list[GroupClaim] = session.query(GroupClaim).all()
                     for claim in claims:
-                        msg = await self.client.get_message_by_id(claim.MessageId)
+                        msg = await self.client.get_message_by_id(int(claim.MessageId))
                         if msg["type"] == "channel" and msg["channel_id"] == id:
                             try:
                                 session.query(GroupClaim).filter(
@@ -238,7 +238,7 @@ class Channelgroup(PluginCommandMixin, Plugin):
 
                     claimsAll: list[GroupClaimAll] = session.query(GroupClaimAll).all()
                     for claim in claimsAll:
-                        msg = await self.client.get_message_by_id(claim.MessageId)
+                        msg = await self.client.get_message_by_id(int(claim.MessageId))
                         if msg["type"] == "channel" and msg["channel_id"] == id:
                             try:
                                 session.query(GroupClaimAll).filter(
@@ -465,7 +465,7 @@ class Channelgroup(PluginCommandMixin, Plugin):
             session, self.client, [group]
         )
 
-        channels: list[(str, None)] = [
+        channels: list[tuple[str, None]] = [
             (channel_name, None) for channel_name in channel_names
         ]
 
@@ -509,7 +509,7 @@ class Channelgroup(PluginCommandMixin, Plugin):
             session, self.client, [group]
         )
 
-        channels: list[(str, None)] = [
+        channels: list[tuple[str, None]] = [
             (channel_name, None) for channel_name in channel_names
         ]
 
@@ -554,7 +554,7 @@ class Channelgroup(PluginCommandMixin, Plugin):
             session, self.client, [group]
         )
 
-        channels: list[(str, None)] = [
+        channels: list[tuple[str, None]] = [
             (channel_name, None) for channel_name in channel_names
         ]
 
@@ -597,11 +597,11 @@ class Channelgroup(PluginCommandMixin, Plugin):
         """
         group: ChannelGroup = args.group_id
         members: UserGroup = Channelgroup._get_usergroup(session, group)
-        user_id: list[int] = sender.id
+        user_id: int = sender.id
         channel_names: list[str] = await Channelgroup._get_unique_channel_names(
-            session, sender, group
+            session, self.client, sender, group
         )
-
+        
         if opts.k and opts.t:
             raise DMError(
                 "The `-k` and `-t` flags are mutually exclusive, see `help channelgroup`."
@@ -655,7 +655,7 @@ class Channelgroup(PluginCommandMixin, Plugin):
         users: list[ZulipUser] = args.user
         user_ids: list[int] = [user.id for user in users]
         channel_names: list[str] = await Channelgroup._get_unique_channel_names(
-            session, sender, group
+            session, self.client, sender, group
         )
 
         if opts.k and opts.t:
@@ -713,7 +713,7 @@ class Channelgroup(PluginCommandMixin, Plugin):
         users: list[ZulipUser] = Usergroup.get_users_for_group(session, ugroup)
         user_ids: list[int] = Usergroup.get_user_ids_for_group(session, ugroup)
         channel_names: list[str] = await Channelgroup._get_unique_channel_names(
-            session, sender, group
+            session, self.client, sender, group
         )
 
         if opts.k and opts.t:
@@ -810,6 +810,8 @@ class Channelgroup(PluginCommandMixin, Plugin):
             raise DMError("Claim only channel messages.")
 
         channel = await self.client.get_channel_by_id(message["channel_id"])
+        if not channel:
+            raise DMError("Stream not found")
         name = channel["name"]
 
         await Channelgroup._claim(
@@ -1713,7 +1715,7 @@ class Channelgroup(PluginCommandMixin, Plugin):
         return result
 
     @staticmethod
-    def _get_group_ids_from_channel_id(id: str) -> list[str]:
+    def _get_group_ids_from_channel_id(id: int) -> list[str]:
         """
         Get a list of all ChannelGroup-identifiers that a channel is a member in.
         Returns empty list if channel is not member of any ChannelGroup.
@@ -1818,7 +1820,7 @@ class Channelgroup(PluginCommandMixin, Plugin):
         return channels
 
     @staticmethod
-    async def _get_unique_channel_names_client(
+    async def _get_unique_channel_names(
         session: Session, client: AsyncClient, user: ZulipUser, group: ChannelGroup
     ) -> list[str]:
         """
@@ -1842,39 +1844,6 @@ class Channelgroup(PluginCommandMixin, Plugin):
                 raise DMError()
             name: str = result["name"]
             channels.append(name)
-        return [channel for channel in channels if channel not in channelsToKeep]
-
-    @staticmethod
-    async def _get_unique_channel_names(
-        session: Session, sender: ZulipUser, group: ChannelGroup, client: AsyncClient
-    ) -> list[str]:
-        """
-        Get a list of the names of all channels that are members only in a given ChannelGroup and not in any other ChannelGroup.
-        """
-        groups: list[ChannelGroup] = Channelgroup._get_groups_for_user(session, sender)
-        groups.remove(group)
-
-        channelsToKeep: list[str] = await Channelgroup._get_channel_names(
-            session, client, groups
-        )
-
-        channels: list[str] = []
-        failed: list[str] = []
-        for s in (
-            session.query(ChannelGroupMember)
-            .filter(ChannelGroupMember.ChannelGroupId == group.ChannelGroupId)
-            .all()
-        ):
-            result = await client.get_channel_by_id(s.Channel.id)
-            if result == None:
-                failed.append(f"`{s.Channel.id}`")
-                continue
-            name: str = result["name"]
-            channels.append(name)
-
-        if failed:
-            f: str = " ".join(failed)
-            raise DMError(f"Channel(s) with id(s) {f} could be not found.")
         return [channel for channel in channels if channel not in channelsToKeep]
 
     @staticmethod

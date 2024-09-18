@@ -27,7 +27,7 @@ class AutoSubscriber(Plugin):
     """Keep the bot subscribed to all public channels."""
 
     zulip_events = ["stream"]
-    
+
     def _init_plugin(self) -> None:
         self._db: DB = DB()
         # Ensure that we are subscribed to all existing channels.
@@ -75,7 +75,7 @@ class AutoSubscriber(Plugin):
         if private:
             self._remove_channel_from_table(channel_name)
             return
-        
+
         try:
             with DB.session() as session:
                 session.merge(PlublicChannels(ChannelName=channel_name, Subscribed=0))

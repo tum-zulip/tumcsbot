@@ -3,11 +3,9 @@
 # See LICENSE file for copyright and license details.
 # TUM CS Bot - https://github.com/ro-i/tumcsbot
 
-from inspect import cleandoc
-from typing import Any, AsyncGenerator, Iterable
+from typing import Any, AsyncGenerator
 
 from tumcsbot.lib.db import Session
-from tumcsbot.lib.response import Response
 from tumcsbot.lib.conf import Conf
 from tumcsbot.plugin import PluginCommandMixin, Plugin
 from tumcsbot.lib.command_parser import CommandParser
@@ -54,7 +52,7 @@ class ConfPlugin(PluginCommandMixin, Plugin):
     async def set(
         self,
         sender: ZulipUser,
-        session: Session,
+        _session: Session,
         args: CommandParser.Args,
         _opts: CommandParser.Opts,
         _message: dict[str, Any],
@@ -75,7 +73,7 @@ class ConfPlugin(PluginCommandMixin, Plugin):
     async def remove(
         self,
         _sender: ZulipUser,
-        session: Session,
+        _session: Session,
         args: CommandParser.Args,
         _opts: CommandParser.Opts,
         _message: dict[str, Any],
