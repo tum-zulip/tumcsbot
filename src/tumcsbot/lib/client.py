@@ -724,7 +724,7 @@ class AsyncClient:
         )
 
     async def remove_subscriptions(
-        self, id: int, channels: Iterable[dict[str, Any]]
+        self, id: int, channels: Iterable[str]
     ) -> dict[str, Any]:
         request = {"subscriptions": channels, "principals": [id]}
 
