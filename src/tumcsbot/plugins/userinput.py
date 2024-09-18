@@ -215,7 +215,7 @@ class UserInput(Plugin):
             if max_length is not None and len(content) > max_length:
                 raise DMError(f"Text too long. Max length is {max_length}.")
 
-            if min_length is not None len(content) < min_length:
+            if min_length is not None and len(content) < min_length:
                 raise DMError(f"Text too short. Min length is {min_length}.")
 
             if not allow_spaces and " " in content:

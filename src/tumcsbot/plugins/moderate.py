@@ -281,7 +281,7 @@ class Moderate(PluginCommandMixin, Plugin):
     @opt(
         "a",
         "all",
-        privilege=Privilege.ADMIN,
+        priv=Privilege.ADMIN,
         description="Option to display configuration for all users",
     )
     @opt(

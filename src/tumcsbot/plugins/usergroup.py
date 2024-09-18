@@ -99,7 +99,7 @@ class Usergroup(PluginCommandMixin, Plugin):
         "a",
         long_opt="all",
         description="Display all user groups with all users",
-        privilege=Privilege.ADMIN,
+        priv=Privilege.ADMIN,
     )
     async def _list(
         self,

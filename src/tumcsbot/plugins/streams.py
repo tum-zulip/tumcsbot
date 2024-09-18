@@ -51,7 +51,7 @@ class Streams(PluginCommandMixin, Plugin):
     @opt(
         "r",
         description="select the streams according to the given regular expressions",
-        privilege=Privilege.ADMIN,
+        priv=Privilege.ADMIN,
     )
     @arg(
         "stream_names",
