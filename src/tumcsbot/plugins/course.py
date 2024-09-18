@@ -77,6 +77,7 @@ class CourseDB(TableBase):
 
     TutorStream = Column(ZulipStream, nullable=True)
     InstructorStream = Column(ZulipStream, nullable=True)
+    FeedbackStream = Column(ZulipStream, nullable=True) # not Null if anonymous feedback enabled
 
     _streams = relationship(
         "StreamGroup",
@@ -150,6 +151,11 @@ class Course(PluginCommandMixin, Plugin):
         "i",
         long_opt="instructors",
         description="The course has an additional Channel for Instructors.",
+    )
+    @opt(
+        "f",
+        long_opt="feedback",
+        description="The course has an ANONYMOUS Feedback-Channel.",
     )
     async def create_empty(
         self,
@@ -439,6 +445,47 @@ class Course(PluginCommandMixin, Plugin):
                     lambda: self.client.delete_stream(instructor_stream.id)
                 )
 
+            # get a corresponding (empty) Channel for anonymous Feedback or None
+            feedback_stream: ZulipStream | None = None
+            if opts.f:
+
+                feedback_stream_name: str = name + " - Feedback"
+                feedback_stream_desc: list[str] = [
+                    f"Anonymous Channel for Feedback to {name}"
+                ]
+                if lan == "de":
+                    feedback_stream_desc: list[str] = [
+                        f"Anonymer Kanal für Feedback zu {name}"
+                    ]
+
+                f_ex = await self.client.get_stream_id_by_name(feedback_stream_name)
+
+                if ins_ex is not None:
+                        await self.client.delete_stream(f_ex)
+
+                result: dict[str, Any] = await self.client.add_subscriptions(
+                    streams=[
+                        {
+                            "name": feedback_stream_name,
+                            "description": " ".join(feedback_stream_desc),
+                        }
+                    ],
+                    principals=[sender.id, self.client.id],
+                )
+
+                if result["result"] != "success":
+                    raise DMError(result["msg"])
+
+                feedback_stream: ZulipStream = ZulipStream(
+                    f"#**{feedback_stream_name}**"
+                )
+                await feedback_stream
+
+                cleanup_opterations.append(
+                    lambda: self.client.delete_stream(feedback_stream.id)
+                )
+
+
             # create and add a Course to the DB
             course: CourseDB = CourseDB(
                 CourseName=name,
@@ -448,6 +495,7 @@ class Course(PluginCommandMixin, Plugin):
                 InstructorsUserGroup=instructors.GroupId,
                 TutorStream=tutors_stream,
                 InstructorStream=instructor_stream,
+                FeedbackStream=feedback_stream,
             )
 
             session.add(course)
@@ -506,6 +554,12 @@ class Course(PluginCommandMixin, Plugin):
         long_opt="instructor_channel",
         type=ZulipStream,
         description="The course has an additional Channel for Instructors.",
+    )
+    @opt(
+        "fb",
+        long_opt="feedback",
+        type=ZulipStream,
+        description="The course has an ANONYMOUS Feedback-Channel.",
     )
     async def create(
         self,
@@ -820,6 +874,46 @@ class Course(PluginCommandMixin, Plugin):
                 cleanup_opterations.append(
                     lambda: self.client.delete_stream(instructor_stream.id)
                 )
+            
+            # get a corresponding (empty) Channel for anonymous Feedback or None
+            feedback_stream: ZulipStream | None = None
+            if opts.fb:
+
+                feedback_stream_name: str = name + " - Feedback"
+                feedback_stream_desc: list[str] = [
+                    f"Anonymous Channel for Feedback to {name}"
+                ]
+                if lan == "de":
+                    feedback_stream_desc: list[str] = [
+                        f"Anonymer Kanal für Feedback zu {name}"
+                    ]
+
+                f_ex = await self.client.get_stream_id_by_name(feedback_stream_name)
+
+                if ins_ex is not None:
+                        await self.client.delete_stream(f_ex)
+
+                result: dict[str, Any] = await self.client.add_subscriptions(
+                    streams=[
+                        {
+                            "name": feedback_stream_name,
+                            "description": " ".join(feedback_stream_desc),
+                        }
+                    ],
+                    principals=[sender.id, self.client.id],
+                )
+
+                if result["result"] != "success":
+                    raise DMError(result["msg"])
+
+                feedback_stream: ZulipStream = ZulipStream(
+                    f"#**{feedback_stream_name}**"
+                )
+                await feedback_stream
+
+                cleanup_opterations.append(
+                    lambda: self.client.delete_stream(feedback_stream.id)
+                )
 
             # create and add a Course to the DB
             course: CourseDB = CourseDB(
@@ -830,6 +924,7 @@ class Course(PluginCommandMixin, Plugin):
                 InstructorsUserGroup=instructors.GroupId,
                 TutorStream=tutors_stream,
                 InstructorStream=instructor_stream,
+                FeedbackStream=feedback_stream,
             )
 
             session.add(course)
@@ -861,11 +956,12 @@ class Course(PluginCommandMixin, Plugin):
     @opt(
         "a",
         long_opt="all",
-        description="Add all standard steams to the course (Allgemein, Organisation, Feedback, Ankündigungen, Technik, Memes).",
+        description="Add all standard steams to the course (Allgemein, Organisation, normal Feedback, Ankündigungen, Technik, Memes).",
     )
     @opt("g", long_opt="general", description="Add a general stream.")
     @opt("o", long_opt="orga", description="Add a Channel for Organization.")
-    @opt("f", long_opt="feedback", description="Add a Channel for Feedback.")
+    @opt("fn", long_opt="feedbackbnorm", description="Add a normal  Channel for Feedback.")
+    @opt("fa", long_opt="feedbackanon", description="Add an anonymous Channel for Feedback.")
     @opt("n", long_opt="announcements", description="Add a Channel for Announcements.")
     @opt("m", long_opt="memes", description="Add a Channel for Memes.")
     @opt("t", long_opt="tech", description="Add a Channel for Tech-Support.")
@@ -895,6 +991,9 @@ class Course(PluginCommandMixin, Plugin):
             )
 
         else:
+            if opts.fn and opts.fa:
+                raise DMError("You can only add one (normal OR anonymous) feedback channel at a time.")
+            
             await Course.add_standard_streams(
                 self.client,
                 session,
@@ -903,7 +1002,8 @@ class Course(PluginCommandMixin, Plugin):
                 lan,
                 opts.g,
                 opts.o,
-                opts.f,
+                opts.fn,
+                opts.fa,
                 opts.n,
                 opts.m,
                 opts.t,
@@ -1390,20 +1490,25 @@ class Course(PluginCommandMixin, Plugin):
             resultT = await confirm_input(
                 "Do you want to add a Channel for Tech-Support to your course?"
             )
+            resultF = await confirm_input(
+                "Do you want the Feedback-Channel of your course to allow anonymous Feedback?"
+            )
 
             # wizard adds Feedback and Announcement per default to improve the communication between instructors and students (they have to be removed manually)
             await Course.add_standard_streams(
-                self.client,
-                session,
-                courseName,
-                courseStreams,
-                courseLan,
-                resultG,
-                resultO,
-                True,
-                True,
-                resultM,
-                resultT,
+                client=self.client,
+                session=session,
+                name=courseName,
+                sg=courseStreams,
+                lan=courseLan,
+                principals=[self.client.id, sender.id],
+                g=resultG,
+                o=resultO,
+                fn=not resultF,
+                fa=resultF,
+                n=True,
+                m=resultM,
+                t=resultT,
             )
 
             # TODO create Usergroup for Tutors
@@ -1726,6 +1831,14 @@ class Course(PluginCommandMixin, Plugin):
                     lambda id=courseInstructorStream.id: self.client.delete_stream(id)
                 )
 
+                courseFeedbackStream: ZulipStream | None = None
+                if resultF:
+                    courseFeedbackStream = ZulipStream(
+                        f"#**{courseName} - Feedback**"
+                    )
+                    await courseFeedbackStream
+
+
                 # create and add a Course to the DB
                 course: CourseDB = CourseDB(
                     CourseName=courseName,
@@ -1735,6 +1848,7 @@ class Course(PluginCommandMixin, Plugin):
                     InstructorsUserGroup=courseInstructors.GroupId,
                     TutorStream=courseTutorStream,
                     InstructorStream=courseInstructorStream,
+                    FeedbackStream=courseFeedbackStream
                 )
 
                 session.add(course)
@@ -1777,7 +1891,8 @@ class Course(PluginCommandMixin, Plugin):
         principals: list[int] | None,
         g: bool = True,
         o: bool = True,
-        f: bool = True,
+        fn: bool = True,
+        fa: bool = True,
         n: bool = True,
         m: bool = True,
         t: bool = True,
@@ -1795,21 +1910,28 @@ class Course(PluginCommandMixin, Plugin):
                 "General",
                 "Allgemein",
                 f"Welcome to the general Channel of {name}",
-                f"Willkommen im allgemeinen Zulip Kanal von {name}",
+                f"Willkommen im allgemeinen Zulip Kanal von dem Kurs {name}",
             ),
             (
                 o,
                 "Organization",
                 "Organisation",
                 f"Welcome to the organizational Channel of {name}",
-                f"Willkommen im Orga-Zulip Kanal von {name}",
+                f"Willkommen im Orga-Zulip Kanal von dem Kurs {name}",
             ),
             (
-                f,
+                fn,
                 "Feedback",
                 "Feedback",
                 f"Welcome to the Channel for Feedback to {name}",
-                f"Willkommen im Feedback Zulip Kanal von dem Kurs",
+                f"Willkommen im Feedback Zulip Kanal von dem Kurs {name}",
+            ),
+            (
+                fa,
+                "Feedback",
+                "Feedback",
+                f"Welcome to the anonymous Channel for Feedback to {name}",
+                f"Willkommen im anonymen Feedback Zulip Kanal von dem Kurs {name}",
             ),
             (
                 n,
@@ -1857,7 +1979,14 @@ class Course(PluginCommandMixin, Plugin):
 
             Streamgroup._add_zulip_streams(session, to_add, sg)
 
+            if opt.fa:
+                session.query(CourseDB).filter(CourseDB.CourseName == name).update({'FeedbackStream': s})
+                session.commit()
+
+
         except Exception as e:
+            session.rollback()
+
             for s in streams:
                 sid = await client.get_stream_id_by_name(s["name"])
                 if sid is not None:
