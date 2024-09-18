@@ -54,7 +54,7 @@ from tumcsbot.lib.types import (
 
 T = TypeVar("T")
 
-class CourseDB(TableBase):
+class CourseDB(TableBase):  # type: ignore
     """Represents a course in the system."""
 
     __tablename__ = "Courses"
@@ -181,17 +181,17 @@ class Course(PluginCommandMixin, Plugin):
             session.query(CourseDB).filter(CourseDB.CourseName == name).first()
             is not None
         ):
-            result = await self.client.send_response(
+            result1 = await self.client.send_response(
                 Response.build_message(
                     message,
                     content=f"Course `{name}` already exists. Dou you want to replace it with an empty course?",
                 )
             )
-            if result["result"] != "success":
+            if result1["result"] != "success":
                 raise DMError("Could not send message to user")
 
-            result, msg = await UserInput.confirm(self.client, result["id"], timeout=60)
-            if not result:
+            resp1, _ = await UserInput.confirm(self.client, result1["id"], timeout=60)
+            if not resp1:
                 yield DMResponse(
                     "Ok, I will not create a new course. Please choose another name."
                 )
@@ -203,17 +203,17 @@ class Course(PluginCommandMixin, Plugin):
             .first()
             is not None
         ):
-            result = await self.client.send_response(
+            result2 = await self.client.send_response(
                 Response.build_message(
                     message,
                     content=f"A Channelgroup with :{channelgroup_emoji}: already exists. Dou you want to replace it with an empty Channelgroup for your course?",
                 )
             )
-            if result["result"] != "success":
+            if result2["result"] != "success":
                 raise DMError("Could not send message to user")
 
-            result, msg = await UserInput.confirm(self.client, result["id"], timeout=60)
-            if not result:
+            resp2, _ = await UserInput.confirm(self.client, result2["id"], timeout=60)
+            if not resp2:
                 res = await self.client.send_response(
                     Response.build_message(
                         message,
@@ -223,25 +223,26 @@ class Course(PluginCommandMixin, Plugin):
                 if res["result"] != "success":
                     raise DMError("Could not send message to user")
 
-                res, msg = await UserInput.confirm(self.client, res["id"], timeout=60)
-                if not res:
+                rep, _ = await UserInput.confirm(self.client, res["id"], timeout=60)
+                if not rep:
                     yield DMResponse(
                         f"Ok, I will not create a new course then. Please choose another emote because :{channelgroup_emoji}: is already in use :botsad:"
                     )
                     return
                 else:
-                    channels: ChannelGroup = (
+                    channels = (
                         session.query(ChannelGroup)
                         .filter(ChannelGroup.ChannelGroupEmote == channelgroup_emoji)
                         .first()
                     )
             else:
-                sg: ChannelGroup = (
+                sg: ChannelGroup | None = (
                     session.query(ChannelGroup)
                     .filter(ChannelGroup.ChannelGroupEmote == channelgroup_emoji)
                     .first()
                 )
-                Channelgroup._delete_group(session, sg)
+                if sg is not None:
+                    Channelgroup._delete_group(session, sg)
 
         resLan = await self.client.send_response(
             Response.build_message(
@@ -256,7 +257,7 @@ class Course(PluginCommandMixin, Plugin):
             # get a corresponding (empty) Channelgroup
             if not channels:
                 channelgroup_name: str = "channels_" + name
-                channels: ChannelGroup = Channelgroup._create_and_get_group(
+                channels = Channelgroup._create_and_get_group(
                     session, channelgroup_name, channelgroup_emoji
                 )
                 cleanup_opterations.append(
@@ -272,29 +273,30 @@ class Course(PluginCommandMixin, Plugin):
                 .first()
                 is not None
             ):
-                result = await self.client.send_response(
+                result3 = await self.client.send_response(
                     Response.build_message(
                         message,
                         content=f"Usergroup for Tutors of this course already exists. Dou you want to replace it with a new empty Usergroup for your course?",
                     )
                 )
-                if result["result"] != "success":
+                if result3["result"] != "success":
                     raise DMError("Could not send message to user")
 
-                result, msg = await UserInput.confirm(
-                    self.client, result["id"], timeout=60
+                resp3, _ = await UserInput.confirm(
+                    self.client, result3["id"], timeout=60
                 )
-                if not result:
+                if not resp3:
                     raise DMError(
                         "Ok, I will not create a new course then. Please choose another name."
                     )
                 else:
-                    ug: UserGroup = (
+                    ugt: UserGroup | None = (
                         session.query(UserGroup)
                         .filter(UserGroup.GroupName == usergroup_name_tut)
                         .first()
                     )
-                    Usergroup.delete_group(session, ug)
+                    if ugt is not None:
+                        Usergroup.delete_group(session, ugt)
 
             tutors = Usergroup.create_and_get_group(session, usergroup_name_tut)
             cleanup_opterations.append(lambda: Usergroup.delete_group(session, tutors))
@@ -308,29 +310,30 @@ class Course(PluginCommandMixin, Plugin):
                 .first()
                 is not None
             ):
-                result = await self.client.send_response(
+                result4 = await self.client.send_response(
                     Response.build_message(
                         message,
                         content=f"Usergroup for Instructors of this course already exists. Dou you want to replace it with a new empty Usergroup for your course?",
                     )
                 )
-                if result["result"] != "success":
+                if result4["result"] != "success":
                     raise DMError("Could not send message to user")
 
-                result, msg = await UserInput.confirm(
-                    self.client, result["id"], timeout=60
+                resp4, _ = await UserInput.confirm(
+                    self.client, result4["id"], timeout=60
                 )
-                if not result:
+                if not resp4:
                     raise DMError(
                         "Ok, I will not create a new course then. Please choose another name."
                     )
                 else:
-                    ug: UserGroup = (
+                    ugi: UserGroup | None = (
                         session.query(UserGroup)
                         .filter(UserGroup.GroupName == usergroup_name_ins)
                         .first()
                     )
-                    Usergroup.delete_group(session, ug)
+                    if ugi is not None:
+                        Usergroup.delete_group(session, ugi)
 
             instructors = Usergroup.create_and_get_group(session, usergroup_name_ins)
             cleanup_opterations.append(
@@ -341,32 +344,32 @@ class Course(PluginCommandMixin, Plugin):
             tutors_channel_name: str = name + " - Tutors"
             tutors_channel_desc: list[str] = [f"Internal Channel for {name}-Tutors"]
             if lan == "de":
-                tutors_channel_name: str = name + " - Tutoren"
-                tutors_channel_desc: list[str] = [f"Interner Kanal für {name}-Tutoren"]
+                tutors_channel_name = name + " - Tutoren"
+                tutors_channel_desc = [f"Interner Kanal für {name}-Tutoren"]
 
             tut_ex = await self.client.get_channel_id_by_name(tutors_channel_name)
 
             if tut_ex is not None:
-                result = await self.client.send_response(
+                result5 = await self.client.send_response(
                     Response.build_message(
                         message,
                         content=f"Channel for Tutors of this course already exists. Dou you want to replace it with a new empty Channel for your course?",
                     )
                 )
-                if result["result"] != "success":
+                if result5["result"] != "success":
                     raise DMError("Could not send message to user")
 
-                result, msg = await UserInput.confirm(
-                    self.client, result["id"], timeout=60
+                resp5, _ = await UserInput.confirm(
+                    self.client, result5["id"], timeout=60
                 )
-                if not result:
+                if not resp5:
                     raise DMError(
                         "Ok, I will not create a new course then. Please choose another name."
                     )
                 else:
                     await self.client.delete_channel(tut_ex)
 
-            result: dict[str, Any] = await self.client.add_subscriptions(
+            result_tut_s: dict[str, Any] = await self.client.add_subscriptions(
                 channels=[
                     {
                         "name": tutors_channel_name,
@@ -378,8 +381,8 @@ class Course(PluginCommandMixin, Plugin):
                 history_public_to_subscribers=True,
             )
 
-            if result["result"] != "success":
-                raise DMError(result["msg"])
+            if result_tut_s["result"] != "success":
+                raise DMError(result_tut_s["msg"])
 
             tutors_channel: ZulipChannel = ZulipChannel(f"#**{tutors_channel_name}**")
             await tutors_channel
@@ -397,34 +400,34 @@ class Course(PluginCommandMixin, Plugin):
                     f"Internal Channel for Instructors of {name}"
                 ]
                 if lan == "de":
-                    instructor_channel_name: str = name + " - Instructors"
-                    instructor_channel_desc: list[str] = [
+                    instructor_channel_name = name + " - Instructors"
+                    instructor_channel_desc = [
                         f"Interner Kanal für {name}-Instructors"
                     ]
 
                 ins_ex = await self.client.get_channel_id_by_name(instructor_channel_name)
 
                 if ins_ex is not None:
-                    result = await self.client.send_response(
+                    result6 = await self.client.send_response(
                         Response.build_message(
                             message,
                             content=f"Channel for Instructors of this course already exists. Dou you want to replace it with a new empty Channel for your course?",
                         )
                     )
-                    if result["result"] != "success":
+                    if result6["result"] != "success":
                         raise DMError("Could not send message to user")
 
-                    result, msg = await UserInput.confirm(
-                        self.client, result["id"], timeout=60
+                    resp6, _ = await UserInput.confirm(
+                        self.client, result6["id"], timeout=60
                     )
-                    if not result:
+                    if not resp6:
                         raise DMError(
                             "Ok, I will not create a new course then. Please choose another name."
                         )
                     else:
                         await self.client.delete_channel(ins_ex)
 
-                result: dict[str, Any] = await self.client.add_subscriptions(
+                result_ins_s: dict[str, Any] = await self.client.add_subscriptions(
                     channels=[
                         {
                             "name": instructor_channel_name,
@@ -436,10 +439,10 @@ class Course(PluginCommandMixin, Plugin):
                     history_public_to_subscribers=True,
                 )
 
-                if result["result"] != "success":
-                    raise DMError(result["msg"])
+                if result_ins_s["result"] != "success":
+                    raise DMError(result_ins_s["msg"])
 
-                instructor_channel: ZulipChannel = ZulipChannel(
+                instructor_channel = ZulipChannel(
                     f"#**{instructor_channel_name}**"
                 )
                 await instructor_channel
@@ -457,7 +460,7 @@ class Course(PluginCommandMixin, Plugin):
                     f"Anonymous Channel for Feedback to {name}"
                 ]
                 if lan == "de":
-                    feedback_channel_desc: list[str] = [
+                    feedback_channel_desc = [
                         f"Anonymer Kanal für Feedback zu {name}"
                     ]
 
@@ -466,7 +469,7 @@ class Course(PluginCommandMixin, Plugin):
                 if ins_ex is not None:
                         await self.client.delete_channel(f_ex)
 
-                result: dict[str, Any] = await self.client.add_subscriptions(
+                result_fb_s: dict[str, Any] = await self.client.add_subscriptions(
                     channels=[
                         {
                             "name": feedback_channel_name,
@@ -476,10 +479,10 @@ class Course(PluginCommandMixin, Plugin):
                     principals=[sender.id, self.client.id],
                 )
 
-                if result["result"] != "success":
-                    raise DMError(result["msg"])
+                if result_fb_s["result"] != "success":
+                    raise DMError(result_fb_s["msg"])
 
-                feedback_channel: ZulipChannel = ZulipChannel(
+                feedback_channel = ZulipChannel(
                     f"#**{feedback_channel_name}**"
                 )
                 await feedback_channel
@@ -577,7 +580,7 @@ class Course(PluginCommandMixin, Plugin):
         """
         name: str = args.name
         channelgroup_emoji: str = args.emoji
-        channels: ChannelGroup | None = None
+        channels: ChannelGroup
 
         cleanup_opterations: list[Callable] = []
 
@@ -585,17 +588,17 @@ class Course(PluginCommandMixin, Plugin):
             session.query(CourseDB).filter(CourseDB.CourseName == name).first()
             is not None
         ):
-            result = await self.client.send_response(
+            result1 = await self.client.send_response(
                 Response.build_message(
                     message,
                     content=f"Course `{name}` already exists. Dou you want to replace it with the new course?",
                 )
             )
-            if result["result"] != "success":
+            if result1["result"] != "success":
                 raise DMError("Could not send message to user")
 
-            result, msg = await UserInput.confirm(self.client, result["id"], timeout=60)
-            if not result:
+            resp1, _ = await UserInput.confirm(self.client, result1["id"], timeout=60)
+            if not resp1:
                 yield DMResponse(
                     "Ok, I will not create a new course. Please choose another name."
                 )
@@ -607,28 +610,28 @@ class Course(PluginCommandMixin, Plugin):
             .first()
             is not None
         ):
-            result = await self.client.send_response(
+            result2 = await self.client.send_response(
                 Response.build_message(
                     message,
                     content=f"A Channelgroup with :{channelgroup_emoji}: already exists. Dou you want to replace it with a new Channelgroup for your course?",
                 )
             )
-            if result["result"] != "success":
+            if result2["result"] != "success":
                 raise DMError("Could not send message to user")
 
-            result, msg = await UserInput.confirm(self.client, result["id"], timeout=60)
-            if not result:
-                res = await self.client.send_response(
+            resp2, _ = await UserInput.confirm(self.client, result2["id"], timeout=60)
+            if not resp2:
+                res3 = await self.client.send_response(
                     Response.build_message(
                         message,
                         content=f"Do you want to use the existing Channelgroup with :{channelgroup_emoji}: for your course?",
                     )
                 )
-                if res["result"] != "success":
+                if res3["result"] != "success":
                     raise DMError("Could not send message to user")
 
-                res, msg = await UserInput.confirm(self.client, res["id"], timeout=60)
-                if not res:
+                resp3, _ = await UserInput.confirm(self.client, res3["id"], timeout=60)
+                if not resp3:
                     yield DMResponse(
                         f"Ok, I will not create a new course then. Please choose another emote because :{channelgroup_emoji}: is already in use :botsad:"
                     )
@@ -640,12 +643,13 @@ class Course(PluginCommandMixin, Plugin):
                         .first()
                     )
             else:
-                sg: ChannelGroup = (
+                sg: ChannelGroup | None = (
                     session.query(ChannelGroup)
                     .filter(ChannelGroup.ChannelGroupEmote == channelgroup_emoji)
                     .first()
                 )
-                Channelgroup._delete_group(session, sg)
+                if sg is not None:
+                    Channelgroup._delete_group(session, sg)
 
         resLan = await self.client.send_response(
             Response.build_message(
@@ -671,7 +675,7 @@ class Course(PluginCommandMixin, Plugin):
                     )
 
             # get corresponding Usergroup
-            tutors: Usergroup
+            tutors: UserGroup
             if opts.t:
                 tutors = opts.t
             else:
@@ -683,29 +687,30 @@ class Course(PluginCommandMixin, Plugin):
                     .first()
                     is not None
                 ):
-                    result = await self.client.send_response(
+                    result4 = await self.client.send_response(
                         Response.build_message(
                             message,
                             content=f"Usergroup for Tutors of this course already exists. Dou you want to replace it with a new empty Usergroup for your course?",
                         )
                     )
-                    if result["result"] != "success":
+                    if result4["result"] != "success":
                         raise DMError("Could not send message to user")
 
-                    result, msg = await UserInput.confirm(
-                        self.client, result["id"], timeout=60
+                    resp4, _ = await UserInput.confirm(
+                        self.client, result4["id"], timeout=60
                     )
-                    if not result:
+                    if not resp4:
                         raise DMError(
                             "Ok, I will not create a new course then. Please choose another name."
                         )
                     else:
-                        ug: UserGroup | None = (
+                        ugt: UserGroup | None = (
                             session.query(UserGroup)
                             .filter(UserGroup.GroupName == usergroup_name)
                             .first()
                         )
-                        Usergroup.delete_group(session, ug)
+                        if ugt is not None:
+                            Usergroup.delete_group(session, ugt)
 
                 tutors = Usergroup.create_and_get_group(session, usergroup_name)
 
@@ -714,7 +719,7 @@ class Course(PluginCommandMixin, Plugin):
                 )
 
             # get corresponding Usergroup
-            instructors: Usergroup
+            instructors: UserGroup
             if opts.i:
                 instructors = opts.i
             else:
@@ -726,29 +731,30 @@ class Course(PluginCommandMixin, Plugin):
                     .first()
                     is not None
                 ):
-                    result = await self.client.send_response(
+                    result5 = await self.client.send_response(
                         Response.build_message(
                             message,
                             content=f"Usergroup for Instructors of this course already exists. Dou you want to replace it with a new empty Usergroup for your course?",
                         )
                     )
-                    if result["result"] != "success":
+                    if result5["result"] != "success":
                         raise DMError("Could not send message to user")
 
-                    result, msg = await UserInput.confirm(
-                        self.client, result["id"], timeout=60
+                    resp5, _ = await UserInput.confirm(
+                        self.client, result5["id"], timeout=60
                     )
-                    if not result:
+                    if not resp5:
                         raise DMError(
                             "Ok, I will not create a new course then. Please choose another name."
                         )
                     else:
-                        ug = (
+                        ugi = (
                             session.query(UserGroup)
                             .filter(UserGroup.GroupName == usergroup_name)
                             .first()
                         )
-                        Usergroup.delete_group(session, ug)
+                        if ugi is not None:
+                            Usergroup.delete_group(session, ugi)
 
                 instructors = Usergroup.create_and_get_group(session, usergroup_name)
 
@@ -772,19 +778,19 @@ class Course(PluginCommandMixin, Plugin):
                 tut_ex = await self.client.get_channel_id_by_name(tutors_channel_name)
 
                 if tut_ex is not None:
-                    result = await self.client.send_response(
+                    result_tut = await self.client.send_response(
                         Response.build_message(
                             message,
                             content=f"Channel for Tutors of this course already exists. Dou you want to replace it with a new empty Channel for your course?",
                         )
                     )
-                    if result["result"] != "success":
+                    if result_tut["result"] != "success":
                         raise DMError("Could not send message to user")
 
-                    result, msg = await UserInput.confirm(
-                        self.client, result["id"], timeout=60
+                    resp_tut_s, _ = await UserInput.confirm(
+                        self.client, result_tut["id"], timeout=60
                     )
-                    if not result:
+                    if not resp_tut_s:
                         raise DMError(
                             "Ok, I will not create a new course then. Please choose another name."
                         )
@@ -795,7 +801,7 @@ class Course(PluginCommandMixin, Plugin):
                 tutor_ids.append(sender.id)
                 tutor_ids.append(self.client.id)
 
-                result = await self.client.add_subscriptions(
+                result_tut_s = await self.client.add_subscriptions(
                     channels=[
                         {
                             "name": tutors_channel_name,
@@ -806,8 +812,8 @@ class Course(PluginCommandMixin, Plugin):
                     invite_only=True,
                     history_public_to_subscribers=True,
                 )
-                if result["result"] != "success":
-                    raise DMError(result["msg"])
+                if result_tut_s["result"] != "success":
+                    raise DMError(result_tut_s["msg"])
 
                 tutors_channel = ZulipChannel(f"#**{tutors_channel_name}**")
                 await tutors_channel
@@ -834,19 +840,19 @@ class Course(PluginCommandMixin, Plugin):
                 ins_ex = await self.client.get_channel_id_by_name(instructor_channel_name)
 
                 if ins_ex is not None:
-                    result = await self.client.send_response(
+                    result_ins = await self.client.send_response(
                         Response.build_message(
                             message,
                             content=f"Channel for Instructors of this course already exists. Dou you want to replace it with a new empty Channel for your course?",
                         )
                     )
-                    if result["result"] != "success":
+                    if result_ins["result"] != "success":
                         raise DMError("Could not send message to user")
 
-                    result, msg = await UserInput.confirm(
-                        self.client, result["id"], timeout=60
+                    resp_ins, _ = await UserInput.confirm(
+                        self.client, result_ins["id"], timeout=60
                     )
-                    if not result:
+                    if not resp_ins:
                         raise DMError(
                             "Ok, I will not create a new course then. Please choose another name."
                         )
@@ -857,7 +863,7 @@ class Course(PluginCommandMixin, Plugin):
                 instructor_ids.append(sender.id)
                 instructor_ids.append(self.client.id)
 
-                result: dict[str, Any] = await self.client.add_subscriptions(
+                result_ins_s: dict[str, Any] = await self.client.add_subscriptions(
                     channels=[
                         {
                             "name": instructor_channel_name,
@@ -868,8 +874,8 @@ class Course(PluginCommandMixin, Plugin):
                     invite_only=True,
                     history_public_to_subscribers=True,
                 )
-                if result["result"] != "success":
-                    raise DMError(result["msg"])
+                if result_ins_s["result"] != "success":
+                    raise DMError(result_ins_s["msg"])
 
                 instructor_channel = ZulipChannel(f"#**{instructor_channel_name}**")
                 await instructor_channel
@@ -887,16 +893,16 @@ class Course(PluginCommandMixin, Plugin):
                     f"Anonymous Channel for Feedback to {name}"
                 ]
                 if lan == "de":
-                    feedback_channel_desc: list[str] = [
+                    feedback_channel_desc = [
                         f"Anonymer Kanal für Feedback zu {name}"
                     ]
 
                 f_ex = await self.client.get_channel_id_by_name(feedback_channel_name)
 
-                if ins_ex is not None:
+                if f_ex is not None:
                         await self.client.delete_channel(f_ex)
 
-                result: dict[str, Any] = await self.client.add_subscriptions(
+                result_fb_s: dict[str, Any] = await self.client.add_subscriptions(
                     channels=[
                         {
                             "name": feedback_channel_name,
@@ -906,10 +912,10 @@ class Course(PluginCommandMixin, Plugin):
                     principals=[sender.id, self.client.id],
                 )
 
-                if result["result"] != "success":
-                    raise DMError(result["msg"])
+                if result_fb_s["result"] != "success":
+                    raise DMError(result_fb_s["msg"])
 
-                feedback_channel: ZulipChannel = ZulipChannel(
+                feedback_channel = ZulipChannel(
                     f"#**{feedback_channel_name}**"
                 )
                 await feedback_channel
@@ -980,17 +986,25 @@ class Course(PluginCommandMixin, Plugin):
         Add standard Channels to a given course. If Channels with the same names already exist, they will be transferred and not replaced with new ones.
         """
         course: CourseDB = args.course
-        lan: str = course.CourseLanguage
-        channels_id: str = course.Channels
-        stremgroup: ChannelGroup = (
+        lan: Literal["en", "de"] = str(course.CourseLanguage)
+        channels_id: str = str(course.Channels)
+        stremgroup: ChannelGroup | None = (
             session.query(ChannelGroup)
             .filter(ChannelGroup.ChannelGroupId == channels_id)
             .first()
         )
 
+        if stremgroup is None:
+            raise DMError(f"Could not find Channelgroup for Course `{course.CourseName}`.")
+
         if opts.a:
             await Course.add_standard_channels(
-                self.client, session, course.CourseName, stremgroup, lan
+                client=self.client, 
+                session=session, 
+                name=str(course.CourseName), 
+                sg=stremgroup, 
+                lan=lan,
+                principals=[sender.id, self.client.id]
             )
 
         else:
@@ -998,18 +1012,19 @@ class Course(PluginCommandMixin, Plugin):
                 raise DMError("You can only add one (normal OR anonymous) feedback channel at a time.")
             
             await Course.add_standard_channels(
-                self.client,
-                session,
-                course.CourseName,
-                stremgroup,
-                lan,
-                opts.g,
-                opts.o,
-                opts.fn,
-                opts.fa,
-                opts.n,
-                opts.m,
-                opts.t,
+                client=self.client,
+                session=session,
+                name=str(course.CourseName),
+                sg=stremgroup,
+                lan=lan,
+                principals=[sender.id, self.client.id],
+                g=opts.g,
+                o=opts.o,
+                fn=opts.fn,
+                fa=opts.fa,
+                n=opts.n,
+                m=opts.m,
+                t=opts.t,
             )
 
         yield DMResponse(f"Standard Channels added to Course `{course.CourseName}`.")
@@ -1065,8 +1080,10 @@ class Course(PluginCommandMixin, Plugin):
         channels_id = str(course.Channels)
         tut_ug_id = int(course.TutorsUserGroup)
         ins_ug_id = int(course.InstructorsUserGroup)
-        tut_s: ZulipChannel = course.TutorChannel
-        ins_s: ZulipChannel = course.InstructorChannel
+
+        tut_s: ZulipChannel = await course.TutorChannel
+
+        ins_s: ZulipChannel = await course.InstructorChannel
 
         try:
             session.query(CourseDB).filter(
@@ -1075,38 +1092,39 @@ class Course(PluginCommandMixin, Plugin):
             session.commit()
         except sqlalchemy.exc.IntegrityError as e:
             session.rollback()
-            raise DMError(f"Could not delete Course `{course.CourseName}`.") from e
+            raise DMError(f"Could not delete Course `{c_name}`.") from e
 
         if opts.c or opts.a:
-            sg: ChannelGroup = (
+            sg: ChannelGroup | None = (
                 session.query(ChannelGroup)
                 .filter(ChannelGroup.ChannelGroupId == channels_id)
                 .first()
             )
+            
+            if sg is not None:
+                strm: list[str] = await Channelgroup._get_channel_names(
+                    session, self.client, [sg]
+                )
+                await Channelgroup._remove_channels(session, self.client, sg, strm)
 
-            strm: list[str] = await Channelgroup._get_channel_names(
-                session, self.client, [sg]
-            )
-            await Channelgroup._remove_channels(session, self.client, sg, strm)
+                Channelgroup._delete_group(session, sg)
 
-            Channelgroup._delete_group(session, sg)
-
-            for s in strm:
-                sid = await self.client.get_channel_id_by_name(s)
-                if sid is not None:
-                    await self.client.delete_channel(sid)
+                for s in strm:
+                    sid = await self.client.get_channel_id_by_name(s)
+                    if sid is not None:
+                        await self.client.delete_channel(sid)
 
         if opts.t or opts.a:
-            ug: UserGroup = (
-                session.query(UserGroup).filter(UserGroup.GroupId == tut_ug_id).first()
-            )
+            ugt: UserGroup | None = session.query(UserGroup).filter(UserGroup.GroupId == tut_ug_id).first()
 
-            Usergroup.delete_group(session, ug)
+            if ugt is not None:
+                Usergroup.delete_group(session, ugt)
 
         if opts.i or opts.a:
-            ug = session.query(UserGroup).filter(UserGroup.GroupId == ins_ug_id).first()
+            ugi: UserGroup | None = session.query(UserGroup).filter(UserGroup.GroupId == ins_ug_id).first()
 
-            Usergroup.delete_group(session, ug)
+            if ugi is not None:
+                Usergroup.delete_group(session, ugi)
 
         if opts.tuts or opts.a:
             await self.client.delete_channel(tut_s.id)
@@ -1206,20 +1224,24 @@ class Course(PluginCommandMixin, Plugin):
                 .filter(ChannelGroup.ChannelGroupId == course.Channels)
                 .first()
             )
-            channels: list[str] = Channelgroup._get_channel_names(
-                session, self.client, [sg]
-            )
-            Channelgroup._remove_channels(session, self.client, sg, channels)
+            if sg is not None:
+                channels: list[str] = await Channelgroup._get_channel_names(
+                    session, self.client, [sg]
+                )
+                await Channelgroup._remove_channels(session, self.client, sg, channels)
 
         if opts.t:
-            tutors: UserGroup = (
+            tutors: UserGroup | None = (
                 session.query(UserGroup)
                 .filter(UserGroup.GroupId == course.TutorsUserGroup)
                 .first()
             )
-            users: list[ZulipUser] = Usergroup.get_users_for_group(session, tutors)
-            for user in users:
-                Usergroup.remove_user_from_group(session, user, tutors)
+            if tutors is not None:
+                users: list[ZulipUser] = Usergroup.get_users_for_group(session, tutors)
+                for user in users:
+                    Usergroup.remove_user_from_group(session, user, tutors)
+
+        yield DMResponse(f"Course `{course.CourseName}` cleared.")
 
     @command
     @privilege(Privilege.ADMIN)
