@@ -17,10 +17,10 @@ import asyncio
 from typing import Iterable
 
 from tumcsbot.lib.response import Response
-from tumcsbot.plugin import Event,Plugin
+from tumcsbot.plugin import Event, Plugin
 from tumcsbot.lib.db import DB
 
-from tumcsbot.tumcsbot import PlublicChannels
+from tumcsbot.lib.client import PlublicChannels
 
 
 class AutoSubscriber(Plugin):
@@ -35,7 +35,7 @@ class AutoSubscriber(Plugin):
             channels = session.query(PlublicChannels).all()
             for channel in channels:
                 if channel.Subscribed != 1:
-                    asyncio.run(self._handle_channel(channel.ChannelName, False))
+                    asyncio.run(self._handle_channel(str(channel.ChannelName), False))
 
     async def is_responsible(self, event: Event) -> bool:
         return await super().is_responsible(event) and (
@@ -82,9 +82,9 @@ class AutoSubscriber(Plugin):
                 session.commit()
 
                 if await self.client.subscribe_users([self.client.id], channel_name):
-                    session.query(PlublicChannels).filter_by(ChannelName=channel_name).update(
-                        {PlublicChannels.Subscribed: 1}
-                    )
+                    session.query(PlublicChannels).filter_by(
+                        ChannelName=channel_name
+                    ).update({PlublicChannels.Subscribed: 1})
                     session.commit()
                     self.logger.info("subscribed to %s", channel_name)
                 else:
@@ -96,7 +96,9 @@ class AutoSubscriber(Plugin):
         """Remove the given channel name from the PublicChannels table."""
         try:
             with DB.session() as session:
-                session.query(PlublicChannels).filter_by(ChannelName=channel_name).delete()
+                session.query(PlublicChannels).filter_by(
+                    ChannelName=channel_name
+                ).delete()
                 session.commit()
         except Exception as e:
             self.logger.exception(e)

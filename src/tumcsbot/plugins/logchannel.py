@@ -83,7 +83,7 @@ class LogChannel(PluginCommandMixin, Plugin):
             logging.warning("Bot owner not set")
 
         response = self.client.as_sync().add_subscriptions(
-            channels=[
+            streams=[
                 {
                     "name": logstram,
                     "description": f"Log channel of TUM CS Bot",
@@ -103,10 +103,10 @@ class LogChannel(PluginCommandMixin, Plugin):
             logging.error("Could not get channels")
             return
 
-        channel = filter(lambda x: x["name"] == logstram, response["streams"])
+        channel_filter = filter(lambda x: x["name"] == logstram, response["streams"])
 
-        if channel:
-            channel = next(channel)
+        if channel_filter:
+            channel = next(channel_filter)
 
             with DB.session() as session:
                 channel = ZulipChannel(channel["stream_id"])

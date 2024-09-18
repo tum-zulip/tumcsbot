@@ -110,7 +110,7 @@ class ModerationReactionHandler(Plugin):
                 .join(ChannelAuthorization)
                 .filter(ChannelAuthorization.Channel == channel)  # type: ignore
                 .filter(UserGroupMember.User == reaction_sender)  # type: ignore
-                .filter(ReactionConfig.emote == emote)  # type: ignore
+                .filter(ReactionConfig.emote == emote)
                 .all()
             )
 

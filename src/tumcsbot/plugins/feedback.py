@@ -42,9 +42,6 @@ class Feedback(PluginCommandMixin, Plugin):
 
         course : Course | None  = None
 
-        prompt1 = await self.client.send_response(Response.build_message(message, content="What is the name of the course you want to give Feedback to?"))
-        course: Course | None = None
-
         prompt1 = await self.client.send_response(
             Response.build_message(
                 message,
@@ -71,7 +68,7 @@ class Feedback(PluginCommandMixin, Plugin):
 
         # TODO: @Janez Rotman
         max_topic_length = 60
-        topic : str = "New Feedback"
+        topic: str = f"New Feedback"
 
         prompt2 = await self.client.send_response(
             Response.build_message(

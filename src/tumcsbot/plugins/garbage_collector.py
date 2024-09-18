@@ -41,7 +41,7 @@ class GarbageCollector(Plugin):
 
     def _init_plugin(self) -> None:
         # run the garbage collector periodically
-        self._garbage_collector_task = None
+        self._garbage_collector_task: asyncio.Task[Any] | None = None
         self.pending_garbage_collections: list[int] = []
         self.pending_garbage_collection_tasks: list[asyncio.Task[Any]] = []
 
@@ -81,8 +81,8 @@ class GarbageCollector(Plugin):
                     )
                     return
 
-                threshhold = int(threshhold)
-                time_to_responde = int(time_to_responde)
+                threshhold_val = int(threshhold)
+                time_to_responde_val = int(time_to_responde)
 
                 ZulipChannel.set_client(self.client)
                 ZulipUser.set_client(self.client)
@@ -109,7 +109,7 @@ class GarbageCollector(Plugin):
                     if channel["stream_id"] in ignore:
                         continue
 
-                    if await self._channel_requires_collection(channel, threshhold):
+                    if await self._channel_requires_collection(channel, threshhold_val):
                         channel = ZulipChannel(channel["stream_id"])
                         await channel
                         channels_to_collect[channel.id] = channel
@@ -143,7 +143,7 @@ class GarbageCollector(Plugin):
                     await asyncio.sleep(30)
                     gc_tasks.append(
                         self._garbage_collect(
-                            channels, bot_owner, admins, time_to_responde
+                            channels, bot_owner, admins, time_to_responde_val
                         )
                     )
 

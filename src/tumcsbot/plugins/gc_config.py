@@ -3,13 +3,12 @@
 # See LICENSE file for copyright and license details.
 # TUM CS Bot - https://github.com/ro-i/tumcsbot
 
-import asyncio
 import logging
-from typing import Any, Iterable, AsyncGenerator
+from typing import Any, AsyncGenerator
 
 from tumcsbot.lib.command_parser import CommandParser
 from tumcsbot.lib.conf import Conf
-from tumcsbot.lib.response import Response
+from tumcsbot.lib.db import Session
 from tumcsbot.lib.types import (
     DMResponse,
     PartialError,
@@ -19,11 +18,10 @@ from tumcsbot.lib.types import (
     ZulipUser,
     response_type,
 )
-from tumcsbot.plugin import Event, Plugin, PluginCommandMixin
+from tumcsbot.plugin import Plugin, PluginCommandMixin
 from tumcsbot.plugin_decorators import arg, command, opt, privilege
 
 from tumcsbot.plugins.garbage_collector import GarbageCollectorIgnoreChannelsTable
-from tumcsbot.plugins.userinput import UserInput
 
 
 class GCConfig(PluginCommandMixin, Plugin):
@@ -60,11 +58,11 @@ class GCConfig(PluginCommandMixin, Plugin):
     async def threshold(
         self,
         _sender: ZulipUser,
-        _session,
+        _session: Session,
         _args: CommandParser.Args,
         opts: CommandParser.Opts,
         _message: dict[str, Any],
-    ) -> Iterable[Response]:
+    ) -> AsyncGenerator[response_type, None]:
         """
         Set the number of seconds a channel has to be inactive before it is considered for deletion.
         """
@@ -109,11 +107,11 @@ class GCConfig(PluginCommandMixin, Plugin):
     async def confirmation_time(
         self,
         _sender: ZulipUser,
-        _session,
+        _session: Session,
         _args: CommandParser.Args,
         opts: CommandParser.Opts,
         _message: dict[str, Any],
-    ) -> Iterable[Response]:
+    ) -> AsyncGenerator[response_type, None]:
         """
         Set the number of seconds the bot waits for a response from the channel admins.
         """
@@ -140,7 +138,7 @@ class GCConfig(PluginCommandMixin, Plugin):
     async def ignore(
         self,
         _sender: ZulipUser,
-        session,
+        session: Session,
         args: CommandParser.Args,
         _opts: CommandParser.Opts,
         _message: dict[str, Any],
@@ -170,4 +168,3 @@ class GCConfig(PluginCommandMixin, Plugin):
 
         for s in channels:
             await s
-
