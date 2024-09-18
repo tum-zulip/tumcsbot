@@ -9,15 +9,13 @@ import sqlalchemy
 
 from tumcsbot.lib.command_parser import CommandParser
 from tumcsbot.lib.db import Session, TableBase
-from tumcsbot.plugin import PluginCommandMixin, Plugin, ZulipUser
+from tumcsbot.plugin import PluginCommandMixin, Plugin
 from tumcsbot.plugin_decorators import (
     command,
     privilege,
     arg,
-    DMResponse,
-    DMError,
 )
-from tumcsbot.lib.types import Privilege, response_type, ZulipUser
+from tumcsbot.lib.types import Privilege, response_type, ZulipUser, DMResponse
 
 
 class Messages(TableBase):  # type: ignore

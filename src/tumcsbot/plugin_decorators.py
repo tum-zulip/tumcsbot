@@ -1,13 +1,10 @@
 from __future__ import annotations
 from argparse import Namespace
 from functools import wraps
-import logging
-from typing import AsyncGenerator, Callable, Any, Iterable, Protocol, Type
-from dataclasses import dataclass
+from typing import AsyncGenerator, Callable, Any, Iterable
 from inspect import cleandoc
 
 import sqlalchemy
-
 
 from tumcsbot.lib.command_parser import CommandParser
 from tumcsbot.lib.db import Session
@@ -53,32 +50,42 @@ def to_python_type(type) -> Any:
         columns = type.property.columns
         if len(columns) != 1:
             raise ValueError(f"Expected exactly one column, got {len(columns)}")
-        
+
         column = columns[0]
         return column.type.python_type
-        
+
     return type
 
-async def process_arg(name: str, greedy: bool, optional: bool,  type: Any, args: CommandParser.Args, session: Session):
+
+async def process_arg(
+    name: str,
+    greedy: bool,
+    optional: bool,
+    ty: Any,
+    args: CommandParser.Args,
+    session: Session,
+):
     if greedy and not optional:
         if len(getattr(args, name, [])) == 0:
             # todo: better error message
             raise DMError(
                 f"Error: At least one argument is required for `{name}`.",
             )
-        
+
     async def handle_argument(value):
-        if isinstance(type, sqlalchemy.orm.InstrumentedAttribute):
-            obj = session.query(type.class_).filter(type == value).first()
+        if isinstance(ty, sqlalchemy.orm.InstrumentedAttribute):
+            obj = session.query(ty.class_).filter(ty == value).first()
             if not optional and obj is None:
-                raise DMError(f"Uuups, it looks like i could not find any {type.class_.__name__} associated with `{value}` :botsceptical:")
+                raise DMError(
+                    f"Uuups, it looks like i could not find any {ty.class_.__name__} associated with `{value}` :botsceptical:"
+                )
         else:
             obj = value
-        
+
         if hasattr(obj.__class__, "__await__"):
             await obj
         return obj
-    
+
     if greedy:
         result = []
         for value in getattr(args, name):
@@ -120,7 +127,7 @@ def arg(
                     raise UserNotPrivilegedException()
 
             await process_arg(name, greedy, optional, type, args, session)
-            
+
             # todo: does yield from work here?
             async for response in func(self, sender, session, args, opts, message):
                 yield response
@@ -135,12 +142,14 @@ def opt(
     long_opt: str | None = None,
     type: arg_type | None = None,
     description: str | None = None,
-    privilege: Privilege | None = None,
+    priv: Privilege | None = None,
 ) -> command_decorator_type:
     def decorator(func: command_func_type) -> command_func_type:
         meta = get_meta(func)
         python_type = to_python_type(type)
-        meta.opts.insert(0, OptConfig(opt, long_opt, python_type, description, privilege))
+        meta.opts.insert(
+            0, OptConfig(opt, long_opt, python_type, description, priv)
+        )
 
         @wraps(func)
         async def wrapper(
@@ -151,10 +160,10 @@ def opt(
             opts: CommandParser.Opts,
             message: dict[str, Any],
         ) -> AsyncGenerator[response_type, None]:
-            if privilege is not None and getattr(opts, opt, None):
+            if priv is not None and getattr(opts, opt, None):
                 if not sender.isPrivileged:
                     raise UserNotPrivilegedException(
-                        f"Option `-{opt}` requires privilege *{privilege.name}* :botsweat:"
+                        f"Option `-{opt}` requires privilege *{priv.name}* :botsweat:"
                     )
 
             opt_value = getattr(opts, opt, None)
@@ -163,17 +172,19 @@ def opt(
                 long_opt_value = getattr(opts, long_opt, None)
 
             if opt_value and long_opt_value:
-                raise DMError(f"Error: Cannot use both short and long options for `{opt}`")
-            
+                raise DMError(
+                    f"Error: Cannot use both short and long options for `{opt}`"
+                )
+
             if opt_value:
                 setattr(opts, long_opt, opt_value)
             elif long_opt:
-                setattr(opts, opt, long_opt_value)      
+                setattr(opts, opt, long_opt_value)
 
             if type and opt_value:
                 await process_arg(opt, False, False, type, opts, session)
 
-            setattr(opts, long_opt, getattr(opts, opt, None)) 
+            setattr(opts, long_opt, getattr(opts, opt, None))
 
             async for response in func(self, sender, session, args, opts, message):
                 yield response
@@ -325,7 +336,11 @@ class command:
             message: dict[str, Any],
         ) -> list[Response] | Iterable[Response] | Response:
             self.logger.info(
-                "%s calls %s with %s and %s", sender.mention_silent, self.plugin_name(), args, opts 
+                "%s calls %s with %s and %s",
+                sender.mention_silent,
+                self.plugin_name(),
+                args,
+                opts,
             )
             responses = []
             successful = []
@@ -437,20 +452,24 @@ class command:
                 )
             return responses
 
-
-
         async def invoke(sender, session, message, **kwargs):
-            args_ns = Namespace(**{arg.name: kwargs.get(arg.name) for arg in self.meta.args})
-            opts_names = zip([opt.opt for opt in self.meta.opts], [opt.long_opt for opt in self.meta.opts if opt.long_opt])
+            args_ns = Namespace(
+                **{arg.name: kwargs.get(arg.name) for arg in self.meta.args}
+            )
+            opts_names = zip(
+                [opt.opt for opt in self.meta.opts],
+                [opt.long_opt for opt in self.meta.opts if opt.long_opt],
+            )
             opts_dict = {s: kwargs.get(s) or kwargs.get(l) for s, l in opts_names}
             opts_dict.update({l: kwargs.get(l) or kwargs.get(s) for s, l in opts_names})
             opts_ns = Namespace(**opts_dict)
-            async for response in outer_self.fn(self, sender, session, args_ns, opts_ns, message):
+            async for response in outer_self.fn(
+                self, sender, session, args_ns, opts_ns, message
+            ):
                 yield response
-        
-        # todo: idk if this is right
-        wrapper._tumcsbot_meta = self.meta
-        wrapper.invoke = invoke
-        wrapper.__parent_class__ = owner
-        setattr(owner, self.name, wrapper)
 
+        # todo: idk if this is right
+        setattr(wrapper, "_tumcsbot_meta", self.meta)
+        setattr(wrapper, "invoke", invoke)
+        setattr(wrapper, "__parent_class__", owner)
+        setattr(owner, self.name, wrapper)

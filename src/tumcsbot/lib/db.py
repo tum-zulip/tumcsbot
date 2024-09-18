@@ -151,6 +151,7 @@ async def serialize_model(
     attributes.update(dict_attributes)
     return attributes
 
+
 def deserialize_model(session, model_class, data, indent=0):
     """Deserialize data into an SQLAlchemy model, handling relationships."""
     print(f"{'     ' * indent}Deserializing: {model_class.__name__} with data: {data}")
@@ -160,38 +161,56 @@ def deserialize_model(session, model_class, data, indent=0):
 
     if not isinstance(data, dict):
         data = {data: None}
-    
+
     for key, value in data.items():
         if isinstance(value, list):  # Assuming a relationship to a list of models
             rel_class = getattr(model_class, key).property.mapper.class_
-            print(f"{'     ' * indent}Processing list relationship '{key}' ({rel_class.__name__})")
+            print(
+                f"{'     ' * indent}Processing list relationship '{key}' ({rel_class.__name__})"
+            )
             try:
                 deserialized_list = [
-                    deserialize_model(session, rel_class, item, indent + 1) for item in value
+                    deserialize_model(session, rel_class, item, indent + 1)
+                    for item in value
                 ]
-                print(f"{'     ' * indent}Setting attribute '{key}' to '{deserialized_list}'")
+                print(
+                    f"{'     ' * indent}Setting attribute '{key}' to '{deserialized_list}'"
+                )
                 setattr(model, key, deserialized_list)
             except Exception as e:
-                print(f"{'     ' * indent}Error deserializing list relationship for key: {key} with error: {e}")
+                print(
+                    f"{'     ' * indent}Error deserializing list relationship for key: {key} with error: {e}"
+                )
                 raise ValueError(f"Error deserializing list relationship {key}") from e
-        
+
         elif isinstance(value, dict):  # Assuming a single related model
             rel_class = getattr(model_class, key).property.mapper.class_
-            print(f"{'     ' * indent}Processing single relationship for key: {key} with class: ({rel_class.__name__})")
+            print(
+                f"{'     ' * indent}Processing single relationship for key: {key} with class: ({rel_class.__name__})"
+            )
             try:
-                setattr(model, key, deserialize_model(session, rel_class, value, indent + 1))
+                setattr(
+                    model, key, deserialize_model(session, rel_class, value, indent + 1)
+                )
             except Exception as e:
-                print(f"{'     ' * indent}Error deserializing single relationship for key: {key} with error: {e}")
-                raise ValueError(f"Error deserializing single relationship {key}") from e
-        
+                print(
+                    f"{'     ' * indent}Error deserializing single relationship for key: {key} with error: {e}"
+                )
+                raise ValueError(
+                    f"Error deserializing single relationship {key}"
+                ) from e
+
         else:
             if hasattr(model, key):
                 setattr(model, key, value)
             else:
-                raise ValueError(f"Error deserializing: {model_class.__name__} with data: {data}")
+                raise ValueError(
+                    f"Error deserializing: {model_class.__name__} with data: {data}"
+                )
             print(f"{' ' * indent}Setting attribute '{key}' to '{value}'")
     print(f"{' ' * indent}Finished deserializing: {model_class.__name__}")
     return model
+
 
 def export_yaml(obj):
     """Export an SQLAlchemy object to a YAML string, with error handling."""
@@ -199,7 +218,7 @@ def export_yaml(obj):
         serialized_data = serialize_model(obj)
         return yaml.dump(serialized_data, allow_unicode=True)
     except Exception as e:
-        raise ValueError(f"Failed to export object to YAML: {e}")
+        raise ValueError(f"Failed to export object to YAML") from e
 
 
 def import_yaml(session, model_class, yaml_str):
@@ -207,7 +226,7 @@ def import_yaml(session, model_class, yaml_str):
     try:
         data = yaml.safe_load(yaml_str)
     except yaml.YAMLError as e:
-        raise ValueError(f"Failed to parse YAML: {e}")
+        raise ValueError(f"Failed to parse YAML") from e
 
     name = data.get("name")
     try:

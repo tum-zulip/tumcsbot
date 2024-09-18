@@ -9,7 +9,7 @@ from typing import Any, Iterable
 
 from tumcsbot.lib.response import Response
 from tumcsbot.plugin import (
-    CommandConfig,
+
     PluginCommandMixin,
     Plugin,
     PluginTable,
@@ -112,7 +112,7 @@ class Help(PluginCommandMixin, Plugin):
         msg = f"# {name.capitalize()}\n"
 
         only_mod_privileges = all(
-            [sub.privilege > Privilege.USER for sub in cmd.subcommands]
+            sub.privilege > Privilege.USER for sub in cmd.subcommands
         )
         if only_mod_privileges:
             msg += PRIVILAGE_MSG + "\n"

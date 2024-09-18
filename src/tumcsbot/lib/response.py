@@ -26,6 +26,7 @@ from inspect import cleandoc
 
 from typing import Any
 
+
 class StrEnum(str, Enum):
     """Construct a string enum.
 
@@ -33,6 +34,7 @@ class StrEnum(str, Enum):
     This own enum class is deprecated since Python 3.10 but is going
     to stay for some time in order to ensure compatibility.
     """
+
 
 class MessageType(StrEnum):
     """Represent the type of a message.
@@ -45,6 +47,7 @@ class MessageType(StrEnum):
     MESSAGE = "message"
     EMOJI = "emoji"
     NONE = "none"
+
 
 class Response:
     """Some useful methods for building a response message."""
@@ -224,18 +227,23 @@ class Response:
         return cls.build_message(
             message, cls.privilege_err_msg.format(message["sender_full_name"])
         )
-    
+
     @classmethod
-    def privilege_excpetion(cls, message: dict[str, Any], comm: str, reason: str | None = None) -> "Response":
+    def privilege_excpetion(
+        cls, message: dict[str, Any], comm: str, reason: str | None = None
+    ) -> "Response":
         """The user has not sufficient rights.
 
         Tell the user that they have not sufficient privileges for a
         specified command.
         """
         return cls.build_message(
-            message, cls.privilege_err_msg_command.format(message["sender_full_name"], comm, reason or "")
+            message,
+            cls.privilege_err_msg_command.format(
+                message["sender_full_name"], comm, reason or ""
+            ),
         )
-    
+
     @classmethod
     def command_not_found(cls, message: dict[str, Any]) -> "Response":
         """Tell the user that his command could not be found."""
@@ -276,4 +284,3 @@ class Response:
     def none(cls) -> "Response":
         """No response."""
         return cls(MessageType.NONE, {})
-

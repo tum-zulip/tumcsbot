@@ -1,4 +1,3 @@
-import functools
 import re
 import shlex
 from importlib import import_module
@@ -8,11 +7,12 @@ import time
 from typing import Any, Callable, Iterable, Type, TypeVar, Final
 
 
-LOGGING_FORMAT: Final[
-    str
-] = "[%(levelname)-8s] %(module)-15s: %(message)s" # (%(asctime)s) | %(threadName)-15s| | %(funcName)-15s
+LOGGING_FORMAT: Final[str] = (
+    "[%(levelname)-8s] %(module)-15s: %(message)s"  # (%(asctime)s) | %(threadName)-15s| | %(funcName)-15s
+)
 
 T = TypeVar("T")
+
 
 def get_classes_from_path(module_path: str, class_type: Type[T]) -> Iterable[Type[T]]:
     plugin_classes: list[Type[T]] = []
@@ -130,25 +130,3 @@ def validate_and_return_regex(regex: str | None) -> str | None:
         return regex
     except re.error:
         return None
-    
-# from: https://stackoverflow.com/questions/31771286/python-in-memory-cache-with-time-to-live
-def ttl_cache(max_age, maxsize=128, typed=False):
-    """Least-recently-used cache decorator with time-based cache invalidation.
-
-    Args:
-        max_age: Time to live for cached results (in seconds).
-        maxsize: Maximum cache size (see `functools.lru_cache`).
-        typed: Cache on distinct input types (see `functools.lru_cache`).
-    """
-    def _decorator(fn):
-        # todo: @functools.lru_cache(maxsize=maxsize, typed=typed)
-        # todo: async def _new(*args, __time_salt, **kwargs):
-        # todo:     return await fn(*args, **kwargs)
-
-        # todo:         # todo: @functools.wraps(fn)
-        # todo: async def _wrapped(*args, **kwargs):
-        # todo:     return await _new(*args, **kwargs, __time_salt=int(time.time() / max_age))
-
-        return fn
-
-    return _decorator

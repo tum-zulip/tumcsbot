@@ -48,6 +48,7 @@ class Update(PluginCommandMixin, Plugin):
                 stderr=sp.STDOUT,
                 text=True,
                 timeout=self._timeout,
+                check=False,
             )
         except sp.TimeoutExpired:
             return Response.build_message(

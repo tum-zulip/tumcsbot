@@ -10,9 +10,11 @@ from inspect import cleandoc
 import inspect
 import re
 import logging
+from typing import Any, AsyncGenerator, TypeVar
 
 from sqlite3 import IntegrityError
-from typing import Coroutine, Literal, cast, Any, Callable, Iterable
+from typing import Coroutine, Literal, cast, Any, Callable, Iterable, AsyncGenerator
+import sqlalchemy
 from sqlalchemy import (
     Column,
     String,
@@ -50,6 +52,7 @@ from tumcsbot.lib.types import (
     YAMLSerializableMixin,
 )
 
+T = TypeVar("T")
 
 class CourseDB(TableBase):
     """Represents a course in the system."""
@@ -631,7 +634,7 @@ class Course(PluginCommandMixin, Plugin):
                     )
                     return
                 else:
-                    streams: StreamGroup = (
+                    streams = (
                         session.query(StreamGroup)
                         .filter(StreamGroup.StreamGroupEmote == streamgroup_emoji)
                         .first()
@@ -697,7 +700,7 @@ class Course(PluginCommandMixin, Plugin):
                             "Ok, I will not create a new course then. Please choose another name."
                         )
                     else:
-                        ug: UserGroup = (
+                        ug: UserGroup | None = (
                             session.query(UserGroup)
                             .filter(UserGroup.GroupName == usergroup_name)
                             .first()
@@ -715,7 +718,7 @@ class Course(PluginCommandMixin, Plugin):
             if opts.i:
                 instructors = opts.i
             else:
-                usergroup_name: str = "instructors_" + name
+                usergroup_name = "instructors_" + name
 
                 if (
                     session.query(UserGroup)
@@ -740,7 +743,7 @@ class Course(PluginCommandMixin, Plugin):
                             "Ok, I will not create a new course then. Please choose another name."
                         )
                     else:
-                        ug: UserGroup = (
+                        ug = (
                             session.query(UserGroup)
                             .filter(UserGroup.GroupName == usergroup_name)
                             .first()
@@ -761,8 +764,8 @@ class Course(PluginCommandMixin, Plugin):
                 tutors_stream_name: str = name + " - Tutors"
                 tutors_stream_desc: list[str] = [f"Internal Channel for {name}-Tutors"]
                 if lan == "de":
-                    tutors_stream_name: str = name + " - Tutoren"
-                    tutors_stream_desc: list[str] = [
+                    tutors_stream_name = name + " - Tutoren"
+                    tutors_stream_desc = [
                         f"Interner Kanal für {name}-Tutoren"
                     ]
 
@@ -792,7 +795,7 @@ class Course(PluginCommandMixin, Plugin):
                 tutor_ids.append(sender.id)
                 tutor_ids.append(self.client.id)
 
-                result: dict[str, Any] = await self.client.add_subscriptions(
+                result = await self.client.add_subscriptions(
                     streams=[
                         {
                             "name": tutors_stream_name,
@@ -823,8 +826,8 @@ class Course(PluginCommandMixin, Plugin):
                     f"Internal Channel for Instructors of {name}"
                 ]
                 if lan == "de":
-                    instructor_stream_name: str = name + " - Instructors"
-                    instructor_stream_desc: list[str] = [
+                    instructor_stream_name = name + " - Instructors"
+                    instructor_stream_desc = [
                         f"Interner Kanal für {name}-Instructors"
                     ]
 
@@ -1058,10 +1061,10 @@ class Course(PluginCommandMixin, Plugin):
     ) -> AsyncGenerator[response_type, None]:
 
         course: CourseDB = args.course
-        c_name: str = course.CourseName
-        streams_id: str = course.Streams
-        tut_ug_id: int = course.TutorsUserGroup
-        ins_ug_id: int = course.InstructorsUserGroup
+        c_name = str(course.CourseName)
+        streams_id = str(course.Streams)
+        tut_ug_id = int(course.TutorsUserGroup)
+        ins_ug_id = int(course.InstructorsUserGroup)
         tut_s: ZulipStream = course.TutorStream
         ins_s: ZulipStream = course.InstructorStream
 
@@ -1101,9 +1104,7 @@ class Course(PluginCommandMixin, Plugin):
             Usergroup.delete_group(session, ug)
 
         if opts.i or opts.a:
-            ug: UserGroup = (
-                session.query(UserGroup).filter(UserGroup.GroupId == ins_ug_id).first()
-            )
+            ug = session.query(UserGroup).filter(UserGroup.GroupId == ins_ug_id).first()
 
             Usergroup.delete_group(session, ug)
 
@@ -1200,7 +1201,7 @@ class Course(PluginCommandMixin, Plugin):
         course: CourseDB = args.course
 
         if opts.s:
-            sg: StreamGroup = (
+            sg: StreamGroup | None = (
                 session.query(StreamGroup)
                 .filter(StreamGroup.StreamGroupId == course.Streams)
                 .first()
@@ -1244,7 +1245,18 @@ class Course(PluginCommandMixin, Plugin):
 
         cleanup_opterations: list[Callable] = []
 
-        def exit_and_inform_on_error(client_response):
+        async def or_exit(coro: Coroutine[None, None, T]) -> T:
+            task = asyncio.create_task(coro)
+            done, _ = await asyncio.wait(
+                [task, exit_task], return_when=asyncio.FIRST_COMPLETED
+            )
+            if exit_task in done:
+                raise DMError(
+                    "You have exited the wizard. Have a nice day :bothappypad:"
+                )
+            return done.pop().result()
+
+        def exit_and_inform_on_error(client_response: dict[str, Any]) -> dict[str, Any]:
             if client_response["result"] != "success":
                 logging.error(f"Could not send message to user: {client_response}")
                 raise DMError(
@@ -1252,7 +1264,7 @@ class Course(PluginCommandMixin, Plugin):
                 )
             return client_response
 
-        async def dm(msg: str):
+        async def dm(msg: str) -> dict[str, Any]:
             result = exit_and_inform_on_error(
                 await self.client.send_response(
                     Response.build_message(message, content=msg)
@@ -1263,7 +1275,7 @@ class Course(PluginCommandMixin, Plugin):
             )
             return result
 
-        async def short_text_input(msg: str, timeout: int = 60):
+        async def short_text_input(msg: str, timeout: int = 60) -> str:
             server_response = await dm(msg)
             user_response, _ = await or_exit(
                 UserInput.short_text_response(
@@ -1272,7 +1284,7 @@ class Course(PluginCommandMixin, Plugin):
             )
             return user_response
 
-        async def confirm_input(msg: str, timeput: int = 60):
+        async def confirm_input(msg: str, timeput: int = 60) -> bool:
             server_response = await dm(msg)
             user_response, _ = await or_exit(
                 UserInput.confirm(self.client, server_response["id"], timeout=timeput)
@@ -1313,31 +1325,20 @@ class Course(PluginCommandMixin, Plugin):
                 )
             )
 
-            async def or_exit(coro: Coroutine):
-                task = asyncio.create_task(coro)
-                done, _ = await asyncio.wait(
-                    [task, exit_task], return_when=asyncio.FIRST_COMPLETED
-                )
-                if exit_task in done:
-                    raise DMError(
-                        "You have exited the wizard. Have a nice day :bothappypad:"
-                    )
-                return done.pop().result()
-
             while True:
 
                 result = await short_text_input("What is the short name of the course?")
-                
+
                 if result is None:
                     await dm("Please provide a valid short name for the course.")
                 else:
-                    c: CourseDB = (
+                    c: CourseDB | None = (
                         session.query(CourseDB)
                         .filter(CourseDB.CourseName == result)
                         .one_or_none()
                     )
                     sgName: str = "streams_" + result
-                    sg: StreamGroup = (
+                    sg: StreamGroup | None = (
                         session.query(StreamGroup)
                         .filter(StreamGroup.StreamGroupId == sgName)
                         .one_or_none()
@@ -1381,7 +1382,7 @@ class Course(PluginCommandMixin, Plugin):
                     if user_response is None:
                         continue
 
-                    sg: StreamGroup | None = (
+                    sg = (
                         session.query(StreamGroup)
                         .filter(StreamGroup.StreamGroupId == user_response)
                         .one_or_none()
@@ -1422,7 +1423,7 @@ class Course(PluginCommandMixin, Plugin):
                             await dm("Please provide a valid emoji.")
                             continue
 
-                        sg: StreamGroup = (
+                        sg = (
                             session.query(StreamGroup)
                             .filter(StreamGroup.StreamGroupEmote == emote)
                             .one_or_none()
@@ -1469,8 +1470,8 @@ class Course(PluginCommandMixin, Plugin):
 
                 else:
                     # create empty Streamgroup
-                    streamgroup_name: str = "streams_" + courseName
-                    courseStreams: StreamGroup = Streamgroup._create_and_get_group(
+                    streamgroup_name = "streams_" + courseName
+                    courseStreams = Streamgroup._create_and_get_group(
                         session, streamgroup_name, courseEmoji
                     )
                     cleanup_opterations.append(
@@ -1553,7 +1554,7 @@ class Course(PluginCommandMixin, Plugin):
                     usergroup_name_tut: str = "tutors_" + courseName + "_1"
                     vers = 1
 
-                    ug: UserGroup = (
+                    ug = (
                         session.query(UserGroup)
                         .filter(UserGroup.GroupName == usergroup_name_tut)
                         .one_or_none()
@@ -1622,7 +1623,7 @@ class Course(PluginCommandMixin, Plugin):
                     if result1ai is None:
                         continue
 
-                    ug: UserGroup | None = (
+                    ug = (
                         session.query(UserGroup)
                         .filter(UserGroup.GroupName == result1ai)
                         .one_or_none()
@@ -1643,7 +1644,7 @@ class Course(PluginCommandMixin, Plugin):
                     usergroup_name_ins: str = "instructors_" + courseName + "_1"
                     vers = 1
 
-                    ug: UserGroup = (
+                    ug = (
                         session.query(UserGroup)
                         .filter(UserGroup.GroupName == usergroup_name_ins)
                         .one_or_none()
@@ -1698,15 +1699,11 @@ class Course(PluginCommandMixin, Plugin):
             Usergroup.add_user_to_group(session, sender, courseInstructors)
 
             # get a corresponding Channel for Tutors
-            tutors_stream_name: str = courseName + " - Tutors"
-            tutors_stream_desc: list[str] = [
-                f"Internal Channel for {courseName}-Tutors"
-            ]
+            tutors_stream_name = courseName + " - Tutors"
+            tutors_stream_desc = [f"Internal Channel for {courseName}-Tutors"]
             if courseLan == "de":
-                tutors_stream_name: str = courseName + " - Tutoren"
-                tutors_stream_desc: list[str] = [
-                    f"Interner Kanal für {courseName}-Tutoren"
-                ]
+                tutors_stream_name = courseName + " - Tutoren"
+                tutors_stream_desc = [f"Interner Kanal für {courseName}-Tutoren"]
 
             tut_ex = await self.client.get_stream_id_by_name(tutors_stream_name)
 
@@ -1752,7 +1749,7 @@ class Course(PluginCommandMixin, Plugin):
                 )
             )
 
-            courseTutorStream: ZulipStream = ZulipStream(f"#**{tutors_stream_name}**")
+            courseTutorStream = ZulipStream(f"#**{tutors_stream_name}**")
             await courseTutorStream
 
             cleanup_opterations.append(
@@ -1765,13 +1762,13 @@ class Course(PluginCommandMixin, Plugin):
             )
             if resultis is not None:
 
-                instructor_stream_name: str = courseName + " - Instructors"
-                instructor_stream_desc: list[str] = [
+                instructor_stream_name = courseName + " - Instructors"
+                instructor_stream_desc = [
                     f"Internal Channel for Instructors of {courseName}"
                 ]
                 if courseLan == "de":
-                    instructor_stream_name: str = courseName + " - Instructors"
-                    instructor_stream_desc: list[str] = [
+                    instructor_stream_name = courseName + " - Instructors"
+                    instructor_stream_desc = [
                         f"Interner Kanal für {courseName}-Instructors"
                     ]
 
@@ -1822,13 +1819,11 @@ class Course(PluginCommandMixin, Plugin):
                     )
                 )
 
-                courseInstructorStream: ZulipStream = ZulipStream(
-                    f"#**{instructor_stream_name}**"
-                )
+                courseInstructorStream = ZulipStream(f"#**{instructor_stream_name}**")
                 await courseInstructorStream
 
                 cleanup_opterations.append(
-                    lambda id=courseInstructorStream.id: self.client.delete_stream(id)
+                    lambda ID=courseInstructorStream.id: self.client.delete_stream(ID)
                 )
 
                 courseFeedbackStream: ZulipStream | None = None
@@ -1896,7 +1891,7 @@ class Course(PluginCommandMixin, Plugin):
         n: bool = True,
         m: bool = True,
         t: bool = True,
-    ):
+    ) -> None:
 
         if principals is None:
             principals = [client.id]
@@ -2031,8 +2026,8 @@ class Course(PluginCommandMixin, Plugin):
         """
         Get the StreamGroup of a given Course.
         """
-        id: int = course.Streams
-        return session.query(StreamGroup).filter(StreamGroup.StreamGroupId == id).one()
+        ID = int(course.Streams)
+        return session.query(StreamGroup).filter(StreamGroup.StreamGroupId == ID).one()
 
     @staticmethod
     def _get_emoji(course: CourseDB, session: Session) -> str:
@@ -2040,15 +2035,15 @@ class Course(PluginCommandMixin, Plugin):
         Get the Emoji of the StreamGroup associated with a given Course.
         """
         sg: StreamGroup = Course._get_streamgroup(course, session)
-        return sg.StreamGroupEmote
+        return str(sg.StreamGroupEmote)
 
     @staticmethod
     def _get_tutorgroup(course: CourseDB, session: Session) -> UserGroup:
         """
         Get the Tutor-UserGroup of a given Course.
         """
-        id: int = course.TutorsUserGroup
-        return session.query(UserGroup).filter(UserGroup.GroupId == id).one()
+        ID = int(course.TutorsUserGroup)
+        return session.query(UserGroup).filter(UserGroup.GroupId == ID).one()
 
     @staticmethod
     def _get_tutors(course: CourseDB, session: Session) -> list[ZulipUser]:
@@ -2063,8 +2058,8 @@ class Course(PluginCommandMixin, Plugin):
         """
         Get the Tutor-UserGroup of a given Course.
         """
-        id: int = course.InstructorsUserGroup
-        return session.query(UserGroup).filter(UserGroup.GroupId == id).one()
+        ID = int(course.InstructorsUserGroup)
+        return session.query(UserGroup).filter(UserGroup.GroupId == ID).one()
 
     @staticmethod
     def _get_instructors(course: CourseDB, session: Session) -> list[ZulipUser]:
@@ -2177,7 +2172,7 @@ class Course(PluginCommandMixin, Plugin):
         """
         Set the Tutor-Channel of a given Course.
         """
-        oldTS: ZulipStream = course.TutorStream
+        oldTS = course.TutorStream
         if oldTS == stream:
             raise DMError(
                 "The given Channel is already set as Tutor-Channel for this course."

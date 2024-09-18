@@ -10,7 +10,6 @@ Wrapper around Zulip's Client class.
 from __future__ import annotations
 
 import asyncio
-from anyio import Event
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
@@ -20,8 +19,11 @@ from collections.abc import Iterable as IterableClass
 from typing import AsyncGenerator, Callable, cast, Any, IO, Iterable, final
 from urllib.parse import quote
 
+from anyio import Event
 from sqlalchemy import Boolean, Column, String
 
+import urllib3
+import urllib3.util
 from zulip import Client as ZulipClient
 
 from tumcsbot.lib.db import DB, TableBase
@@ -111,7 +113,7 @@ class AsyncClient:
     def base_url(self) -> str:
         return self._client.base_url
 
-    def as_sync(self):
+    def as_sync(self) -> ZulipClient:
         return self._client
 
     async def call_endpoint(
@@ -130,6 +132,21 @@ class AsyncClient:
         """
         result: dict[str, Any] = {}
         loop = asyncio.get_running_loop()
+
+        def html_escape(item: Any) -> Any:
+            if isinstance(item, list):
+                return [html_escape(i) for i in item]
+            elif isinstance(item, dict):
+                return {k: html_escape(v) for k, v in item.items()}
+            elif isinstance(item, str):
+                return urllib3.util.parse_url(item).url
+            elif isinstance(item, (int, float, bool, type(None))):
+                return item
+            
+            raise ValueError(f"unexpected type {type(item)}")
+        
+        #if request is not None:
+        #    request = html_escape(request)
 
         while True:
             try:
@@ -411,7 +428,7 @@ class AsyncClient:
         if request is not None:
             request.update(client_gravatar=True, include_custom_profile_fields=False)
         else:
-            request = dict(client_gravatar=False, include_custom_profile_fields=False)
+            request = {"client_gravatar": False, "include_custom_profile_fields": False}
         return await self.call_endpoint(
             url="users",
             method="GET",
@@ -495,9 +512,12 @@ class AsyncClient:
             narrow = []
 
         logging.debug("event_types: %s, narrow: %s", str(event_types), str(narrow))
-        request = request = dict(
-            event_types=event_types, narrow=narrow, **self.register_params, **kwargs
-        )
+        request = {
+            "event_types": event_types,
+            "narrow": narrow,
+            **self.register_params,
+            **kwargs,
+        }
 
         return await self.call_endpoint(
             url="register",
@@ -543,7 +563,7 @@ class AsyncClient:
         {'result': 'success', 'msg': ''}
         """
         return await self.call_endpoint(
-            url="messages/{}/reactions".format(reaction_data["message_id"]),
+            url=f"messages/{reaction_data['message_id']}/reactions",
             method="POST",
             request=reaction_data,
         )
@@ -561,7 +581,7 @@ class AsyncClient:
         {'msg': '', 'result': 'success'}
         """
         return await self.call_endpoint(
-            url="messages/{}/reactions".format(reaction_data["message_id"]),
+            url=f"messages/{reaction_data["message_id"]}/reactions",
             method="DELETE",
             request=reaction_data,
         )
@@ -585,18 +605,20 @@ class AsyncClient:
     async def send_responses(
         self,
         responses: Response | Iterable[Response | Iterable[Response]],
-    ) -> None:
+    ) -> list[dict[str, Any]]:
         """Send the given responses."""
         if responses is None:
             logging.debug("responses is None, this should never happen")
-            return
+            return []
 
         if not isinstance(responses, IterableClass):
-            await self.send_response(responses)
-            return
+            result = await self.send_response(responses)
+            return [result]
 
+        results: list[dict[str, Any]] = []
         for response in responses:
-            await self.send_responses(response)
+            results += await self.send_responses(response)
+        return results
 
     async def get_stream_id(self, stream: str) -> dict[str, Any]:
         """
@@ -690,8 +712,9 @@ class AsyncClient:
     async def add_subscriptions(
         self, streams: Iterable[dict[str, Any]], **kwargs: Any
     ) -> dict[str, Any]:
-        request = dict(subscriptions=streams, **kwargs)
-
+        request = {"subscriptions": streams, **kwargs}
+        import json
+        print(json.dumps(request))
         return await self.call_endpoint(
             url="users/me/subscriptions",
             request=request,
@@ -700,7 +723,7 @@ class AsyncClient:
     async def remove_subscriptions(
         self, id: int, streams: Iterable[dict[str, Any]]
     ) -> dict[str, Any]:
-        request = dict(subscriptions=streams, principals=[id])
+        request = {"subscriptions": streams, "principals": [id]}
 
         return await self.call_endpoint(
             url="users/me/subscriptions", method="DELETE", request=request

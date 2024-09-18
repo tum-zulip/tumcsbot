@@ -38,7 +38,7 @@ from sqlalchemy import Column, String
 from tumcsbot.lib.types import AsyncClientMixin, CommandConfig, ZulipUser
 
 
-class PluginTable(TableBase): # type: ignore
+class PluginTable(TableBase):  # type: ignore
     __tablename__ = "Plugins"
 
     name = Column(String, primary_key=True)
@@ -101,20 +101,30 @@ class Event:
     @classmethod
     def stop_event(cls, sender: str, dest: str | None = None) -> Event:
         return cls(sender, type=EventType.STOP, dest=dest)
-    
+
     @classmethod
-    def zulip_event(cls, sender: str, data: Any, dest: str | None = None, reply_to: str | None = None) -> Event:
-        return cls(sender, type=EventType.ZULIP, data=data, dest=dest, reply_to=reply_to)
-    
+    def zulip_event(
+        cls,
+        sender: str,
+        data: Any,
+        dest: str | None = None,
+        reply_to: str | None = None,
+    ) -> Event:
+        return cls(
+            sender, type=EventType.ZULIP, data=data, dest=dest, reply_to=reply_to
+        )
+
     @classmethod
     def restart_event(cls, sender: str, dest: str | None = None) -> Event:
         return cls(sender, type=EventType.RESTART, dest=dest)
-    
+
     @classmethod
     def start_event(cls, sender: str, dest: str | None = None) -> Event:
         return cls(sender, type=EventType.START, dest=dest)
 
+
 T = TypeVar("T")
+
 
 class Plugin(threading.Thread, ABC):
     """Abstract base class for every plugin."""
@@ -129,7 +139,9 @@ class Plugin(threading.Thread, ABC):
     # See https://zulip.com/api/get-events.
     zulip_events: list[str] = []
 
-    def __init__(self, bot, plugin_context: PluginContext, client: AsyncClient | None = None) -> None:
+    def __init__(
+        self, bot, plugin_context: PluginContext, client: AsyncClient | None = None
+    ) -> None:
         """Use _init_plugin for custom init code."""
         super().__init__(name=self.plugin_name(), daemon=True)
 
@@ -140,7 +152,9 @@ class Plugin(threading.Thread, ABC):
 
         # Some declarations.
         self.plugin_context: PluginContext = plugin_context
-        self.client: AsyncClient = AsyncClient(self.plugin_context) if client is None else client
+        self.client: AsyncClient = (
+            AsyncClient(self.plugin_context) if client is None else client
+        )
 
         self.queue = asyncio.Queue()
 
@@ -157,14 +171,19 @@ class Plugin(threading.Thread, ABC):
         Note that this code is called from the worker thread/process.
         """
 
-    async def invoke_other_cmd(self, _fn, sender: ZulipUser, session: Any, message: dict[str, Any] | None = None, **kwargs):
+    async def invoke_other_cmd(
+        self,
+        _fn,
+        sender: ZulipUser,
+        session: Any,
+        message: dict[str, Any] | None = None,
+        **kwargs,
+    ):
         # split bound method into class and method
         invoker = _fn.invoke
         async for result in invoker(sender, session, message, **kwargs):
             yield result
 
-
-    
     async def is_responsible(self, event: Event) -> bool:
         """Check if the plugin is responsible for the given Zulip event.
 
@@ -172,7 +191,7 @@ class Plugin(threading.Thread, ABC):
         responsibility check.
         """
         return event.data["type"] in self.zulip_events
-    
+
     @abstractmethod
     async def handle_event(self, event: Event) -> Response | Iterable[Response]:
         """Process a Zulip event.
@@ -180,8 +199,7 @@ class Plugin(threading.Thread, ABC):
         Process the given event and return a Response or an Iterable
         consisting of Response objects.
         """
-        
-    
+
     async def run_loop(self) -> None:
         """Run the plugin loop.
 
@@ -206,7 +224,6 @@ class Plugin(threading.Thread, ABC):
                             self.logger.exception(e)
                             self.logger.error("Error while handling event. Ignoring.")
 
-                    
                     asyncio.create_task(handler())
                 self.queue.task_done()
         except asyncio.CancelledError:
@@ -219,7 +236,6 @@ class Plugin(threading.Thread, ABC):
             task.cancel()
         self.loop.call_soon_threadsafe(self.loop.stop)
 
-    
     @final
     def run(self):
         self.running = True
@@ -233,6 +249,7 @@ class Plugin(threading.Thread, ABC):
     def push_event(self, event: Event):
         def put():
             self.queue.put_nowait(event)
+
         self.loop.call_soon_threadsafe(put)
 
     @final
@@ -257,7 +274,7 @@ class PluginCommandMixin(Plugin):
     # The events this command would like to receive, defaults to
     # messages.
     zulip_events = Plugin.zulip_events + ["message"]
-    # todo: usage? events = Plugin.events + 
+    # todo: usage? events = Plugin.events +
 
     # The command parser.
     _tumcs_bot_command_parser: CommandParser = CommandParser()
@@ -282,7 +299,7 @@ class PluginCommandMixin(Plugin):
                     syntax=syntax,
                     description=description,
                     config=json.dumps(asdict(self._tumcs_bot_commands), default=str),
-                ) 
+                )
             )
             session.commit()
 
@@ -304,7 +321,9 @@ class PluginCommandMixin(Plugin):
         """
         return (self.plugin_name(), self.syntax, self.description)
 
-    async def handle_message(self, message: dict[str, Any]) -> Response | Iterable[Response]:
+    async def handle_message(
+        self, message: dict[str, Any]
+    ) -> Response | Iterable[Response]:
         """Process message.
 
         Process the given message and return a Response or an Iterable
@@ -336,12 +355,12 @@ class PluginCommandMixin(Plugin):
                 Response | Iterable[Response],
             ] = getattr(self, command)
             AsyncClientMixin.set_client(self.client)
-            sender = ZulipUser(id=message["sender_id"], name=message["sender_full_name"])
+            sender = ZulipUser(
+                id=message["sender_id"], name=message["sender_full_name"]
+            )
             await sender
             with DB.session() as session:
-                result = await func(
-                    sender, session, args, opts, message
-                )
+                result = await func(sender, session, args, opts, message)
             return result
         else:
             self.logger.debug(f"command not found: {command}")

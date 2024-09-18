@@ -3,7 +3,7 @@
 # See LICENSE file for copyright and license details.
 # TUM CS Bot - https://github.com/ro-i/tumcsbot
 
-from typing import Any
+from typing import Any, AsyncGenerator
 
 from zulip import ZulipStream
 from tumcsbot.lib.command_parser import CommandParser
@@ -11,7 +11,16 @@ from tumcsbot.lib.utils import split
 from tumcsbot.plugin import PluginCommandMixin, Plugin
 from tumcsbot.plugin_decorators import command, arg, privilege, opt
 from tumcsbot.lib.regex import Regex
-from tumcsbot.lib.types import Privilege, PartialError, PartialSuccess, ZulipUser, DMResponse, DMError  
+from tumcsbot.lib.db import Session
+from tumcsbot.lib.types import (
+    Privilege,
+    PartialError,
+    PartialSuccess,
+    ZulipUser,
+    DMResponse,
+    DMError,
+    response_type,
+)
 
 
 class Streams(PluginCommandMixin, Plugin):
@@ -25,13 +34,13 @@ class Streams(PluginCommandMixin, Plugin):
         args: CommandParser.Args,
         _opts: CommandParser.Opts,
         _message: dict[str, Any],
-    ):
+    ) -> AsyncGenerator[response_type, None]:
         """
         Search for streams that match the given pattern.
         """
-    
+
         result: list[str] = await self.client.get_streams_from_regex(args.pattern)
- 
+
         if not result:
             yield DMResponse("No matches found.")
         else:
@@ -53,11 +62,11 @@ class Streams(PluginCommandMixin, Plugin):
     async def archive(
         self,
         sender: ZulipUser,
-        session,
+        session: Session,
         args: CommandParser.Args,
         opts: CommandParser.Opts,
         message: dict[str, Any],
-    ):
+    ) -> AsyncGenerator[response_type, None]:
         """
         Archive the given streams.
         The list of streams is interpreted in a way that autocompleted
@@ -125,7 +134,7 @@ class Streams(PluginCommandMixin, Plugin):
         args: CommandParser.Args,
         opts: CommandParser.Opts,
         message: dict[str, Any],
-    ):
+    ) -> AsyncGenerator[response_type, None]:
         """
         todo: this is wrong documentation
         Create a public stream for every (stream,description)-tuple \
@@ -161,7 +170,7 @@ class Streams(PluginCommandMixin, Plugin):
         args: CommandParser.Args,
         _opts: CommandParser.Opts,
         _message: dict[str, Any],
-    ):
+    ) -> AsyncGenerator[response_type, None]:
 
         for old, new in args.stream_tuples:
             # Used for error messages.
@@ -181,4 +190,3 @@ class Streams(PluginCommandMixin, Plugin):
                 yield PartialError(result["msg"])
                 continue
             yield PartialSuccess(f"Renamed {line}")
-

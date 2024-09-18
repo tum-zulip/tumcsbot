@@ -40,7 +40,7 @@ from tumcsbot.lib.types import (
 )
 
 
-class ReactionAction(TableBase): # type: ignore
+class ReactionAction(TableBase):  # type: ignore
     __tablename__ = "ReactionAction"
 
     ReactionActionId = Column(Integer, primary_key=True, autoincrement=True)
@@ -50,7 +50,7 @@ class ReactionAction(TableBase): # type: ignore
     reaction = Column(Integer, ForeignKey("ReactionConfig.id", ondelete="CASCADE"))
 
 
-class ReactionConfig(TableBase): # type: ignore
+class ReactionConfig(TableBase):  # type: ignore
     __tablename__ = "ReactionConfig"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
@@ -64,7 +64,7 @@ class ReactionConfig(TableBase): # type: ignore
     __table_args__ = (UniqueConstraint("emote", "ModerationConfigId"),)
 
 
-class GroupAuthorization(TableBase): # type: ignore
+class GroupAuthorization(TableBase):  # type: ignore
     __tablename__ = "GroupAuthorization"
 
     GroupId = Column(
@@ -79,7 +79,7 @@ class GroupAuthorization(TableBase): # type: ignore
     group: Mapped[UserGroup] = relationship()
 
 
-class StreamAuthorization(TableBase): # type: ignore
+class StreamAuthorization(TableBase):  # type: ignore
     __tablename__ = "StreamAuthorization"
 
     Stream = Column(ZulipStream, primary_key=True)
@@ -90,7 +90,7 @@ class StreamAuthorization(TableBase): # type: ignore
     )
 
 
-class ModerationConfig(TableBase): # type: ignore
+class ModerationConfig(TableBase):  # type: ignore
     __tablename__ = "ModerationConfig"
 
     ModerationConfigId = Column(Integer, primary_key=True, autoincrement=True)
@@ -337,7 +337,6 @@ class Moderate(PluginCommandMixin, Plugin):
             content += "---\n*hint: use option -v to see detailed description*"
         yield DMResponse(content)
 
-
     @command
     @privilege(Privilege.ADMIN)
     @arg("name", str, description="The name of the configuration")
@@ -426,7 +425,12 @@ class Moderate(PluginCommandMixin, Plugin):
             for member in members:
                 yield DMMessage(
                     member,
-                    f"Hey,\nthe group '{group.GroupName}' you are a member of has been granted moderation rights for `{moderation_config.ModerationConfigName}`.\n*hint: use the moderate command for more information*",
+                    cleandoc(
+                    f"""
+                        Hey,
+                        The group '{group.GroupName}' you are a member of has been granted moderation rights for `{moderation_config.ModerationConfigName}`.
+                        *hint: use the moderate command for more information*
+                    """),
                 )
             yield DMResponse(
                 f"Notified members of group '{group.GroupName}' about the new moderation rights."
@@ -544,7 +548,11 @@ class Moderate(PluginCommandMixin, Plugin):
         str,
         description="The configuration for the reaction as a yaml-style code block.",
     )
-    @opt("f", "force", description="Overwrite existing configuration for reaction and delete all configured actions")
+    @opt(
+        "f",
+        "force",
+        description="Overwrite existing configuration for reaction and delete all configured actions",
+    )
     async def configure_reaction(
         self,
         _sender: ZulipUser,
@@ -587,13 +595,20 @@ class Moderate(PluginCommandMixin, Plugin):
             emote=args.emote,
             actions=actions,
         )
-        r = session.query(ReactionConfig).filter(
-            ReactionConfig.emote == args.emote,
-            ReactionConfig.ModerationConfigId == moderation_config.ModerationConfigId,
-        ).first()
+        r = (
+            session.query(ReactionConfig)
+            .filter(
+                ReactionConfig.emote == args.emote,
+                ReactionConfig.ModerationConfigId
+                == moderation_config.ModerationConfigId,
+            )
+            .first()
+        )
         if r and not opts.f:
-            raise DMError(f"Reaction for {args.emote} already configured. Use -f to overwrite.")
-        
+            raise DMError(
+                f"Reaction for {args.emote} already configured. Use -f to overwrite."
+            )
+
         session.merge(reaction)
         # moderation_config.reactions.append(reaction)
         session.commit()
@@ -641,7 +656,12 @@ class Moderate(PluginCommandMixin, Plugin):
 
     @command
     @privilege(Privilege.ADMIN)
-    @arg("name", ModerationConfig.ModerationConfigName, description="The name of the configuration", optional=True)
+    @arg(
+        "name",
+        ModerationConfig.ModerationConfigName,
+        description="The name of the configuration",
+        optional=True,
+    )
     async def export(
         self,
         _sender: ZulipUser,
@@ -654,10 +674,16 @@ class Moderate(PluginCommandMixin, Plugin):
         Export all user groups as yaml.
         """
         if args.name:
-            cfg = session.query(ModerationConfig).filter(ModerationConfig.ModerationConfigName == args.name).first()
+            cfg = (
+                session.query(ModerationConfig)
+                .filter(ModerationConfig.ModerationConfigName == args.name)
+                .first()
+            )
             if not cfg:
                 raise DMError(f"Configuration '{args.name}' not found.")
-            yield DMResponse(f"```yaml\n{yaml.dump(await serialize_model(cfg), allow_unicode=True, sort_keys=False)}\n```")
+            yield DMResponse(
+                f"```yaml\n{yaml.dump(await serialize_model(cfg), allow_unicode=True, sort_keys=False)}\n```"
+            )
             return
 
         configs = []
@@ -682,7 +708,11 @@ class Moderate(PluginCommandMixin, Plugin):
     @privilege(Privilege.ADMIN)
     @arg("name", str, description="The name of the configuration")
     @arg("config", str, description="The configuration as yaml")
-    @opt("f", "force", description="Overwrite existing configuration and delete all configured reactions")
+    @opt(
+        "f",
+        "force",
+        description="Overwrite existing configuration and delete all configured reactions",
+    )
     async def load(
         self,
         _sender: ZulipUser,
@@ -693,16 +723,26 @@ class Moderate(PluginCommandMixin, Plugin):
     ) -> AsyncGenerator[response_type, None]:
         cfg = self.load_yaml_from_string(args.config)
         model = await deserialize_model(session, cfg)
-        if session.query(ModerationConfig).filter(ModerationConfig.ModerationConfigName == model.ModerationConfigName).count() > 0:
+        if (
+            session.query(ModerationConfig)
+            .filter(ModerationConfig.ModerationConfigName == model.ModerationConfigName)
+            .count()
+            > 0
+        ):
             if not opts.force:
-                raise DMError(f"Configuration '{model.ModerationConfigName}' already exists. Use the -f option to overwrite.")
-            session.query(ModerationConfig).filter(ModerationConfig.ModerationConfigName == model.ModerationConfigName).delete()
+                raise DMError(
+                    f"Configuration '{model.ModerationConfigName}' already exists. Use the -f option to overwrite."
+                )
+            session.query(ModerationConfig).filter(
+                ModerationConfig.ModerationConfigName == model.ModerationConfigName
+            ).delete()
             session.commit()
 
         session.add(model)
         session.commit()
-        yield DMResponse(f"Configuration '{model.ModerationConfigName}' loaded:\n{await Moderate.format_config(model)}")
-        
+        yield DMResponse(
+            f"Configuration '{model.ModerationConfigName}' loaded:\n{await Moderate.format_config(model)}"
+        )
 
     @staticmethod
     async def format_reactions(
@@ -796,4 +836,3 @@ class Moderate(PluginCommandMixin, Plugin):
             raise DMError(
                 f"Error: '{action}' is not a valid action. Supported actions are 'dm', 'delete' and 'respond'"
             )
-

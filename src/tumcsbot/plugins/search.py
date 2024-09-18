@@ -8,7 +8,7 @@ from typing import Any, AsyncGenerator
 from tumcsbot.lib.db import Session
 
 from tumcsbot.lib.command_parser import CommandParser
-from tumcsbot.plugin import PluginCommandMixin, Plugin, ZulipUser
+from tumcsbot.plugin import PluginCommandMixin, Plugin
 from tumcsbot.plugin_decorators import command, arg
 from tumcsbot.lib.types import response_type, ZulipUser, DMResponse
 
@@ -44,4 +44,3 @@ class Search(PluginCommandMixin, Plugin):
         # Remove requesting message.
         await self.client.delete_message(message["id"])
         yield DMResponse(self.msg_template.format(url))
-    

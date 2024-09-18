@@ -58,7 +58,6 @@ class StreamGroup(TableBase):  # type: ignore
         "CourseDB",
         back_populates="_streams",
     )
-   
 
     @hybrid_property
     def streams(self) -> list[ZulipStream]:
@@ -136,20 +135,24 @@ class Streamgroup(PluginCommandMixin, Plugin):
             else:
                 op = "unknown operation (" + op + ")"
 
-            self.logger.info(f"Streams {', '.join([f'#**{s['name']}**' for s in data['streams']])} {op}")
+            self.logger.info(
+                f"Streams {', '.join([f'#**{s['name']}**' for s in data['streams']])} {op}"
+            )
             self.logger.debug(data)
             return await self.handle_stream_event(data)
         self.logger.debug("%s", event)
         return await self.handle_message(data["message"])
-    
+
     async def handle_delete_message(
         self, event: dict[str, Any]
     ) -> Response | Iterable[Response]:
-        id : int = event["message_id"]
+        id: int = event["message_id"]
         with DB.session() as session:
             try:
                 session.query(GroupClaim).filter(GroupClaim.MessageId == id).delete()
-                session.query(GroupClaimAll).filter(GroupClaimAll.MessageId == id).delete()
+                session.query(GroupClaimAll).filter(
+                    GroupClaimAll.MessageId == id
+                ).delete()
                 session.commit()
             except sqlalchemy.exc.IntegrityError:
                 session.rollback()
@@ -183,12 +186,11 @@ class Streamgroup(PluginCommandMixin, Plugin):
         self, event: dict[str, Any]
     ) -> Response | Iterable[Response]:
 
-
         if event["op"] == "create":
             for stream in event["streams"]:
                 name: str = stream["name"]
                 id: int = stream["stream_id"]
-    
+
                 # Get all the groups this stream belongs to.
                 group_ids: list[str] = Streamgroup._get_group_ids_from_stream_id(id)
                 # Get all user ids to subscribe to this new stream ...
@@ -201,16 +203,24 @@ class Streamgroup(PluginCommandMixin, Plugin):
                 # Streams
                 name: str = stream["name"]
                 id: int = stream["stream_id"]
-                
+
                 group_ids: list[str] = Streamgroup._get_group_ids_from_stream_id(id)
 
                 if group_ids:
-                    self.logger.info(f"Stream {name} being deleted from groups {group_ids}")
-              
+                    self.logger.info(
+                        f"Stream {name} being deleted from groups {group_ids}"
+                    )
+
                 for group_id in group_ids:
                     with DB.session() as session:
-                        s: StreamGroup =  session.query(StreamGroup).filter(StreamGroup.StreamGroupId == group_id).one()
-                        await Streamgroup._remove_streams_by_id(session, self.client, s, [id])
+                        s: StreamGroup = (
+                            session.query(StreamGroup)
+                            .filter(StreamGroup.StreamGroupId == group_id)
+                            .one()
+                        )
+                        await Streamgroup._remove_streams_by_id(
+                            session, self.client, s, [id]
+                        )
 
                 # messages
                 with DB.session() as session:
@@ -219,7 +229,9 @@ class Streamgroup(PluginCommandMixin, Plugin):
                         msg = await self.client.get_message_by_id(claim.MessageId)
                         if msg["type"] == "stream" and msg["stream_id"] == id:
                             try:
-                                session.query(GroupClaim).filter(GroupClaim.MessageId == msg["id"]).delete()
+                                session.query(GroupClaim).filter(
+                                    GroupClaim.MessageId == msg["id"]
+                                ).delete()
                                 session.commit()
                             except sqlalchemy.exc.IntegrityError:
                                 session.rollback()
@@ -229,7 +241,9 @@ class Streamgroup(PluginCommandMixin, Plugin):
                         msg = await self.client.get_message_by_id(claim.MessageId)
                         if msg["type"] == "stream" and msg["stream_id"] == id:
                             try:
-                                session.query(GroupClaimAll).filter(GroupClaimAll.MessageId == msg["id"]).delete()
+                                session.query(GroupClaimAll).filter(
+                                    GroupClaimAll.MessageId == msg["id"]
+                                ).delete()
                                 session.commit()
                             except sqlalchemy.exc.IntegrityError:
                                 session.rollback()
@@ -247,8 +261,14 @@ class Streamgroup(PluginCommandMixin, Plugin):
                     event.data["message_id"], event.data["emoji_name"]
                 )
             )
-            or (event.data["type"] == "stream" and event.data["op"] in ["create", "delete"])
-            or (event.data["type"] == "delete_message" and event.data["message_type"] == "stream")
+            or (
+                event.data["type"] == "stream"
+                and event.data["op"] in ["create", "delete"]
+            )
+            or (
+                event.data["type"] == "delete_message"
+                and event.data["message_type"] == "stream"
+            )
         )
 
     # ========================================================================================================================
@@ -390,7 +410,9 @@ class Streamgroup(PluginCommandMixin, Plugin):
         group: StreamGroup = args.group_id
         stream_patterns: list[str] = args.streams
 
-        await Streamgroup._add_streams(self.client, session, sender, group, stream_patterns)
+        await Streamgroup._add_streams(
+            self.client, session, sender, group, stream_patterns
+        )
         yield DMResponse(f"Added streams to Streamgroup `{group.StreamGroupId}`.")
 
     @command
@@ -1002,13 +1024,13 @@ class Streamgroup(PluginCommandMixin, Plugin):
     # ========================================================================================================================
 
     @staticmethod
-    def _create_group(session: Session, id: str, emote: str) -> None:
+    def _create_group(session: Session, ID: str, emote: str) -> None:
         """
         Create a new StreamGroup.
 
         Args:
             session: The database session.
-            id: The id of the group.
+            ID: The id of the group.
             emote: the emote of the group.
 
         Raises:
@@ -1018,24 +1040,24 @@ class Streamgroup(PluginCommandMixin, Plugin):
             None
         """
         if (
-            session.query(StreamGroup).filter(StreamGroup.StreamGroupId == id).first()
+            session.query(StreamGroup).filter(StreamGroup.StreamGroupId == ID).first()
             is not None
         ):
-            raise DMError(f"Streamgroup `{id}` already exists")
+            raise DMError(f"Streamgroup `{ID}` already exists")
 
-        ugroup: UserGroup = Streamgroup._create_usergroup(session, id)
+        ugroup: UserGroup = Streamgroup._create_usergroup(session, ID)
         group = StreamGroup(
-            StreamGroupId=id, StreamGroupEmote=emote, UserGroupId=ugroup.GroupId
+            StreamGroupId=ID, StreamGroupEmote=emote, UserGroupId=ugroup.GroupId
         )
         try:
             session.add(group)
             session.commit()
         except sqlalchemy.exc.IntegrityError as e:
             session.rollback()
-            raise DMError(f"Could not create Streamgroup `{id}`.") from e
-        
+            raise DMError(f"Could not create Streamgroup `{ID}`.") from e
+
     @staticmethod
-    def _create_and_get_group(session: Session, id: str, emote: str) -> StreamGroup:
+    def _create_and_get_group(session: Session, ID: str, emote: str) -> StreamGroup:
         """
         Create a new StreamGroup.
 
@@ -1051,32 +1073,32 @@ class Streamgroup(PluginCommandMixin, Plugin):
             Streamgroup
         """
         if (
-            session.query(StreamGroup).filter(StreamGroup.StreamGroupId == id).first()
+            session.query(StreamGroup).filter(StreamGroup.StreamGroupId == ID).first()
             is not None
         ):
-            raise DMError(f"Streamgroup `{id}` already exists")
+            raise DMError(f"Streamgroup `{ID}` already exists")
 
-        ugroup: UserGroup = Streamgroup._create_usergroup(session, id)
+        ugroup: UserGroup = Streamgroup._create_usergroup(session, ID)
         group = StreamGroup(
-            StreamGroupId=id, StreamGroupEmote=emote, UserGroupId=ugroup.GroupId
+            StreamGroupId=ID, StreamGroupEmote=emote, UserGroupId=ugroup.GroupId
         )
         try:
             session.add(group)
             session.commit()
         except sqlalchemy.exc.IntegrityError as e:
             session.rollback()
-            raise DMError(f"Could not create Streamgroup `{id}`.") from e
-        
+            raise DMError(f"Could not create Streamgroup `{ID}`.") from e
+
         return group
 
     @staticmethod
-    def _create_usergroup(session: Session, id: str) -> UserGroup:
+    def _create_usergroup(session: Session, ID: str) -> UserGroup:
         """
         Create a new UserGroup for the subscribers of a StreamGroup.
 
         Args:
             session: The database session.
-            id: The id of the group.
+            ID: The id of the group.
 
         Raises:
             DMError: If the group creation fails.
@@ -1084,7 +1106,7 @@ class Streamgroup(PluginCommandMixin, Plugin):
         Returns:
             Usergroup
         """
-        name: str = "ugrp_strgrp" + id
+        name: str = "ugrp_strgrp" + ID
         group: UserGroup = UserGroup(GroupName=name)
 
         try:
@@ -1123,7 +1145,7 @@ class Streamgroup(PluginCommandMixin, Plugin):
             raise DMError(
                 f"Could not delete Streamgroup `{group.StreamGroupId}`."
             ) from e
-        
+
     @staticmethod
     async def _remove_streams(
         session: Session,
@@ -1146,7 +1168,7 @@ class Streamgroup(PluginCommandMixin, Plugin):
         Returns:
             None
         """
-    
+
         failed: list[str] = []
         for stream_reg in stream_patterns:
             streams: list[str] = await client.get_streams_from_regex(stream_reg)
@@ -1180,7 +1202,7 @@ class Streamgroup(PluginCommandMixin, Plugin):
             raise DMError(
                 f"Could not delete streams(s) {s} from Streamgroup `{group.StreamGroupId}`."
             )
-        
+
     @staticmethod
     async def _remove_streams_by_id(
         session: Session,
@@ -1189,25 +1211,24 @@ class Streamgroup(PluginCommandMixin, Plugin):
         stream_ids: list[int],
     ):
         for id in stream_ids:
-                if (
-                    session.query(StreamGroupMember)
-                    .filter(StreamGroupMember.Stream == id)
-                    .filter(StreamGroupMember.StreamGroupId == group.StreamGroupId)
-                    .first()
-                    is None
-                ):
-                    continue
-                try:
-                    # search for the listed streams in the db and delete them
-                    session.query(StreamGroupMember).filter(
-                        StreamGroupMember.Stream == id
-                    ).filter(
-                        StreamGroupMember.StreamGroupId == group.StreamGroupId
-                    ).delete()
-                    session.commit()
-                except sqlalchemy.exc.IntegrityError as e:
-                    session.rollback()
-
+            if (
+                session.query(StreamGroupMember)
+                .filter(StreamGroupMember.Stream == id)
+                .filter(StreamGroupMember.StreamGroupId == group.StreamGroupId)
+                .first()
+                is None
+            ):
+                continue
+            try:
+                # search for the listed streams in the db and delete them
+                session.query(StreamGroupMember).filter(
+                    StreamGroupMember.Stream == id
+                ).filter(
+                    StreamGroupMember.StreamGroupId == group.StreamGroupId
+                ).delete()
+                session.commit()
+            except sqlalchemy.exc.IntegrityError as e:
+                session.rollback()
 
     @staticmethod
     async def _add_streams(
@@ -1238,7 +1259,6 @@ class Streamgroup(PluginCommandMixin, Plugin):
         for stream_reg in stream_patterns:
             s: list[str] = await client.get_streams_from_regex(stream_reg)
             streams.extend(s)
-
 
         if not streams:
             stream_patterns_output: list[str] = map(lambda s: f"`{s}`", stream_patterns)
@@ -1272,26 +1292,28 @@ class Streamgroup(PluginCommandMixin, Plugin):
             raise DMError(
                 f"Could not add stream(s) {s} to Streamgroup `{group.StreamGroupId}`."
             )
-        
+
     @staticmethod
-    def _add_zulip_streams(session:Session, streams:list[ZulipStream], group:StreamGroup):
+    def _add_zulip_streams(
+        session: Session, streams: list[ZulipStream], group: StreamGroup
+    ):
         failed: list[str] = []
         for stream in streams:
-                if (
-                    session.query(StreamGroupMember)
-                    .filter(StreamGroupMember.StreamGroupId == group.StreamGroupId)
-                    .filter(StreamGroupMember.Stream == stream)
-                    .first()
-                ):
-                    continue
-                try:
-                    session.add(
-                        StreamGroupMember(StreamGroupId=group.StreamGroupId, Stream=stream)
-                    )
-                    session.commit()
-                except sqlalchemy.exc.IntegrityError as e:
-                    session.rollback()
-                    failed.append(f"#**{stream.name}**")
+            if (
+                session.query(StreamGroupMember)
+                .filter(StreamGroupMember.StreamGroupId == group.StreamGroupId)
+                .filter(StreamGroupMember.Stream == stream)
+                .first()
+            ):
+                continue
+            try:
+                session.add(
+                    StreamGroupMember(StreamGroupId=group.StreamGroupId, Stream=stream)
+                )
+                session.commit()
+            except sqlalchemy.exc.IntegrityError as e:
+                session.rollback()
+                failed.append(f"#**{stream.name}**")
 
         if failed:
             s: str = " ".join(failed)
@@ -1538,9 +1560,7 @@ class Streamgroup(PluginCommandMixin, Plugin):
 
         # React with all those emojis on this message.
         for emoji in all_emojis:
-            await client.send_response(
-                Response.build_reaction(botMessage, emoji=emoji)
-            )
+            await client.send_response(Response.build_reaction(botMessage, emoji=emoji))
 
     @staticmethod
     def _build_announcement_message(session: Session) -> str:
@@ -1780,11 +1800,9 @@ class Streamgroup(PluginCommandMixin, Plugin):
             f: str = " ".join(failed)
             raise DMError(f"Stream(s) with id(s) {f} could be not found.")
         return list(streams)
-    
+
     @staticmethod
-    def _get_streams(
-        session: Session, group: StreamGroup
-    ) -> list[ZulipStream]:
+    def _get_streams(session: Session, group: StreamGroup) -> list[ZulipStream]:
         """
         Get a list of all streams that are members of a given Streamgroup.
         """
@@ -1796,7 +1814,7 @@ class Streamgroup(PluginCommandMixin, Plugin):
         ):
             if s.Stream:
                 streams.append(s.Streams)
-               
+
         return streams
 
     @staticmethod
@@ -1828,7 +1846,7 @@ class Streamgroup(PluginCommandMixin, Plugin):
 
     @staticmethod
     async def _get_unique_stream_names(
-        session: Session, sender: ZulipUser, group: StreamGroup, client : AsyncClient
+        session: Session, sender: ZulipUser, group: StreamGroup, client: AsyncClient
     ) -> list[str]:
         """
         Get a list of the names of all streams that are members only in a given StreamGroup and not in any other StreamGroup.

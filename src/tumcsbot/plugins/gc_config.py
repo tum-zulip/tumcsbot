@@ -5,17 +5,26 @@
 
 import asyncio
 import logging
-from typing import Any, Iterable
+from typing import Any, Iterable, AsyncGenerator
 
 from tumcsbot.lib.command_parser import CommandParser
 from tumcsbot.lib.conf import Conf
 from tumcsbot.lib.response import Response
-from tumcsbot.lib.types import DMResponse, PartialError, PartialSuccess, Privilege, ZulipStream, ZulipUser
+from tumcsbot.lib.types import (
+    DMResponse,
+    PartialError,
+    PartialSuccess,
+    Privilege,
+    ZulipStream,
+    ZulipUser,
+    response_type,
+)
 from tumcsbot.plugin import Event, Plugin, PluginCommandMixin
 from tumcsbot.plugin_decorators import arg, command, opt, privilege
 
 from tumcsbot.plugins.garbage_collector import GarbageCollectorIgnoreStreamsTable
 from tumcsbot.plugins.userinput import UserInput
+
 
 class GCConfig(PluginCommandMixin, Plugin):
     """
@@ -50,11 +59,11 @@ class GCConfig(PluginCommandMixin, Plugin):
     )
     async def threshold(
         self,
-        sender: ZulipUser,
+        _sender: ZulipUser,
         _session,
-        args: CommandParser.Args,
+        _args: CommandParser.Args,
         opts: CommandParser.Opts,
-        message: dict[str, Any],
+        _message: dict[str, Any],
     ) -> Iterable[Response]:
         """
         Set the number of seconds a stream has to be inactive before it is considered for deletion.
@@ -99,11 +108,11 @@ class GCConfig(PluginCommandMixin, Plugin):
     )
     async def confirmation_time(
         self,
-        sender: ZulipUser,
+        _sender: ZulipUser,
         _session,
-        args: CommandParser.Args,
+        _args: CommandParser.Args,
         opts: CommandParser.Opts,
-        message: dict[str, Any],
+        _message: dict[str, Any],
     ) -> Iterable[Response]:
         """
         Set the number of seconds the bot waits for a response from the stream admins.
@@ -120,16 +129,20 @@ class GCConfig(PluginCommandMixin, Plugin):
 
         yield DMResponse(f"Time to responde set to {time_to_responde} seconds.")
 
-
     @command
-    @arg("streams", ZulipStream, description="The streams to ignore by the garbage collector", greedy=True)
+    @arg(
+        "streams",
+        ZulipStream,
+        description="The streams to ignore by the garbage collector",
+        greedy=True,
+    )
     async def ignore(
         self,
-        sender: ZulipUser,
+        _sender: ZulipUser,
         session,
         args: CommandParser.Args,
-        opts: CommandParser.Opts,
-        message: dict[str, Any],
+        _opts: CommandParser.Opts,
+        _message: dict[str, Any],
     ) -> Iterable[Response]:
         """
         Ignore streams by the garbage collector.
@@ -153,10 +166,9 @@ class GCConfig(PluginCommandMixin, Plugin):
             logging.exception(e)
             yield DMResponse(f"Error: {e}")
             return
-        
+
         for s in streams:
             await s
-
 
     @command
     async def test(
@@ -166,14 +178,19 @@ class GCConfig(PluginCommandMixin, Plugin):
         args: CommandParser.Args,
         opts: CommandParser.Opts,
         message: dict[str, Any],
-    ) -> Iterable[Response]:
-        response1 = await self.client.send_response(Response.build_message(message, "Test successful."))
+    ) -> AsyncGenerator[response_type, None]:
+        response1 = await self.client.send_response(
+            Response.build_message(message, "Test successful.")
+        )
 
-        response2 = await self.client.send_response(Response.build_message(None, "Test successful.", to=[sender.id, 10], msg_type="private"))
+        response2 = await self.client.send_response(
+            Response.build_message(
+                None, "Test successful.", to=[sender.id, 10], msg_type="private"
+            )
+        )
 
         coro1 = UserInput.choose(self.client, response1["id"], ["check", "cross_mark"])
         coro2 = UserInput.choose(self.client, response2["id"], ["check", "cross_mark"])
-
 
         res = await asyncio.gather(coro1, coro2)
 

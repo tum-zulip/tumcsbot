@@ -24,11 +24,13 @@ from tumcsbot.lib.types import response_type
 from tumcsbot.plugin import Event, PluginCommandMixin, Plugin
 from tumcsbot.plugin_decorators import command, privilege, arg
 
-class Alert(TableBase): # type: ignore
-    __tablename__ = 'Alerts'
+
+class Alert(TableBase):  # type: ignore
+    __tablename__ = "Alerts"
 
     Phrase = Column(String, primary_key=True)
     Emoji = Column(String, nullable=False)
+
 
 class AlertWord(PluginCommandMixin, Plugin):
     """Manage reactions on certain words or phrases with emojis."""
@@ -40,10 +42,12 @@ class AlertWord(PluginCommandMixin, Plugin):
         # Replace markdown links by their textual representation.
         self._markdown_links: re.Pattern[str] = re.compile(r"\[([^\]]*)\]\([^\)]+\)")
 
-    
     async def is_responsible(self, event: Event) -> bool:
         # First check whether the command mixin part is responsible.
-        if await super().is_responsible(event) and event.data["message"].get("command_name", None) == "alert_word":
+        if (
+            await super().is_responsible(event)
+            and event.data["message"].get("command_name", None) == "alert_word"
+        ):
             return True
 
         return (
@@ -66,10 +70,11 @@ class AlertWord(PluginCommandMixin, Plugin):
                 bindings.append((pattern, alert.Emoji))
 
         return bindings
-    
+
     @command(name="list")
     @privilege(Privilege.ADMIN)
-    async def _list(self,
+    async def _list(
+        self,
         _sender: ZulipUser,
         session: Session,
         _args: CommandParser.Args,
@@ -83,12 +88,15 @@ class AlertWord(PluginCommandMixin, Plugin):
         for alert in session.query(Alert).all():
             response += f"\n`{alert.Phrase}` | {alert.Emoji} :{alert.Emoji}:"
         yield Response.build_message(message, response)
-    
+
     @command
     @privilege(Privilege.ADMIN)
     @arg("alert_phrase", str, description="The alert phrase regex to add.")
-    @arg("emoji", Regex.get_emoji_name, description="The emoji to use for the reaction.")
-    async def add(self,
+    @arg(
+        "emoji", Regex.get_emoji_name, description="The emoji to use for the reaction."
+    )
+    async def add(
+        self,
         _sender: ZulipUser,
         session: Session,
         args: CommandParser.Args,
@@ -108,11 +116,11 @@ class AlertWord(PluginCommandMixin, Plugin):
         session.commit()
         yield Response.ok(message)
 
-
     @command
     @privilege(Privilege.ADMIN)
     @arg("alert_phrase", str, description="The alert phrase regex to remove.")
-    async def remove(self,
+    async def remove(
+        self,
         _sender: ZulipUser,
         session: Session,
         args: CommandParser.Args,
@@ -128,7 +136,10 @@ class AlertWord(PluginCommandMixin, Plugin):
         yield Response.ok(message)
 
     async def handle_event(self, event: Event) -> Response | Iterable[Response]:
-        if event.data["type"] == "message" and event.data["message"].get("command_name", None) == "alert_word":
+        if (
+            event.data["type"] == "message"
+            and event.data["message"].get("command_name", None) == "alert_word"
+        ):
             return await self.handle_message(event.data["message"])
 
         if not self._bindings:
@@ -146,5 +157,3 @@ class AlertWord(PluginCommandMixin, Plugin):
             for pattern, emoji in self._bindings
             if randint(1, 6) == 3 and pattern.search(content) is not None
         ]
-
-

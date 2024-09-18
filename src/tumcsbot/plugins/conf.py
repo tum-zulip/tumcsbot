@@ -3,25 +3,26 @@
 # See LICENSE file for copyright and license details.
 # TUM CS Bot - https://github.com/ro-i/tumcsbot
 
-import asyncio
 from inspect import cleandoc
 from typing import Any, AsyncGenerator, Iterable
 
 from tumcsbot.lib.db import Session
 from tumcsbot.lib.response import Response
 from tumcsbot.lib.conf import Conf
-from tumcsbot.plugin import PluginCommandMixin,Plugin, ZulipUser
+from tumcsbot.plugin import PluginCommandMixin, Plugin
 from tumcsbot.lib.command_parser import CommandParser
-from tumcsbot.plugin_decorators import (
+from tumcsbot.lib.types import (
+    response_type,
+    ZulipUser,
     DMResponse,
+    Privilege,
     UserNotPrivilegedException,
+)
+from tumcsbot.plugin_decorators import (
     command,
     privilege,
     arg,
-    Privilege,
-    response_type,
 )
-from tumcsbot.plugins.userinput import UserInput
 
 class ConfPlugin(PluginCommandMixin, Plugin):
     """
@@ -34,7 +35,7 @@ class ConfPlugin(PluginCommandMixin, Plugin):
         self,
         _sender: ZulipUser,
         _session: Session,
-        args: CommandParser.Args,
+        _args: CommandParser.Args,
         _opts: CommandParser.Opts,
         _message: dict[str, Any],
     ) -> AsyncGenerator[response_type, None]:
@@ -45,12 +46,11 @@ class ConfPlugin(PluginCommandMixin, Plugin):
         for key, value in Conf.list():
             response += f"\n{key} | {value}"
         yield DMResponse(response)
-        
 
     @command
     @privilege(Privilege.ADMIN)
     @arg("key", str, description="The key of the configuration variable")
-    @arg("value", str ,description="The value of the configuration variable.")
+    @arg("value", str, description="The value of the configuration variable.")
     async def set(
         self,
         sender: ZulipUser,
@@ -63,10 +63,12 @@ class ConfPlugin(PluginCommandMixin, Plugin):
         Set a configuration variable.
         """
         if not Conf.is_bot_owner(sender.id):
-            raise UserNotPrivilegedException("You must be the bot owner to set configuration variables.")
+            raise UserNotPrivilegedException(
+                "You must be the bot owner to set configuration variables."
+            )
         Conf.set(args.key, args.value)
         yield DMResponse(f"Configuration variable '{args.key}' set to '{args.value}'.")
-        
+
     @command
     @privilege(Privilege.ADMIN)
     @arg("key", str, description="The key of the configuration variable")

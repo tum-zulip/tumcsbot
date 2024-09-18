@@ -3,7 +3,6 @@
 # See LICENSE file for copyright and license details.
 # TUM CS Bot - https://github.com/ro-i/tumcsbot
 
-from inspect import cleandoc
 from typing import Any, Iterable
 
 from sqlalchemy import text

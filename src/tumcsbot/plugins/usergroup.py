@@ -37,7 +37,7 @@ from tumcsbot.lib.types import (
 from tumcsbot.plugin_decorators import arg, command, opt, privilege
 
 
-class UserGroup(TableBase): # type: ignore
+class UserGroup(TableBase):  # type: ignore
     """Represents a user group in the system."""
 
     __tablename__ = "UserGroups"
@@ -46,34 +46,27 @@ class UserGroup(TableBase): # type: ignore
     GroupName = Column(String, unique=True)
 
     _members = relationship(
-        "UserGroupMember",
-        back_populates="groups",
-        cascade="all, delete-orphan"
+        "UserGroupMember", back_populates="groups", cascade="all, delete-orphan"
     )
 
     @hybrid_property
     def members(self) -> list[ZulipUser]:
         return [member.User for member in self._members]
-    
-    _streamgroup = relationship(
-        "StreamGroup",
-        back_populates="_usergroup"
-    )
+
+    _streamgroup = relationship("StreamGroup", back_populates="_usergroup")
 
     _courseT = relationship(
-        "CourseDB",  
-        back_populates="_tutors",
-        foreign_keys="CourseDB.TutorsUserGroup"
+        "CourseDB", back_populates="_tutors", foreign_keys="CourseDB.TutorsUserGroup"
     )
 
     _courseI = relationship(
-        "CourseDB",  
+        "CourseDB",
         back_populates="_instructors",
-        foreign_keys="CourseDB.InstructorsUserGroup"
+        foreign_keys="CourseDB.InstructorsUserGroup",
     )
 
 
-class UserGroupMember(TableBase): # type: ignore
+class UserGroupMember(TableBase):  # type: ignore
     """Represents a user group member in the system."""
 
     __tablename__ = "UserGroupMembers"
@@ -84,7 +77,9 @@ class UserGroupMember(TableBase): # type: ignore
     User = Column(ZulipUser, primary_key=True)
 
     # This establishes the relationship between UserGroupMember and UserGroup
-    groups: Mapped[list["UserGroup"]] = relationship(viewonly=True, back_populates="_members")
+    groups: Mapped[list["UserGroup"]] = relationship(
+        viewonly=True, back_populates="_members"
+    )
 
 
 class Usergroup(PluginCommandMixin, Plugin):
@@ -127,7 +122,7 @@ class Usergroup(PluginCommandMixin, Plugin):
             groups: list[UserGroup]
             groups = session.query(UserGroup).all()
             if len(groups) == 0:
-                raise DMError(f"No user groups found")
+                raise DMError("No user groups found")
 
             for group in groups:
                 members = []
@@ -202,11 +197,7 @@ class Usergroup(PluginCommandMixin, Plugin):
     @command
     @privilege(Privilege.ADMIN)
     @arg("group", UserGroup.GroupName, "The group the user should get removed from")
-    @arg(
-        "user",
-        ZulipUser,
-        "The user that should get removed from groups."
-    )
+    @arg("user", ZulipUser, "The user that should get removed from groups.")
     @opt(
         "s",
         long_opt="silent",
@@ -233,7 +224,7 @@ class Usergroup(PluginCommandMixin, Plugin):
                 user,
                 f"Hey {user.mention_silent},\nYou have been removed from the usergroup by {sender.mention_silent}:\n`{group.GroupName}`",
             )
-    
+
     @command
     @privilege(Privilege.ADMIN)
     @arg("group", UserGroup.GroupName, "The group you wish to delete")
@@ -257,7 +248,7 @@ class Usergroup(PluginCommandMixin, Plugin):
         members = group.members
         Usergroup.delete_group(session, group)
         if not opts.s:
-                # notify all members
+            # notify all members
             for member in members:
                 await member
                 yield DMMessage(
@@ -279,8 +270,6 @@ class Usergroup(PluginCommandMixin, Plugin):
         """
         leave a usergroup
         """
-        for m in args.group.members:
-            logging.debug("-" * 80 + "\nMEMBERS: %s(%s)", m, sender == m)
         Usergroup.remove_user_from_group(session, sender, args.group)
         yield DMResponse(f"You have left the usergroup `{args.group.GroupName}`")
 
@@ -318,12 +307,16 @@ class Usergroup(PluginCommandMixin, Plugin):
     @staticmethod
     def get_groups(session: Session) -> list[UserGroup]:
         return session.query(UserGroup).all()
-    
+
     @staticmethod
-    def get_name_by_id(session:Session, id:int) -> str:
-        ug: UserGroup = session.query(UserGroup).filter(UserGroup.GroupId==id).one_or_none()
+    def get_name_by_id(session: Session, ID: int) -> str:
+        ug: UserGroup = (
+            session.query(UserGroup).filter(UserGroup.GroupId == ID).one_or_none()
+        )
         if not ug:
-            raise DMError(f"Uuups, it looks like i could not find any UserGroup associated with `{id}` :botsceptical:")
+            raise DMError(
+                f"Uuups, it looks like i could not find any UserGroup associated with `{ID}` :botsceptical:"
+            )
         return ug.GroupName
 
     @staticmethod
@@ -355,7 +348,7 @@ class Usergroup(PluginCommandMixin, Plugin):
         except sqlalchemy.exc.IntegrityError as e:
             session.rollback()
             raise DMError(f"Could not create group '{name}'. {str(e)}") from e
-        
+
     @staticmethod
     def create_and_get_group(session: Session, name: str) -> UserGroup:
         """
@@ -385,7 +378,7 @@ class Usergroup(PluginCommandMixin, Plugin):
         except sqlalchemy.exc.IntegrityError as e:
             session.rollback()
             raise DMError(f"Could not create group '{name}'. {str(e)}") from e
-        
+
         return group
 
     @staticmethod
@@ -408,14 +401,24 @@ class Usergroup(PluginCommandMixin, Plugin):
             session.commit()
         except sqlalchemy.exc.IntegrityError as e:
             session.rollback()
-            raise DMError(f"Could not delete group '{group.GroupName}'. {str(e)}") from e
+            raise DMError(
+                f"Could not delete group '{group.GroupName}'. {str(e)}"
+            ) from e
 
     @staticmethod
     def remove_user_from_group(
         session: Session, user: ZulipUser, group: UserGroup
     ) -> None:
-        if session.query(UserGroupMember).filter(UserGroupMember.User == user).filter(UserGroupMember.GroupId == group.GroupId).first() is None:
-            raise DMError(f"{user.mention_silent} is not in usergroup '{group.GroupName}'")
+        if (
+            session.query(UserGroupMember)
+            .filter(UserGroupMember.User == user)
+            .filter(UserGroupMember.GroupId == group.GroupId)
+            .first()
+            is None
+        ):
+            raise DMError(
+                f"{user.mention_silent} is not in usergroup '{group.GroupName}'"
+            )
         try:
             session.query(UserGroupMember).filter(UserGroupMember.User == user).filter(
                 UserGroupMember.GroupId == group.GroupId
@@ -429,7 +432,7 @@ class Usergroup(PluginCommandMixin, Plugin):
 
     @staticmethod
     def add_user_to_group(session: Session, user: ZulipUser, group: UserGroup) -> None:
-        user_ids:list[int] = Usergroup.get_user_ids_for_group(session,group)
+        user_ids: list[int] = Usergroup.get_user_ids_for_group(session, group)
 
         if user.id in user_ids:
             raise DMError(
@@ -453,18 +456,25 @@ class Usergroup(PluginCommandMixin, Plugin):
             .filter(UserGroupMember.User == user)
             .all()
         )
-    
+
     @staticmethod
-    def get_user_ids_for_group(session:Session, group:UserGroup) -> list[int]:
+    def get_user_ids_for_group(session: Session, group: UserGroup) -> list[int]:
         users: list[int] = []
-        for s in session.query(UserGroupMember).filter(UserGroupMember.GroupId==group.GroupId).all():
+        for s in (
+            session.query(UserGroupMember)
+            .filter(UserGroupMember.GroupId == group.GroupId)
+            .all()
+        ):
             users.append(s.User.id)
         return users
-    
+
     @staticmethod
-    def get_users_for_group(session:Session, group:UserGroup) -> list[ZulipUser]:
+    def get_users_for_group(session: Session, group: UserGroup) -> list[ZulipUser]:
         users: list[ZulipUser] = []
-        for s in session.query(UserGroupMember).filter(UserGroupMember.GroupId==group.GroupId).all():
+        for s in (
+            session.query(UserGroupMember)
+            .filter(UserGroupMember.GroupId == group.GroupId)
+            .all()
+        ):
             users.append(s.User)
         return users
-
