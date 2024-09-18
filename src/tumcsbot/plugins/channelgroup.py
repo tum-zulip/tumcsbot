@@ -1297,9 +1297,9 @@ class Channelgroup(PluginCommandMixin, Plugin):
                 failed.append(f"#**{channel.name}**")
 
         if failed:
-            s: str = " ".join(failed)
+            sf: str = " ".join(failed)
             raise DMError(
-                f"Could not add channel(s) {s} to Channelgroup `{group.ChannelGroupId}`."
+                f"Could not add channel(s) {sf} to Channelgroup `{group.ChannelGroupId}`."
             )
 
     @staticmethod
@@ -1357,7 +1357,7 @@ class Channelgroup(PluginCommandMixin, Plugin):
                 session, client, [group]
             )
 
-            channels: list[tuple[str, None]] = [
+            channels: list[tuple[str, str | None]] = [
                 (channel_name, None) for channel_name in channel_names
             ]
 
@@ -1398,7 +1398,7 @@ class Channelgroup(PluginCommandMixin, Plugin):
 
     @staticmethod
     async def _claim(
-        group: ChannelGroup | None, session: Session, message_id: int, all=False
+        group: ChannelGroup | None, session: Session, message_id: int, all: bool =False
     ) -> None:
         """
         Make a message "special" for a given group or for all ChannelGroups.
@@ -1567,7 +1567,7 @@ class Channelgroup(PluginCommandMixin, Plugin):
 
         # Get all the currently existing emojis.
         all_emojis: list[str] = [
-            group.ChannelGroupEmote for group in session.query(ChannelGroup).all()
+            str(group.ChannelGroupEmote) for group in session.query(ChannelGroup).all()
         ]
 
         if not all_emojis:
@@ -1680,7 +1680,7 @@ class Channelgroup(PluginCommandMixin, Plugin):
             session, client, [group]
         )
 
-        channels: list[(str, None)] = [
+        channels: list[tuple[str, str | None]] = [
             (channel_name, None) for channel_name in channel_names
         ]
 
@@ -1704,7 +1704,7 @@ class Channelgroup(PluginCommandMixin, Plugin):
         groups: list[ChannelGroup] = session.query(ChannelGroup).all()
 
         for group in groups:
-            await Channelgroup._fix(session, group, client)
+            await Channelgroup._fix(client, session, group)
 
     # ========================================================================================================================
     #       HELPER METHODS
@@ -1724,7 +1724,7 @@ class Channelgroup(PluginCommandMixin, Plugin):
                 .one_or_none()
             )
             if sg:
-                result = sg.ChannelGroupId
+                result = str(sg.ChannelGroupId)
         return result
 
     @staticmethod
@@ -1736,7 +1736,7 @@ class Channelgroup(PluginCommandMixin, Plugin):
         result: set[str]
         with DB.session() as session:
             result = {
-                sg.ChannelGroupId
+                str(sg.ChannelGroupId)
                 for sg in session.query(ChannelGroupMember)
                 .filter(ChannelGroupMember.Channel == id)
                 .all()
@@ -1765,7 +1765,7 @@ class Channelgroup(PluginCommandMixin, Plugin):
         """
         claimedByOne: bool
         claimedByAll: bool
-        group_id: ChannelGroup = Channelgroup._get_group_id_from_emoji_event(em)
+        group_id: str = Channelgroup._get_group_id_from_emoji_event(em)
 
         if not group_id:
             return False
@@ -1869,7 +1869,7 @@ class Channelgroup(PluginCommandMixin, Plugin):
             .filter(ChannelGroup.ChannelGroupId == group.ChannelGroupId)
             .one()
         )
-        id: int = s.UserGroupId
+        id: int = int(s.UserGroupId)
         return session.query(UserGroup).filter(UserGroup.GroupId == id).one()
 
     @staticmethod
@@ -1882,7 +1882,7 @@ class Channelgroup(PluginCommandMixin, Plugin):
             .filter(ChannelGroup.ChannelGroupId == group_id)
             .one()
         )
-        id: int = s.UserGroupId
+        id: int = int(s.UserGroupId)
         return session.query(UserGroup).filter(UserGroup.GroupId == id).one()
 
     @staticmethod
@@ -1891,7 +1891,7 @@ class Channelgroup(PluginCommandMixin, Plugin):
         Get a list of ChannelGroups that a given user is subscribed to.
         """
         ug_ids: list[int] = [
-            ugroup.GroupId for ugroup in Usergroup.get_groups_for_user(session, user)
+            int(ugroup.GroupId) for ugroup in Usergroup.get_groups_for_user(session, user)
         ]
 
         result: list[ChannelGroup] = []
