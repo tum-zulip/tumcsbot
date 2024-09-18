@@ -82,7 +82,7 @@ class GroupAuthorization(TableBase):  # type: ignore
 class ChannelAuthorization(TableBase):  # type: ignore
     __tablename__ = "ChannelAuthorization"
 
-    Channel = Column(ZulipChannel, primary_key=True)
+    Channel = Column(ZulipChannel, primary_key=True) # type: ignore
     ModerationConfigId = Column(
         Integer,
         ForeignKey("ModerationConfig.ModerationConfigId", ondelete="CASCADE"),

@@ -78,9 +78,9 @@ class CourseDB(TableBase):  # type: ignore
         Integer, ForeignKey("UserGroups.GroupId", ondelete="CASCADE"), nullable=False
     )
 
-    TutorChannel = Column(ZulipChannel, nullable=True)
-    InstructorChannel = Column(ZulipChannel, nullable=True)
-    FeedbackChannel = Column(ZulipChannel, nullable=True) # not Null if anonymous feedback enabled
+    TutorChannel = Column(ZulipChannel, nullable=True) # type: ignore
+    InstructorChannel = Column(ZulipChannel, nullable=True) # type: ignore
+    FeedbackChannel = Column(ZulipChannel, nullable=True) # type: ignore # not Null if anonymous feedback enabled
 
     _channels = relationship(
         "ChannelGroup",
@@ -465,9 +465,11 @@ class Course(PluginCommandMixin, Plugin):
                     ]
 
                 f_ex = await self.client.get_channel_id_by_name(feedback_channel_name)
+                if f_ex is None:
+                    raise DMError("Uuups, i cannot get the channel id for the feedback channel")
 
                 if ins_ex is not None:
-                        await self.client.delete_channel(f_ex)
+                    await self.client.delete_channel(f_ex)
 
                 result_fb_s: dict[str, Any] = await self.client.add_subscriptions(
                     channels=[
@@ -1081,7 +1083,7 @@ class Course(PluginCommandMixin, Plugin):
         tut_ug_id = int(course.TutorsUserGroup)
         ins_ug_id = int(course.InstructorsUserGroup)
 
-        tut_s: ZulipChannel = await course.TutorChannel
+        tut_s: ZulipChannel = await course.TutorChannel.get()
 
         ins_s: ZulipChannel = await course.InstructorChannel
 

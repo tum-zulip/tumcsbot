@@ -2,6 +2,7 @@ from typing import Final, cast
 import re
 import regex
 
+
 class Regex:
     """Some widely used regex methods."""
 
@@ -13,7 +14,7 @@ class Regex:
     )
     USER_GROUP_ID_PATTERN: Final[re.Pattern[str]] = re.compile(
         r"data-user-group-id=\"(?P<id>\d+)\""
-    )  
+    )
 
     # todo: (jr) docuemnt why two different regex libraries are used
     ARGUMENT_PATTERN = regex.compile(
@@ -24,28 +25,24 @@ class Regex:
     )
 
     _ASTERISKS: Final[re.Pattern[str]] = re.compile(r"(?:\*\*)")
-    _OPT_ASTERISKS: Final[re.Pattern[str]] = re.compile(r"(?:{}|)".format(_ASTERISKS))
+    _OPT_ASTERISKS: Final[re.Pattern[str]] = re.compile(rf"(?:{_ASTERISKS.pattern}|)")
     _EMOJI: Final[re.Pattern[str]] = re.compile(r"[^:]+")
     _EMOJI_AUTOCOMPLETED_CAPTURE: Final[re.Pattern[str]] = re.compile(
-        r":({}):".format(_EMOJI.pattern)
+        rf":({_EMOJI.pattern}):"
     )
     _TOPIC: Final[re.Pattern[str]] = re.compile(r".+")
     # Note: Currently, there are no further restrictions on channel names posed
     # by Zulip. That is why we cannot enforce sensible restrictions here.
     _CHANNEL: Final[re.Pattern[str]] = re.compile(r".+")
     _CHANNEL_AUTOCOMPLETED_CAPTURE: Final[re.Pattern[str]] = re.compile(
-        r"#{0}({1}){0}".format(_ASTERISKS.pattern, _CHANNEL.pattern)
+        rf"#{_ASTERISKS.pattern}({_CHANNEL.pattern}){_ASTERISKS.pattern}"
     )
     _CHANNEL_AND_TOPIC_AUTOCOMPLETED_CAPTURE: Final[re.Pattern[str]] = re.compile(
-        r"#{0}({1})>({2}){0}".format(_ASTERISKS.pattern, r"[^>]+", _TOPIC.pattern)
+        fr"#{_ASTERISKS.pattern}([^>]+)>({_TOPIC.pattern}){_ASTERISKS.pattern}"
     )
     _USER: Final[re.Pattern[str]] = re.compile(r"[^\*\`\\\>\"\@]+")
-    _USER_AUTOCOMPLETED_TEMPLATE: str = r"{0}({1}){0}".format(
-        _ASTERISKS.pattern, _USER.pattern
-    )
-    _USER_AUTOCOMPLETED_ID_TEMPLATE: str = r"{0}({1})\|(\d+){0}".format(
-        _ASTERISKS.pattern, _USER.pattern
-    )
+    _USER_AUTOCOMPLETED_TEMPLATE: str = fr"{ _ASTERISKS.pattern}({_USER.pattern}){_ASTERISKS.pattern}"
+    _USER_AUTOCOMPLETED_ID_TEMPLATE: str = fr"{_ASTERISKS.pattern}({_USER.pattern})\|(\d+){_ASTERISKS.pattern}"
     _USER_LINKED_CAPTURE: Final[re.Pattern[str]] = re.compile(
         r"@_" + _USER_AUTOCOMPLETED_TEMPLATE
     )
@@ -110,7 +107,9 @@ class Regex:
         Leading/trailing whitespace is discarded.
         Return None if no match could be found.
         """
-        result: re.Match[str] | None = cls._EMOJI_AUTOCOMPLETED_CAPTURE.match(string.strip())
+        result: re.Match[str] | None = cls._EMOJI_AUTOCOMPLETED_CAPTURE.match(
+            string.strip()
+        )
         return cls.get_captured_string_from_match(result, 1)
 
     @classmethod
@@ -124,7 +123,9 @@ class Regex:
         Leading/trailing whitespace is discarded.
         Return None if no match could be found.
         """
-        result: re.Match[str] | None = cls._CHANNEL_AUTOCOMPLETED_CAPTURE.match(string.strip())
+        result: re.Match[str] | None = cls._CHANNEL_AUTOCOMPLETED_CAPTURE.match(
+            string.strip()
+        )
         return cls.get_captured_string_from_match(result, 1)
 
     @classmethod
@@ -191,7 +192,6 @@ class Regex:
             return (result[0], None)
         return (result[0], int(result[1]))
 
-
     @staticmethod
     def get_reaction_emoji(string: str) -> str | None:
         """Extract the reaction emoji from a string.
@@ -202,5 +202,7 @@ class Regex:
            Leading/trailing whitespace is discarded.
         Return None if no match could be found.
         """
-        result: re.Match[str] | None = Regex._EMOJI_AUTOCOMPLETED_CAPTURE.match(string.strip())
+        result: re.Match[str] | None = Regex._EMOJI_AUTOCOMPLETED_CAPTURE.match(
+            string.strip()
+        )
         return Regex.get_captured_string_from_match(result, 1)
