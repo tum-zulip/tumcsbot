@@ -16,9 +16,9 @@ class RegexTest(unittest.TestCase):
         ("test:", None),
         (":test", None),
     ]
-    stream_names: list[tuple[str, str | None]] = [
-        # stream names like this are no longer supported:  ("test", "test"),
-        # stream names like this are no longer supported:  ("abc def", "abc def"),
+    channel_names: list[tuple[str, str | None]] = [
+        # channel names like this are no longer supported:  ("test", "test"),
+        # channel names like this are no longer supported:  ("abc def", "abc def"),
         ('#**!/"§$& - ("!~EÜ**', '!/"§$& - ("!~EÜ'),
         ('!/"§$& - ("!~EÜ', None),
         ("#**test**", "test"),
@@ -53,25 +53,25 @@ class RegexTest(unittest.TestCase):
         for string, emoji in self.emoji_names:
             self.assertEqual(Regex.get_emoji_name(string), emoji)
 
-    def test_stream_names(self) -> None:
-        for string, stream_name in self.stream_names:
-            self.assertEqual(Regex.get_stream_name(string), stream_name)
+    def test_channel_names(self) -> None:
+        for string, channel_name in self.channel_names:
+            self.assertEqual(Regex.get_channel_name(string), channel_name)
 
-    def test_stream_and_topic_names(self) -> None:
-        self.assertIsNone(Regex.get_stream_and_topic_name(""))
-        self.assertEqual(Regex.get_stream_and_topic_name("abc"), ("abc", None))
-        self.assertEqual(Regex.get_stream_and_topic_name("#**abc**"), ("abc", None))
+    def test_channel_and_topic_names(self) -> None:
+        self.assertIsNone(Regex.get_channel_and_topic_name(""))
+        self.assertEqual(Regex.get_channel_and_topic_name("abc"), ("abc", None))
+        self.assertEqual(Regex.get_channel_and_topic_name("#**abc**"), ("abc", None))
         self.assertEqual(
-            Regex.get_stream_and_topic_name("#**abc>def**"), ("abc", "def")
+            Regex.get_channel_and_topic_name("#**abc>def**"), ("abc", "def")
         )
         self.assertEqual(
-            Regex.get_stream_and_topic_name("#**abc>def>ghi**"), ("abc", "def>ghi")
+            Regex.get_channel_and_topic_name("#**abc>def>ghi**"), ("abc", "def>ghi")
         )
         self.assertEqual(
-            Regex.get_stream_and_topic_name("#**>**"), (">", None)
+            Regex.get_channel_and_topic_name("#**>**"), (">", None)
         )  # sadly, those are possible...
-        self.assertEqual(Regex.get_stream_and_topic_name("#**>a**"), (">a", None))
-        self.assertEqual(Regex.get_stream_and_topic_name("#**a>**"), ("a>", None))
+        self.assertEqual(Regex.get_channel_and_topic_name("#**>a**"), (">a", None))
+        self.assertEqual(Regex.get_channel_and_topic_name("#**a>**"), ("a>", None))
 
     def test_user_names(self) -> None:
         for string, user_name in self.user_names:

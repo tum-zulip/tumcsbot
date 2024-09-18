@@ -53,7 +53,7 @@ class UserGroup(TableBase):  # type: ignore
     def members(self) -> list[ZulipUser]:
         return [member.User for member in self._members]
 
-    _streamgroup = relationship("StreamGroup", back_populates="_usergroup")
+    _channelgroup = relationship("ChannelGroup", back_populates="_usergroup")
 
     _courseT = relationship(
         "CourseDB", back_populates="_tutors", foreign_keys="CourseDB.TutorsUserGroup"

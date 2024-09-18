@@ -15,14 +15,14 @@ from tumcsbot.lib.types import (
     PartialError,
     PartialSuccess,
     Privilege,
-    ZulipStream,
+    ZulipChannel,
     ZulipUser,
     response_type,
 )
 from tumcsbot.plugin import Event, Plugin, PluginCommandMixin
 from tumcsbot.plugin_decorators import arg, command, opt, privilege
 
-from tumcsbot.plugins.garbage_collector import GarbageCollectorIgnoreStreamsTable
+from tumcsbot.plugins.garbage_collector import GarbageCollectorIgnoreChannelsTable
 from tumcsbot.plugins.userinput import UserInput
 
 
@@ -37,25 +37,25 @@ class GCConfig(PluginCommandMixin, Plugin):
         "s",
         "seconds",
         int,
-        description="The number of seconds a stream has to be inactive before it is considered for deletion.",
+        description="The number of seconds a channel has to be inactive before it is considered for deletion.",
     )
     @opt(
         "m",
         "minutes",
         int,
-        description="The number of minutes a stream has to be inactive before it is considered for deletion.",
+        description="The number of minutes a channel has to be inactive before it is considered for deletion.",
     )
     @opt(
         "h",
         "hours",
         int,
-        description="The number of hours a stream has to be inactive before it is considered for deletion.",
+        description="The number of hours a channel has to be inactive before it is considered for deletion.",
     )
     @opt(
         "d",
         "days",
         int,
-        description="The number of days a stream has to be inactive before it is considered for deletion.",
+        description="The number of days a channel has to be inactive before it is considered for deletion.",
     )
     async def threshold(
         self,
@@ -66,7 +66,7 @@ class GCConfig(PluginCommandMixin, Plugin):
         _message: dict[str, Any],
     ) -> Iterable[Response]:
         """
-        Set the number of seconds a stream has to be inactive before it is considered for deletion.
+        Set the number of seconds a channel has to be inactive before it is considered for deletion.
         """
         seconds = opts.seconds or 0
         minutes = opts.minutes or 0
@@ -86,25 +86,25 @@ class GCConfig(PluginCommandMixin, Plugin):
         "s",
         "seconds",
         int,
-        description="The number of seconds the bot waits for a response from the stream admins.",
+        description="The number of seconds the bot waits for a response from the channel admins.",
     )
     @opt(
         "m",
         "minutes",
         int,
-        description="The number of minutes the bot waits for a response from the stream admins.",
+        description="The number of minutes the bot waits for a response from the channel admins.",
     )
     @opt(
         "h",
         "hours",
         int,
-        description="The number of hours the bot waits for a response from the stream admins.",
+        description="The number of hours the bot waits for a response from the channel admins.",
     )
     @opt(
         "d",
         "days",
         int,
-        description="The number of days the bot waits for a response from the stream admins.",
+        description="The number of days the bot waits for a response from the channel admins.",
     )
     async def confirmation_time(
         self,
@@ -115,7 +115,7 @@ class GCConfig(PluginCommandMixin, Plugin):
         _message: dict[str, Any],
     ) -> Iterable[Response]:
         """
-        Set the number of seconds the bot waits for a response from the stream admins.
+        Set the number of seconds the bot waits for a response from the channel admins.
         """
         seconds = opts.seconds or 0
         minutes = opts.minutes or 0
@@ -130,10 +130,11 @@ class GCConfig(PluginCommandMixin, Plugin):
         yield DMResponse(f"Time to responde set to {time_to_responde} seconds.")
 
     @command
+    @privilege(Privilege.ADMIN)
     @arg(
-        "streams",
-        ZulipStream,
-        description="The streams to ignore by the garbage collector",
+        "channels",
+        ZulipChannel,
+        description="The channels to ignore by the garbage collector",
         greedy=True,
     )
     async def ignore(
@@ -145,20 +146,20 @@ class GCConfig(PluginCommandMixin, Plugin):
         _message: dict[str, Any],
     ) -> Iterable[Response]:
         """
-        Ignore streams by the garbage collector.
+        Ignore channels by the garbage collector.
         """
-        streams = args.streams
+        channels = args.channels
 
-        already_ignored = session.query(GarbageCollectorIgnoreStreamsTable).all()
-        already_ignored = [s.Stream.id for s in already_ignored]
+        already_ignored = session.query(GarbageCollectorIgnoreChannelsTable).all()
+        already_ignored = [s.Channel.id for s in already_ignored]
         try:
-            for stream in streams:
-                if stream.id in already_ignored:
-                    yield PartialError(f"{stream.mention} is already ignored.")
+            for channel in channels:
+                if channel.id in already_ignored:
+                    yield PartialError(f"{channel.mention} is already ignored.")
                     continue
 
-                session.add(GarbageCollectorIgnoreStreamsTable(Stream=stream))
-                yield PartialSuccess(f"{stream.mention} is now ignored.")
+                session.add(GarbageCollectorIgnoreChannelsTable(Channel=channel))
+                yield PartialSuccess(f"{channel.mention} is now ignored.")
 
             session.commit()
         except Exception as e:
@@ -167,7 +168,7 @@ class GCConfig(PluginCommandMixin, Plugin):
             yield DMResponse(f"Error: {e}")
             return
 
-        for s in streams:
+        for s in channels:
             await s
 
     @command

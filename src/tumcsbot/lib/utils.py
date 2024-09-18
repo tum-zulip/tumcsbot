@@ -102,20 +102,20 @@ def split(
     return result
 
 
-def stream_names_equal(stream_name1: str, stream_name2: str) -> bool:
-    """Decide whether two stream names are equal.
+def channel_names_equal(a: str, b: str) -> bool:
+    """Decide whether two channel names are equal.
 
-    Currently, Zulip considers stream names to be case insensitive.
+    Currently, Zulip considers channel names to be case insensitive.
     """
-    return stream_name1.casefold() == stream_name2.casefold()
+    return a.casefold() == b.casefold()
 
 
-def stream_name_match(stream_reg: str, stream_name: str) -> bool:
-    """Decide whether a stream regex matches a stream_name (fullmatch).
+def channel_name_match(channel_reg: str, channel_name: str) -> bool:
+    """Decide whether a channel regex matches a channel_name (fullmatch).
 
-    Currently, Zulip considers stream names to be case insensitive.
+    Currently, Zulip considers channel names to be case insensitive.
     """
-    return re.fullmatch(stream_reg, stream_name, flags=re.I) is not None
+    return re.fullmatch(channel_reg, channel_name, flags=re.I) is not None
 
 
 def validate_and_return_regex(regex: str | None) -> str | None:

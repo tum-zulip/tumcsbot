@@ -29,7 +29,7 @@ from zulip import Client as ZulipClient
 from tumcsbot.lib.db import DB, TableBase
 from tumcsbot.lib.response import Response, MessageType
 from tumcsbot.lib.regex import Regex
-from tumcsbot.lib.utils import stream_names_equal
+from tumcsbot.lib.utils import channel_names_equal
 
 
 @final
@@ -55,10 +55,10 @@ class PluginContext:
     logging_level: Any
 
 
-class PlublicStreams(TableBase):  # type: ignore
-    __tablename__ = "PublicStreams"
+class PlublicChannels(TableBase):  # type: ignore
+    __tablename__ = "PublicChannels"
 
-    StreamName = Column(String, primary_key=True)
+    ChannelName = Column(String, primary_key=True)
     Subscribed = Column(Boolean, nullable=False)
 
 
@@ -77,26 +77,26 @@ class AsyncClient:
 
     Additional Methods:
     -------------------
-    get_public_stream_names   Get the names of all public streams.
+    get_public_channel_names   Get the names of all public channels.
     get_raw_message           Adapt original code and add apply_markdown.
-    get_streams_from_regex    Get the names of all public streams
+    get_channels_from_regex    Get the names of all public channels
                               matching a regex.
-    get_stream_name           Get stream name for provided stream id.
+    get_channel_name           Get channel name for provided channel id.
     get_user_ids_from_attribute
         Get the user ids from a given user attribute.
     get_user_ids_from_display_names
         Get the user id from a user display name.
     get_user_ids_from_emails
         Get the user id from a user email address.
-    private_stream_exists     Check if there is a private stream with
+    private_channel_exists     Check if there is a private channel with
                               the given name.
     send_response             Send one single response.
     send_responses            Send a list of responses.
-    subscribe_all_from_stream_to_stream
+    subscribe_all_from_channel_to_channel
                               Try to subscribe all users from one public
-                              stream to another.
+                              channel to another.
     subscribe_users           Subscribe a list of user ids to a public
-                              stream.
+                              channel.
     """
 
     def __init__(self, plugin_context: PluginContext, *args, **kwargs) -> None:
@@ -182,9 +182,9 @@ class AsyncClient:
             request=request,
         )
 
-    async def get_streams(self, **request: Any) -> dict[str, Any]:
+    async def get_channels(self, **request: Any) -> dict[str, Any]:
         """
-        See examples/get-public-streams for example usage.
+        See examples/get-public-channels for example usage.
         """
         return await self.call_endpoint(
             url="streams",
@@ -270,8 +270,8 @@ class AsyncClient:
             url="messages", method="GET", request=message_filters
         )
 
-    async def get_public_stream_names(self, use_db: bool = True) -> list[str]:
-        """Get the names of all public streams.
+    async def get_public_channel_names(self, use_db: bool = True) -> list[str]:
+        """Get the names of all public channels.
 
         Use the database in conjunction with the plugin "autosubscriber"
         to avoid unnecessary network requests.
@@ -279,7 +279,7 @@ class AsyncClient:
         """
 
         async def without_db() -> list[str]:
-            result: dict[str, Any] = await self.get_streams(
+            result: dict[str, Any] = await self.get_channels(
                 include_public=True, include_subscribed=False
             )
             if result["result"] != "success":
@@ -294,7 +294,7 @@ class AsyncClient:
                 return list(
                     map(
                         lambda t: cast(str, t[0]),
-                        session.query(PlublicStreams.StreamName).all(),
+                        session.query(PlublicChannels.ChannelName).all(),
                     )
                 )
         except Exception as e:
@@ -311,11 +311,11 @@ class AsyncClient:
             request={"apply_markdown": apply_markdown},
         )
 
-    async def get_streams_from_regex(self, regex: str) -> list[str]:
-        """Get the names of all public streams matching a regex.
+    async def get_channels_from_regex(self, regex: str) -> list[str]:
+        """Get the names of all public channels matching a regex.
 
-        The regex has to match the full stream name.
-        Note that Zulip handles stream names case insensitively at the
+        The regex has to match the full channel name.
+        Note that Zulip handles channel names case insensitively at the
         moment.
 
         Return an empty list if the regex is not valid.
@@ -329,24 +329,24 @@ class AsyncClient:
             return []
 
         return [
-            stream_name
-            for stream_name in await self.get_public_stream_names()
-            if pat.fullmatch(stream_name)
+            channel_name
+            for channel_name in await self.get_public_channel_names()
+            if pat.fullmatch(channel_name)
         ]
 
-    async def get_stream_name(self, stream_id: int) -> str | None:
-        """Get stream name for provided stream id.
+    async def get_channel_name(self, channel_id: int) -> str | None:
+        """Get channel name for provided channel id.
 
-        Return the stream name as string or None if the stream name
+        Return the channel name as string or None if the channel name
         could not be determined.
         """
-        result: dict[str, Any] = await self.get_streams(include_all_active=True)
+        result: dict[str, Any] = await self.get_channels(include_all_active=True)
         if result["result"] != "success":
             return None
 
-        for stream in result["streams"]:
-            if stream["stream_id"] == stream_id:
-                return cast(str, stream["name"])
+        for channel in result["streams"]:
+            if channel["stream_id"] == channel_id:
+                return cast(str, channel["name"])
 
         return None
 
@@ -476,20 +476,20 @@ class AsyncClient:
 
         return self.id in [recipients[0]["id"], recipients[1]["id"]]
 
-    async def private_stream_exists(self, stream_name: str) -> bool:
-        """Check if there is a private stream with the given name.
+    async def private_channel_exists(self, channel_name: str) -> bool:
+        """Check if there is a private channel with the given name.
 
-        Return true if there is a private stream with the given name.
-        Return false if there is no stream with this name or if the
-        stream is not private.
+        Return true if there is a private channel with the given name.
+        Return false if there is no channel with this name or if the
+        channel is not private.
         """
-        result: dict[str, Any] = await self.get_streams(include_all_active=True)
+        result: dict[str, Any] = await self.get_channels(include_all_active=True)
         if result["result"] != "success":
             return False  # TODO?
 
-        for stream in result["streams"]:
-            if stream_names_equal(stream["name"], stream_name):
-                return bool(stream["invite_only"])
+        for channel in result["streams"]:
+            if channel_names_equal(channel["name"], channel_name):
+                return bool(channel["invite_only"])
 
         return False
 
@@ -586,9 +586,9 @@ class AsyncClient:
             request=reaction_data,
         )
 
-    async def delete_stream(self, stream_id: int) -> dict[str, Any]:
+    async def delete_channel(self, channel_id: int) -> dict[str, Any]:
         return await self.call_endpoint(
-            url=f"streams/{stream_id}",
+            url=f"streams/{channel_id}",
             method="DELETE",
         )
 
@@ -620,12 +620,12 @@ class AsyncClient:
             results += await self.send_responses(response)
         return results
 
-    async def get_stream_id(self, stream: str) -> dict[str, Any]:
+    async def get_channel_id(self, channel: str) -> dict[str, Any]:
         """
-        Example usage: await client.get_stream_id('devel')
+        Example usage: await client.get_channel_id('devel')
         """
-        stream_encoded = quote(stream, safe="")
-        url = f"get_stream_id?stream={stream_encoded}"
+        channel_encoded = quote(channel, safe="")
+        url = f"get_channel_id?stream={channel_encoded}"
         return await self.call_endpoint(
             url=url,
             method="GET",
@@ -634,65 +634,68 @@ class AsyncClient:
 
     async def get_subscribers(self, **request: Any) -> dict[str, Any]:
         """
-        Example usage: await client.get_subscribers(stream='devel')
+        Example usage: await client.get_subscribers(channel='devel')
         """
-        response = await self.get_stream_id(request["stream"])
+        request["stream"] = request["channel"]
+        del request["channel"]
+
+        response = await self.get_channel_id(request["stream"])
         if response["result"] == "error":
             return response
 
-        stream_id = response["stream_id"]
-        url = "streams/%d/members" % (stream_id,)
+        channel_id = response["stream_id"]
+        url = f"streams/{channel_id}/members"
         return await self.call_endpoint(
             url=url,
             method="GET",
             request=request,
         )
 
-    async def subscribe_all_from_stream_to_stream(
-        self, from_stream: str, to_stream: str, description: str | None = None
+    async def subscribe_all_from_channel_to_channel(
+        self, from_channel: str, to_channel: str, description: str | None = None
     ) -> bool:
-        """Try to subscribe all users from one public stream to another.
+        """Try to subscribe all users from one public channel to another.
 
         Arguments:
         ----------
-        from_stream   An existant public stream.
-        to_stream     The stream to subscribe to.
+        from_channel   An existant public channel.
+        to_channel     The channel to subscribe to.
                       Must be public, if already existant. If it does
                       not already exists, it will be created.
         description   An optional description to be used to
-                      create the stream first.
+                      create the channel first.
 
         Return true on success or false otherwise.
         """
-        if await self.private_stream_exists(
-            from_stream
-        ) or await self.private_stream_exists(to_stream):
+        if await self.private_channel_exists(
+            from_channel
+        ) or await self.private_channel_exists(to_channel):
             return False
 
-        subs: dict[str, Any] = await self.get_subscribers(stream=from_stream)
+        subs: dict[str, Any] = await self.get_subscribers(channel=from_channel)
         if subs["result"] != "success":
             return False
 
-        return await self.subscribe_users(subs["subscribers"], to_stream, description)
+        return await self.subscribe_users(subs["subscribers"], to_channel, description)
 
     async def subscribe_users(
         self,
         user_ids: list[int],
-        stream_name: str,
+        channel_name: str,
         description: str | None = None,
-        allow_private_streams: bool = False,
+        allow_private_channels: bool = False,
         filter_active: bool = True,
     ) -> bool:
-        """Subscribe a list of user ids to a public stream.
+        """Subscribe a list of user ids to a public channel.
 
         Arguments:
         ----------
         user_ids      The list of user ids to subscribe.
-        stream_name   The name of the stream to subscribe to.
+        channel_name   The name of the channel to subscribe to.
         description   An optional description to be used to
-                      create the stream first.
-        allow_private_streams
-                      Allow subscription to private streams.
+                      create the channel first.
+        allow_private_channels
+                      Allow subscription to private channels.
         filter_active
                       Remove non-active users from the request.
                       Users are not active when they are deactivated
@@ -701,18 +704,18 @@ class AsyncClient:
         Return true on success or false otherwise.
         """
         return (
-            await self.subscribe_users_multiple_streams(
+            await self.subscribe_users_multiple_channels(
                 user_ids=user_ids,
-                streams=[(stream_name, description)],
-                allow_private_streams=allow_private_streams,
+                channels=[(channel_name, description)],
+                allow_private_channels=allow_private_channels,
                 filter_active=filter_active,
             )
         )[0]
 
     async def add_subscriptions(
-        self, streams: Iterable[dict[str, Any]], **kwargs: Any
+        self, channels: Iterable[dict[str, Any]], **kwargs: Any
     ) -> dict[str, Any]:
-        request = {"subscriptions": streams, **kwargs}
+        request = {"subscriptions": channels, **kwargs}
         import json
         print(json.dumps(request))
         return await self.call_endpoint(
@@ -721,33 +724,33 @@ class AsyncClient:
         )
 
     async def remove_subscriptions(
-        self, id: int, streams: Iterable[dict[str, Any]]
+        self, id: int, channels: Iterable[dict[str, Any]]
     ) -> dict[str, Any]:
-        request = {"subscriptions": streams, "principals": [id]}
+        request = {"subscriptions": channels, "principals": [id]}
 
         return await self.call_endpoint(
             url="users/me/subscriptions", method="DELETE", request=request
         )
 
-    async def subscribe_users_multiple_streams(
+    async def subscribe_users_multiple_channels(
         self,
         user_ids: list[int],
-        streams: list[tuple[str, str | None]],
-        allow_private_streams: bool = False,
+        channels: list[tuple[str, str | None]],
+        allow_private_channels: bool = False,
         filter_active: bool = True,
     ) -> tuple[bool, str | None]:
-        """Subscribe a list of user ids to a list of public streams.
+        """Subscribe a list of user ids to a list of public channels.
 
         Arguments:
         ----------
         user_ids      The list of user ids to subscribe.
-        streams       A list of (stream name, stream description) tuples
-                      denoting the streams to subscribe the given users
+        channels       A list of (channel name, channel description) tuples
+                      denoting the channels to subscribe the given users
                       to. The strams will be created first in case they
-                      don't exist. The stream description can be None.
-        allow_private_streams
-                      Allow subscription to private streams.
-                      If false, every private stream in `streams` will
+                      don't exist. The channel description can be None.
+        allow_private_channels
+                      Allow subscription to private channels.
+                      If false, every private channel in `channels` will
                       not be used for subscribing.
         filter_active
                       Remove non-active users from the request.
@@ -759,13 +762,13 @@ class AsyncClient:
         """
         chunk_size: int = 100
 
-        if not allow_private_streams:
-            streams = [
+        if not allow_private_channels:
+            channels = [
                 (name, description)
-                for name, description in streams
-                if not await self.private_stream_exists(name)
+                for name, description in channels
+                if not await self.private_channel_exists(name)
             ]
-            if not streams:
+            if not channels:
                 return (True, None)
 
         if filter_active:
@@ -783,7 +786,7 @@ class AsyncClient:
                 if description is None
                 else {"name": name, "description": description}
             )
-            for name, description in streams
+            for name, description in channels
         ]
 
         success: bool = True
@@ -795,7 +798,7 @@ class AsyncClient:
 
             while True:
                 result: dict[str, Any] = await self.add_subscriptions(
-                    streams=subscriptions, principals=user_id_chunk
+                    channels=subscriptions, principals=user_id_chunk
                 )
                 if result["result"] == "success":
                     break
@@ -851,9 +854,9 @@ class AsyncClient:
             return None
         return int(match.groupdict()["id"])
 
-    async def get_stream_id_by_name(self, stream_name: str) -> int | None:
+    async def get_channel_id_by_name(self, channel_name: str) -> int | None:
         request = {
-            "content": stream_name,
+            "content": channel_name,
         }
 
         result = await self.render_message(request)
@@ -879,39 +882,39 @@ class AsyncClient:
             return None
         return int(match.groupdict()["id"])
 
-    async def get_stream_by_id(self, stream_id: int) -> dict[str, Any] | None:
-        stream_result = await self.call_endpoint(
-            url=f"/streams/{stream_id}", method="GET"
+    async def get_channel_by_id(self, channel_id: int) -> dict[str, Any] | None:
+        channel_result = await self.call_endpoint(
+            url=f"/streams/{channel_id}", method="GET"
         )
 
-        if stream_result["result"] != "success":
+        if channel_result["result"] != "success":
             return None
 
-        stream_data: dict[str, Any] = stream_result["stream"]
-        return stream_data
+        channel_data: dict[str, Any] = channel_result["stream"]
+        return channel_data
 
-    async def mark_stream_as_read(self, stream_id: int) -> dict[str, Any]:
+    async def mark_channel_as_read(self, channel_id: int) -> dict[str, Any]:
         """
         Example usage:
 
-        >>> await client.mark_stream_as_read(42)
+        >>> await client.mark_channel_as_read(42)
         {'result': 'success', 'msg': ''}
         """
         return await self.call_endpoint(
-            url="mark_stream_as_read",
+            url="mark_channel_as_read",
             method="POST",
-            request={"stream_id": stream_id},
+            request={"stream_id": channel_id},
         )
 
-    async def update_stream(self, stream_data: dict[str, Any]) -> dict[str, Any]:
+    async def update_channel(self, channel_data: dict[str, Any]) -> dict[str, Any]:
         """
         See examples/edit-stream for example usage.
         """
 
         return await self.call_endpoint(
-            url="streams/{}".format(stream_data["stream_id"]),
+            url="streams/{}".format(channel_data["stream_id"]),
             method="PATCH",
-            request=stream_data,
+            request=channel_data,
         )
 
     async def start_typing_direct(self, user_ids: int | list[int]) -> dict[str, Any]:

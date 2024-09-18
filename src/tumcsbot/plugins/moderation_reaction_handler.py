@@ -13,7 +13,7 @@ change the alert words and specify the emojis to use for the reactions.
 from typing import Any, Iterable, Callable
 
 from tumcsbot.lib.response import Response
-from tumcsbot.lib.types import ZulipStream, ZulipUser
+from tumcsbot.lib.types import ZulipChannel, ZulipUser
 from tumcsbot.plugin import Event, Plugin
 from tumcsbot.lib.db import DB
 
@@ -23,7 +23,7 @@ from tumcsbot.plugins.moderate import (
     ReactionAction,
     ReactionConfig,
     ModerationConfig,
-    StreamAuthorization,
+    ChannelAuthorization,
     GroupAuthorization,
 )
 
@@ -44,9 +44,9 @@ class ModerationReactionHandler(Plugin):
             lambda event_data, _: f"@**{event_data['user']['full_name']}|{event_data['user_id']}**",
             "the sender of the reaction",
         ),
-        "stream": (
+        "channel": (
             lambda _, message: f"#**{message['display_recipient']}**",
-            "the stream in which the reaction occurred",
+            "the channel in which the reaction occurred",
         ),
         "topic": (
             lambda _, message: f"#**{message['display_recipient']}>{message['subject']}**",
@@ -94,8 +94,8 @@ class ModerationReactionHandler(Plugin):
         if message["type"] != "stream":
             return Response.none()
 
-        stream = ZulipStream(message["stream_id"])
-        await stream
+        channel = ZulipChannel(message["stream_id"])
+        await channel
 
         emote = event.data["emoji_name"]
 
@@ -107,8 +107,8 @@ class ModerationReactionHandler(Plugin):
                 .join(GroupAuthorization)
                 .join(UserGroup)
                 .join(UserGroupMember)
-                .join(StreamAuthorization)
-                .filter(StreamAuthorization.Stream == stream)  # type: ignore
+                .join(ChannelAuthorization)
+                .filter(ChannelAuthorization.Channel == channel)  # type: ignore
                 .filter(UserGroupMember.User == reaction_sender)  # type: ignore
                 .filter(ReactionConfig.emote == emote)  # type: ignore
                 .all()

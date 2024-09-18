@@ -8,7 +8,7 @@ class Regex:
     _USER_ID_PATTERN: Final[re.Pattern[str]] = re.compile(
         r"data-user-id=\"(?P<id>\d+)\""
     )
-    _STREAM_ID_PATTERN: Final[re.Pattern[str]] = re.compile(
+    _CHANNEL_ID_PATTERN: Final[re.Pattern[str]] = re.compile(
         r"data-stream-id=\"(?P<id>\d+)\""
     )
     _USER_GROUP_ID_PATTERN: Final[re.Pattern[str]] = re.compile(
@@ -30,13 +30,13 @@ class Regex:
         r":({}):".format(_EMOJI.pattern)
     )
     _TOPIC: Final[re.Pattern[str]] = re.compile(r".+")
-    # Note: Currently, there are no further restrictions on stream names posed
+    # Note: Currently, there are no further restrictions on channel names posed
     # by Zulip. That is why we cannot enforce sensible restrictions here.
-    _STREAM: Final[re.Pattern[str]] = re.compile(r".+")
-    _STREAM_AUTOCOMPLETED_CAPTURE: Final[re.Pattern[str]] = re.compile(
-        r"#{0}({1}){0}".format(_ASTERISKS.pattern, _STREAM.pattern)
+    _CHANNEL: Final[re.Pattern[str]] = re.compile(r".+")
+    _CHANNEL_AUTOCOMPLETED_CAPTURE: Final[re.Pattern[str]] = re.compile(
+        r"#{0}({1}){0}".format(_ASTERISKS.pattern, _CHANNEL.pattern)
     )
-    _STREAM_AND_TOPIC_AUTOCOMPLETED_CAPTURE: Final[re.Pattern[str]] = re.compile(
+    _CHANNEL_AND_TOPIC_AUTOCOMPLETED_CAPTURE: Final[re.Pattern[str]] = re.compile(
         r"#{0}({1})>({2}){0}".format(_ASTERISKS.pattern, r"[^>]+", _TOPIC.pattern)
     )
     _USER: Final[re.Pattern[str]] = re.compile(r"[^\*\`\\\>\"\@]+")
@@ -114,8 +114,8 @@ class Regex:
         return cls.get_captured_string_from_match(result, 1)
 
     @classmethod
-    def get_stream_name(cls, string: str) -> str | None:
-        """Extract the stream name from a string.
+    def get_channel_name(cls, string: str) -> str | None:
+        """Extract the channel name from a string.
 
         Match the whole string.
         There are two cases handled here:
@@ -124,17 +124,17 @@ class Regex:
         Leading/trailing whitespace is discarded.
         Return None if no match could be found.
         """
-        result: re.Match[str] | None = cls._STREAM_AUTOCOMPLETED_CAPTURE.match(string.strip())
+        result: re.Match[str] | None = cls._CHANNEL_AUTOCOMPLETED_CAPTURE.match(string.strip())
         return cls.get_captured_string_from_match(result, 1)
 
     @classmethod
-    def get_stream_and_topic_name(cls, string: str) -> tuple[str, str | None] | None:
-        """Extract the stream and the topic name from a string.
+    def get_channel_and_topic_name(cls, string: str) -> tuple[str, str | None] | None:
+        """Extract the channel and the topic name from a string.
 
         Match the whole string and try to be smart:
-           direct topic links: #**stream name>topic name**
-                            -> (stream name, topic name)
-           stream links: #**stream_name** -> (stream_name, None)
+           direct topic links: #**channel name>topic name**
+                            -> (channel name, topic name)
+           channel links: #**channel_name** -> (channel_name, None)
 
         Leading/trailing whitespace is discarded.
         Return None if no match could be found.
@@ -145,9 +145,9 @@ class Regex:
         """
         result: list[str] | None = cls.get_captured_strings_from_pattern_or(
             [
-                (cls._STREAM_AND_TOPIC_AUTOCOMPLETED_CAPTURE, [1, 2]),
-                (cls._STREAM_AUTOCOMPLETED_CAPTURE, [1]),
-                (cls._STREAM, [0]),
+                (cls._CHANNEL_AND_TOPIC_AUTOCOMPLETED_CAPTURE, [1, 2]),
+                (cls._CHANNEL_AUTOCOMPLETED_CAPTURE, [1]),
+                (cls._CHANNEL, [0]),
             ],
             string.strip(),
         )

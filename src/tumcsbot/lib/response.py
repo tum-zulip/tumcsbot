@@ -17,14 +17,13 @@ Response        Provide Response building methods.
 Functions:
 ----------
 split               Similar to the default split, but respects quotes.
-stream_names_equal  Decide whether two stream names are equal.
+channel_names_equal  Decide whether two channel names are equal.
 """
 
 import json
 from enum import Enum
 from inspect import cleandoc
-
-from typing import Any
+from typing import Any, Literal
 
 
 class StrEnum(str, Enum):
@@ -125,7 +124,7 @@ class Response:
         cls,
         message: dict[str, Any] | None,
         content: str,
-        msg_type: str | None = None,
+        msg_type: Literal["channel", "private"] | None = None,
         to: str | int | list[int] | list[str] | None = None,
         subject: str | None = None,
     ) -> "Response":
@@ -136,19 +135,19 @@ class Response:
         message    The message to respond to.
                        May be explicitely set to None. In this case,
                        'msg_type', 'to' (and 'subject' if 'msg_type'
-                       is 'stream') have to be specified.
+                       is 'channel') have to be specified.
         content   The content of the response.
-        msg_type   Determine if the response should be a stream or a
-                   private message. ('stream', 'private')
+        msg_type   Determine if the response should be a channel or a
+                   private message. ('channel', 'private')
                    [optional]
         to         If it is a private message:
                        Either a list containing integer user IDs
                        or a list containing string email addresses.
-                   If it is a stream message:
-                       Either the name or the integer ID of a stream.
+                   If it is a channel message:
+                       Either the name or the integer ID of a channel.
                    [optional]
         subject    The topic the message should be added to (only for
-                   stream messages).
+                   channel messages).
                    [optional]
 
         The optional arguments are inferred from 'message' if provided.
@@ -156,7 +155,7 @@ class Response:
         Return a Response object.
         """
         if message is None and (
-            msg_type is None or to is None or (msg_type == "stream" and subject is None)
+            msg_type is None or to is None or (msg_type == "channel" and subject is None)
         ):
             return cls.none()
 
@@ -171,6 +170,9 @@ class Response:
             if subject is None:
                 subject = message["subject"] if not private else ""
 
+        if msg_type == "channel":
+            msg_type = "stream"
+        
         # 'subject' field is ignored for private messages
         # see https://zulip.com/api/send-message#parameter-topic
         return cls(

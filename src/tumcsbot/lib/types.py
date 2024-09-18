@@ -86,7 +86,7 @@ class ZulipUserNotFound(Exception):
     pass
 
 
-class ZulipStreamNotFound(Exception):
+class ZulipChannelNotFound(Exception):
     pass
 
 
@@ -268,11 +268,11 @@ class ZulipUser(
         return self._privileged
 
 
-class ZulipStream(
+class ZulipChannel(
     SqlAlchemyMixinFactory.from_type(Integer), AsyncClientMixin, YAMLSerializableMixin
 ):
     """
-    Inferface for Zulip streams that dynamically fetches the user id and name and can be used as a type in the database.
+    Inferface for Zulip channels that dynamically fetches the user id and name and can be used as a type in the database.
     """
 
     def __init__(self, identifier: str | int | None = None) -> None:
@@ -283,30 +283,30 @@ class ZulipStream(
             self._id = identifier
 
         elif isinstance(identifier, str):
-            sname = Regex.get_stream_name(identifier)
+            sname = Regex.get_channel_name(identifier)
             if sname is None:
-                raise ZulipStreamNotFound(
-                    f"Invalid stream identifier `{identifier}`, use the same format as in the Zulip UI. (`#**<stream>**`)"
+                raise ZulipChannelNotFound(
+                    f"Invalid channel identifier `{identifier}`, use the same format as in the Zulip UI. (`#**<channel>**`)"
                 )
             self._name: str | int = sname
 
     def __str__(self) -> str:
-        return f"ZulipStream(id: {self._id}, name: {self._name})"
+        return f"ZulipChannel(id: {self._id}, name: {self._name})"
 
     async def __ainit__(self):
         if self._name is None and self._id is None:
-            raise ValueError("Stream id and name not set.")
+            raise ValueError("Channel id and name not set.")
 
         if self._id is None:
-            result = await self.client.get_stream_id_by_name(self.mention)
+            result = await self.client.get_channel_id_by_name(self.mention)
             if result is None:
-                raise ZulipStreamNotFound(f"Stream {self.mention} could be not found.")
+                raise ZulipChannelNotFound(f"Channel {self.mention} could be not found.")
             self._id = result
         if self._name is None:
-            result = await self.client.get_stream_by_id(self._id)
+            result = await self.client.get_channel_by_id(self._id)
             if result == None:
-                raise ZulipStreamNotFound(
-                    f"Stream with id {self._id} could be not found: {result}"
+                raise ZulipChannelNotFound(
+                    f"Channel with id {self._id} could be not found: {result}"
                 )
             self._name = result["name"]
 
@@ -316,14 +316,9 @@ class ZulipStream(
     def __yaml__(self):
         return {"name": self.name}
 
-    # def __eq__(self, other):
-    #    if not isinstance(other, ZulipStream):
-    #        raise ValueError("Can only compare two ZulipStreams")
-    #    return self.id == other.id
-    #
     @staticmethod
     def get_db_value(value):
-        if isinstance(value, ZulipStream):
+        if isinstance(value, ZulipChannel):
             return value.id
         return int(value)
 
@@ -331,7 +326,7 @@ class ZulipStream(
     def id(self) -> int:
         if self._id is None:
             raise ValueError(
-                "Stream id not set. Did you forget to call `await` on the object?"
+                "Channel id not set. Did you forget to call `await` on the object?"
             )
         return self._id
 
@@ -339,7 +334,7 @@ class ZulipStream(
     def name(self) -> str:
         if self._name is None:
             raise ValueError(
-                "Stream name not set. Did you forget to call `await` on the object?"
+                "Channel name not set. Did you forget to call `await` on the object?"
             )
         return self._name
 

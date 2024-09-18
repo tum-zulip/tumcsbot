@@ -14,7 +14,7 @@ class Ping(Plugin):
 
     Do not react on pings in private messages that do not contain a
     command! Otherwise, we'll reach the API rate limit when we
-    subscribe a lot of users to a stream, the Notification Bot
+    subscribe a lot of users to a channel, the Notification Bot
     notifies them of the subscription (with ping) and we react on the
     messages of the Notification Bot to the users.
     """

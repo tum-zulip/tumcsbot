@@ -5,26 +5,26 @@
 
 import logging
 
-from tumcsbot.lib.types import ZulipStream
+from tumcsbot.lib.types import ZulipChannel
 from tumcsbot.lib.client import AsyncClient
 from tumcsbot.lib.conf import Conf
 from tumcsbot.lib.db import DB
 from tumcsbot.lib.response import Response
 from tumcsbot.plugin import PluginCommandMixin, Plugin
-from tumcsbot.plugins.garbage_collector import GarbageCollectorIgnoreStreamsTable
+from tumcsbot.plugins.garbage_collector import GarbageCollectorIgnoreChannelsTable
 
 
 class ZulipLogHandler(logging.Handler):
     """
     A handler class which sends
-    log records to a Zulip stream.
+    log records to a Zulip channel.
     """
 
     def __init__(
-        self, stream_id: int, client: AsyncClient, log_level: int = logging.INFO
+        self, channel_id: int, client: AsyncClient, log_level: int = logging.INFO
     ) -> None:
         logging.Handler.__init__(self)
-        self.stream_id = stream_id
+        self.channel_id = channel_id
         self.client = client
         self.setLevel(log_level)
 
@@ -41,7 +41,7 @@ class ZulipLogHandler(logging.Handler):
                 "num_after": 0,
                 "narrow": [
                     {"operator": "sender", "operand": self.client.id},
-                    {"operator": "channel", "operand": self.stream_id},
+                    {"operator": "channel", "operand": self.channel_id},
                 ],
             }
         )
@@ -57,20 +57,20 @@ class ZulipLogHandler(logging.Handler):
 
         response = self.client.as_sync().send_message(
             Response.build_message(
-                None, content=msg, to=self.stream_id, subject="Log", msg_type="stream"
+                None, content=msg, to=self.channel_id, subject="Log", msg_type="channel"
             ).response
         )
         if response["result"] != "success":
             return
 
 
-class LogStream(PluginCommandMixin, Plugin):
+class LogChannel(PluginCommandMixin, Plugin):
     """
-    Send log messages to a Zulip stream.
+    Send log messages to a Zulip channel.
     """
 
     def _init_plugin(self) -> None:
-        logstram = Conf.get("logstream")
+        logstram = Conf.get("logchannel")
 
         if logstram is None:
             return
@@ -83,10 +83,10 @@ class LogStream(PluginCommandMixin, Plugin):
             logging.warning("Bot owner not set")
 
         response = self.client.as_sync().add_subscriptions(
-            streams=[
+            channels=[
                 {
                     "name": logstram,
-                    "description": f"Log stream of TUM CS Bot",
+                    "description": f"Log channel of TUM CS Bot",
                 }
             ],
             principals=principals,
@@ -100,25 +100,25 @@ class LogStream(PluginCommandMixin, Plugin):
         response = self.client.as_sync().get_streams()
 
         if response["result"] != "success":
-            logging.error("Could not get streams")
+            logging.error("Could not get channels")
             return
 
-        stream = filter(lambda x: x["name"] == logstram, response["streams"])
+        channel = filter(lambda x: x["name"] == logstram, response["streams"])
 
-        if stream:
-            stream = next(stream)
+        if channel:
+            channel = next(channel)
 
             with DB.session() as session:
-                stream = ZulipStream(stream["stream_id"])
+                channel = ZulipChannel(channel["stream_id"])
                 if (
-                    session.query(GarbageCollectorIgnoreStreamsTable)
-                    .filter_by(Stream=stream)
+                    session.query(GarbageCollectorIgnoreChannelsTable)
+                    .filter_by(Channel=channel)
                     .first()
                     is None
                 ):
-                    session.add(GarbageCollectorIgnoreStreamsTable(Stream=stream))
+                    session.add(GarbageCollectorIgnoreChannelsTable(Channel=channel))
                 session.commit()
 
-            logging.getLogger().addHandler(ZulipLogHandler(stream.id, self.client))
+            logging.getLogger().addHandler(ZulipLogHandler(channel.id, self.client))
         else:
-            logging.error(f"Stream {logstram} not found")
+            logging.error(f"Channel {logstram} not found")

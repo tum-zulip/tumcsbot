@@ -22,7 +22,7 @@ from tumcsbot.lib.response import Response
 from tumcsbot.lib.regex import Regex
 from tumcsbot.lib.command_parser import CommandParser
 from tumcsbot.lib.db import TableBase, serialize_model, Session, deserialize_model
-from tumcsbot.lib.types import ZulipStream
+from tumcsbot.lib.types import ZulipChannel
 from tumcsbot.plugin import PluginCommandMixin, Plugin
 from tumcsbot.plugin_decorators import arg, command, opt, privilege
 from tumcsbot.plugins.usergroup import UserGroup, UserGroupMember, Usergroup
@@ -79,10 +79,10 @@ class GroupAuthorization(TableBase):  # type: ignore
     group: Mapped[UserGroup] = relationship()
 
 
-class StreamAuthorization(TableBase):  # type: ignore
-    __tablename__ = "StreamAuthorization"
+class ChannelAuthorization(TableBase):  # type: ignore
+    __tablename__ = "ChannelAuthorization"
 
-    Stream = Column(ZulipStream, primary_key=True)
+    Channel = Column(ZulipChannel, primary_key=True)
     ModerationConfigId = Column(
         Integer,
         ForeignKey("ModerationConfig.ModerationConfigId", ondelete="CASCADE"),
@@ -96,7 +96,7 @@ class ModerationConfig(TableBase):  # type: ignore
     ModerationConfigId = Column(Integer, primary_key=True, autoincrement=True)
     ModerationConfigName = Column(String, nullable=False, unique=True)
 
-    streams: Mapped[list[StreamAuthorization]] = relationship()
+    channels: Mapped[list[ChannelAuthorization]] = relationship()
     groups: Mapped[list[GroupAuthorization]] = relationship()
     reactions: Mapped[list[ReactionConfig]] = relationship()
 
@@ -192,7 +192,7 @@ class Moderate(PluginCommandMixin, Plugin):
                                                         Diese Benachrichtigung wurde von $mod beauftragt.
                                                         This notification was issued by $mod.""",
             ),
-            "sends a dm to the author that the question has a bad title or is in the wrong stream",
+            "sends a dm to the author that the question has a bad title or is in the wrong channel",
         ),
         (":headlines:", "delete", None, "deletes the message"),
         (
@@ -379,10 +379,10 @@ class Moderate(PluginCommandMixin, Plugin):
         description="The group that should be granted moderation rights",
     )
     @opt(
-        "s",
-        "stream",
-        ZulipStream,
-        description="The streams that the moderation configuration is applicable to should be able to moderate",
+        "c",
+        "channel",
+        ZulipChannel,
+        description="The channels that the moderation configuration is applicable to should be able to moderate",
     )
     async def authorize(
         self,
@@ -394,14 +394,14 @@ class Moderate(PluginCommandMixin, Plugin):
     ) -> AsyncGenerator[response_type, None]:
         moderation_config: ModerationConfig = args.moderation_config
         group: UserGroup | None = opts.group
-        stream: ZulipStream | None = opts.stream
+        channel: ZulipChannel | None = opts.channel
 
-        if not group and not stream:
-            raise DMError("Error: At least a stream or a group must be specified.")
+        if not group and not channel:
+            raise DMError("Error: At least a channel or a group must be specified.")
 
-        if group and stream:
+        if group and channel:
             raise DMError(
-                "Error: Either a group or streams must be specified, not both."
+                "Error: Either a group or channels must be specified, not both."
             )
 
         if group:
@@ -438,22 +438,22 @@ class Moderate(PluginCommandMixin, Plugin):
         else:
             if (
                 session.query(ModerationConfig)
-                .filter(StreamAuthorization.Stream == stream)
+                .filter(ChannelAuthorization.Channel == channel)
                 .first()
             ):
                 raise DMError(
-                    f"Error: Moderation for Stream {stream.mention} is already enabled in {moderation_config.ModerationConfigName}"
+                    f"Error: Moderation for Channel {channel.mention} is already enabled in {moderation_config.ModerationConfigName}"
                 )
 
             session.merge(
-                StreamAuthorization(
-                    Stream=stream,
+                ChannelAuthorization(
+                    Channel=channel,
                     ModerationConfigId=moderation_config.ModerationConfigId,
                 )
             )
             session.commit()
             yield DMResponse(
-                f"Stream {stream.mention} has been marked as moderateable for {moderation_config.ModerationConfigName}."
+                f"Channel {channel.mention} has been marked as moderateable for {moderation_config.ModerationConfigName}."
             )
 
     @command
@@ -470,10 +470,10 @@ class Moderate(PluginCommandMixin, Plugin):
         description="The group that should no longer be granted moderation rights",
     )
     @opt(
-        "s",
-        "stream",
-        ZulipStream,
-        description="The stream that should no longer be able to be moderated",
+        "c",
+        "channel",
+        ZulipChannel,
+        description="The channel that should no longer be able to be moderated",
     )
     async def revoke(
         self,
@@ -485,31 +485,31 @@ class Moderate(PluginCommandMixin, Plugin):
     ) -> AsyncGenerator[response_type, None]:
         config: ModerationConfig = args.moderation_config
 
-        if not opts.group and not opts.stream:
-            raise DMError("Error: At least a stream or a group must be specified.")
+        if not opts.group and not opts.channel:
+            raise DMError("Error: At least a channel or a group must be specified.")
 
-        if opts.group and opts.stream:
+        if opts.group and opts.channel:
             raise DMError(
-                "Error: Either a group or streams must be specified, not both."
+                "Error: Either a group or channels must be specified, not both."
             )
 
-        if opts.stream:
-            stream = opts.stream
+        if opts.channel:
+            channel = opts.channel
             if (
                 not session.query(ModerationConfig)
-                .filter(StreamAuthorization.Stream == stream)
+                .filter(ChannelAuthorization.Channel == channel)
                 .first()
             ):
                 raise DMError(
-                    f"Error: Stream {stream.mention} does not have moderation rights for {config.ModerationConfigName}"
+                    f"Error: Channel {channel.mention} does not have moderation rights for {config.ModerationConfigName}"
                 )
 
-            session.query(StreamAuthorization).filter(
-                StreamAuthorization.ModerationConfigId == config.ModerationConfigId
-            ).filter(StreamAuthorization.Stream == stream).delete()
+            session.query(ChannelAuthorization).filter(
+                ChannelAuthorization.ModerationConfigId == config.ModerationConfigId
+            ).filter(ChannelAuthorization.Channel == channel).delete()
             session.commit()
             yield DMResponse(
-                f"Stream {stream.mention} has been revoked moderation rights for {config.ModerationConfigName} and the members have been notified."
+                f"Channel {channel.mention} has been revoked moderation rights for {config.ModerationConfigName} and the members have been notified."
             )
 
         else:
@@ -792,13 +792,13 @@ class Moderate(PluginCommandMixin, Plugin):
         msg += await Moderate.format_reactions(cfg.reactions, verbose)
         msg += "\n**Authorized groups:**\n"
         msg += await Moderate.format_authorizations(cfg.groups, verbose)
-        msg += "\n**Authorized streams:**\n"
-        streams: list[ZulipStream] = []
-        for s in cfg.streams:
-            stream = ZulipStream(s.Stream)
-            await stream
-            streams.append(stream)
-        msg += ", ".join([s.mention for s in streams]) + "\n"
+        msg += "\n**Authorized channels:**\n"
+        channels: list[ZulipChannel] = []
+        for s in cfg.channels:
+            channel = ZulipChannel(s.Channel)
+            await channel
+            channels.append(channel)
+        msg += ", ".join([s.mention for s in channels]) + "\n"
         return msg
 
     @staticmethod

@@ -30,7 +30,7 @@ class Search(PluginCommandMixin, Plugin):
         message: dict[str, Any],
     ) -> AsyncGenerator[response_type, None]:
         """
-        Get a url to a search for "string" in all public streams.
+        Get a url to a search for "string" in all public channels.
         """
         # todo: use argument instead of urrlib.parse.quote
         # Get search string and quote it.

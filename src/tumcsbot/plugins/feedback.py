@@ -24,16 +24,16 @@ from tumcsbot.lib.db import DB, TableBase, Session, TableBase, serialize_model
 from tumcsbot.plugin_decorators import *
 from tumcsbot.plugins.usergroup import UserGroup, Usergroup
 from tumcsbot.plugins.userinput import UserInput
-from tumcsbot.plugins.streamgroup import StreamGroup, Streamgroup
+from tumcsbot.plugins.channelgroup import ChannelGroup, Channelgroup
 from tumcsbot.plugins.course import CourseDB, Course
-from tumcsbot.plugins.streams import Streams
+from tumcsbot.plugins.channels import Channels
 from tumcsbot.lib.types import (
     DMError,
     DMResponse,
     Privilege,
     response_type,
     ZulipUser,
-    ZulipStream,
+    ZulipChannel,
 )
 
 class Feedback(PluginCommandMixin, Plugin):
@@ -68,12 +68,12 @@ class Feedback(PluginCommandMixin, Plugin):
             course = Course._get_course_by_name(result1, session)
 
         
-        if not course.FeedbackStream:
+        if not course.FeedbackChannel:
             raise DMError(
                 f"Uuups, it looks like the course `{course.name}` does not support anonymous feedback :botsad:"
             )
         
-        await course.FeedbackStream
+        await course.FeedbackChannel
 
     
         # TODO: @Janez Rotman
@@ -99,7 +99,7 @@ class Feedback(PluginCommandMixin, Plugin):
             raise DMError("No response from user")
         else:
             response = await self.client.send_message({"type": "stream",
-                                            "to": course.FeedbackStream.id, 
+                                            "to": course.FeedbackChannel.id, 
                                             "topic": topic, 
                                             "content": result3
                                             })

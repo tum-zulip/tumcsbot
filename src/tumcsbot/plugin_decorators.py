@@ -11,7 +11,7 @@ from tumcsbot.lib.db import Session
 from tumcsbot.lib.response import Response
 from tumcsbot.plugin import PluginCommandMixin
 from tumcsbot.lib.types import (
-    ZulipStreamNotFound,
+    ZulipChannelNotFound,
     ZulipUser,
     Privilege,
     response_type,
@@ -413,7 +413,7 @@ class command:
                     message,
                     f"Error: {e}",
                 )
-            except ZulipStreamNotFound as e:
+            except ZulipChannelNotFound as e:
                 self.logger.exception(e)
                 return Response.build_message(
                     message,

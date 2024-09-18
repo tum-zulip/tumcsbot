@@ -5,7 +5,6 @@
 
 from typing import Any, AsyncGenerator
 
-from zulip import ZulipStream
 from tumcsbot.lib.command_parser import CommandParser
 from tumcsbot.lib.utils import split
 from tumcsbot.plugin import PluginCommandMixin, Plugin
@@ -23,7 +22,7 @@ from tumcsbot.lib.types import (
 )
 
 
-class Streams(PluginCommandMixin, Plugin):
+class Channels(PluginCommandMixin, Plugin):
 
     @command(name="list")
     @arg("pattern", str, description="The pattern to search for.")
@@ -36,10 +35,10 @@ class Streams(PluginCommandMixin, Plugin):
         _message: dict[str, Any],
     ) -> AsyncGenerator[response_type, None]:
         """
-        Search for streams that match the given pattern.
+        Search for channels that match the given pattern.
         """
 
-        result: list[str] = await self.client.get_streams_from_regex(args.pattern)
+        result: list[str] = await self.client.get_channels_from_regex(args.pattern)
 
         if not result:
             yield DMResponse("No matches found.")
@@ -50,13 +49,13 @@ class Streams(PluginCommandMixin, Plugin):
     @privilege(Privilege.ADMIN)
     @opt(
         "r",
-        description="select the streams according to the given regular expressions",
+        description="select the channels according to the given regular expressions",
         priv=Privilege.ADMIN,
     )
     @arg(
-        "stream_names",
+        "channel_names",
         type=str,
-        description="Streams that should be archived",
+        description="Channels that should be archived",
         greedy=True,
     )
     async def archive(
@@ -68,40 +67,40 @@ class Streams(PluginCommandMixin, Plugin):
         message: dict[str, Any],
     ) -> AsyncGenerator[response_type, None]:
         """
-        Archive the given streams.
-        The list of streams is interpreted in a way that autocompleted
-        stream names (à la `#**stream name**`) are auto-detected.
-        If the `-r` option is present, select the streams according to the
-        given regular expressions, which have to match the full stream name.
-        Note that only empty streams will be archived.
+        Archive the given channels.
+        The list of channels is interpreted in a way that autocompleted
+        channel names (à la `#**channel name**`) are auto-detected.
+        If the `-r` option is present, select the channels according to the
+        given regular expressions, which have to match the full channel name.
+        Note that only empty channels will be archived.
         """
 
         if opts.r:
-            streams = await sender.client.get_streams_from_regex(args.stream_names)
+            channels = await sender.client.get_channels_from_regex(args.channel_names)
         else:
-            streams = args.stream_names
+            channels = args.channel_names
 
-        for s in streams:
-            stream: str | None = Regex.get_stream_name(s)
-            if stream is None:
+        for s in channels:
+            channel: str | None = Regex.get_channel_name(s)
+            if channel is None:
                 yield PartialError(f"error: {s} cannot be parsed")
                 continue
 
-            result: dict[str, Any] = await sender.client.get_stream_id(stream)
+            result: dict[str, Any] = await sender.client.get_channel_id(channel)
 
             if result["result"] != "success":
                 yield PartialError(result["msg"])
                 continue
 
-            stream_id: int = result["stream_id"]
+            channel_id: int = result["stream_id"]
 
-            # Check if stream is empty.
+            # Check if channel is empty.
             result = await sender.client.get_messages(
                 {
                     "anchor": "oldest",
                     "num_before": 0,
                     "num_after": 1,
-                    "narrow": [{"operator": "stream", "operand": stream_id}],
+                    "narrow": [{"operator": "stream", "operand": channel_id}],
                 }
             )
             if result["result"] != "success":
@@ -109,21 +108,21 @@ class Streams(PluginCommandMixin, Plugin):
                 continue
 
             if len(result["messages"]) > 0:
-                yield PartialError(f"Stream {stream} is not empty.")
+                yield PartialError(f"Channel {channel} is not empty.")
                 continue
 
-            result = await sender.client.delete_stream(stream_id)
+            result = await sender.client.delete_channel(channel_id)
             if result["result"] != "success":
                 yield PartialError(result["msg"])
-            yield PartialSuccess(f"Stream {stream} archived.")
+            yield PartialSuccess(f"Channel {channel} archived.")
 
     @command
     @privilege(Privilege.ADMIN)
-    @arg("name", str, description="The name of the stream to create.")
+    @arg("name", str, description="The name of the channel to create.")
     @arg(
         "description",
         str,
-        description="The description of the stream to create.",
+        description="The description of the channel to create.",
         optional=True,
         greedy=True,
     )
@@ -137,30 +136,30 @@ class Streams(PluginCommandMixin, Plugin):
     ) -> AsyncGenerator[response_type, None]:
         """
         todo: this is wrong documentation
-        Create a public stream for every (stream,description)-tuple \
+        Create a public channel for every (channel,description)-tuple \
         passed to this command. You may provide a quoted empty string \
         as description.
-        The (stream name, stream description)-tuples may be separated \
+        The (channel name, channel description)-tuples may be separated \
         by any whitespace.
 
         Notes:
-        - It is not yet possible to have single-quotes (`'`) in stream \
+        - It is not yet possible to have single-quotes (`'`) in channel \
         names or descriptions.
         """
 
         result: dict[str, Any] = await sender.client.add_subscriptions(
-            streams=[{"name": args.name, "description": " ".join(args.description)}]
+            channels=[{"name": args.name, "description": " ".join(args.description)}]
         )
         if result["result"] != "success":
             raise DMError(result["msg"])
-        yield DMResponse(f"Stream {args.name} created.")
+        yield DMResponse(f"Channel {args.name} created.")
 
     @command
     @privilege(Privilege.ADMIN)
     @arg(
-        "stream_tuples",
+        "channel_tuples",
         lambda t: split(t, sep=",", exact_split=2),
-        description="list of (`stream_name_old`,`stream_name_new`)-tuples",
+        description="list of (`channel_name_old`,`channel_name_new`)-tuples",
         greedy=True,
     )
     async def rename(
@@ -172,18 +171,18 @@ class Streams(PluginCommandMixin, Plugin):
         _message: dict[str, Any],
     ) -> AsyncGenerator[response_type, None]:
 
-        for old, new in args.stream_tuples:
+        for old, new in args.channel_tuples:
             # Used for error messages.
             line: str = f"{old} -> {new}"
 
             try:
-                old_id: int = await sender.client.get_stream_id(old)["stream_id"]
+                old_id: int = await sender.client.get_channel_id(old)["stream_id"]
             except Exception as e:
                 self.logger.exception(e)
-                yield PartialError(f"Failed to get stream id for {old}")
+                yield PartialError(f"Failed to get channel id for {old}")
                 continue
 
-            result: dict[str, Any] = await sender.client.update_stream(
+            result: dict[str, Any] = await sender.client.update_channel(
                 {"stream_id": old_id, "new_name": f"'{new}'"}
             )
             if result["result"] != "success":

@@ -23,7 +23,7 @@ from typing import Any, Iterable, Type, TypeVar
 from zulip import Client as ZulipClient
 from tumcsbot.lib import response
 from tumcsbot.lib import utils
-from tumcsbot.lib.client import AsyncClient, PlublicStreams, PluginContext
+from tumcsbot.lib.client import AsyncClient, PlublicChannels, PluginContext
 from tumcsbot.lib.db import DB
 from tumcsbot.plugin import (
     Event,
@@ -166,18 +166,18 @@ class TumCSBot:
     async def init_db(self) -> None:
         """Initialize some tables of the database."""
 
-        stream_names = await self.client.get_public_stream_names(use_db=False)
+        channel_names = await self.client.get_public_channel_names(use_db=False)
         with DB.session() as session:
-            for entry in session.query(PlublicStreams).all():
-                if not str(entry.StreamName) in stream_names:
+            for entry in session.query(PlublicChannels).all():
+                if not str(entry.ChannelName) in channel_names:
                     session.delete(entry)
-            for stream in stream_names:
+            for channel in channel_names:
                 if (
-                    not session.query(PlublicStreams)
-                    .filter_by(StreamName=stream)
+                    not session.query(PlublicChannels)
+                    .filter_by(ChannelName=channel)
                     .first()
                 ):
-                    session.add(PlublicStreams(StreamName=stream, Subscribed=0))
+                    session.add(PlublicChannels(ChannelName=channel, Subscribed=0))
             session.commit()
 
     def stop(self) -> None:

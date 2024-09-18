@@ -3,16 +3,6 @@
 # See LICENSE file for copyright and license details.
 # TUM CS Bot - https://github.com/ro-i/tumcsbot
 
-"""Keep the bot subscribed to all public streams.
-
-Reason:
-As the 'all_public_streams' parameter of the event API [1] does not
-seem to work properly, we need a work-around in order to be able to
-receive events for all public streams.
-
-[1] https://zulip.com/api/register-queue#parameter-all_public_streams
-"""
-
 import asyncio
 import logging
 from typing import Any, Callable, Iterable, Literal

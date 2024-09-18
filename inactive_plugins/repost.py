@@ -48,8 +48,8 @@ class Repost(Plugin):
         result: dict[str, Any] = self.client.get_raw_message(
             event.data["message_id"], apply_markdown=False
         )
-        # Verify also that the message is a stream message.
-        if result["result"] != "success" or not "stream_id" in result["message"]:
+        # Verify also that the message is a  message.
+        if result["result"] != "success" or not "_id" in result["message"]:
             return Response.none()
         orig_msg: dict[str, Any] = result["message"]
 

@@ -36,8 +36,8 @@ from tumcsbot.lib.db import DB, TableBase, Session, TableBase, serialize_model
 from tumcsbot.plugin_decorators import *
 from tumcsbot.plugins.usergroup import UserGroup, Usergroup
 from tumcsbot.plugins.userinput import UserInput
-from tumcsbot.plugins.streamgroup import StreamGroup, Streamgroup
-from tumcsbot.plugins.streams import Streams
+from tumcsbot.plugins.channelgroup import ChannelGroup, Channelgroup
+from tumcsbot.plugins.channels import Channels
 from tumcsbot.lib.types import (
     DMError,
     DMMessage,
@@ -48,7 +48,7 @@ from tumcsbot.lib.types import (
     UserNotPrivilegedException,
     response_type,
     ZulipUser,
-    ZulipStream,
+    ZulipChannel,
     YAMLSerializableMixin,
 )
 
@@ -64,9 +64,9 @@ class CourseDB(TableBase):
     CourseDescription = Column(String, nullable=True)
     CourseLanguage = Column(String, nullable=False)
 
-    Streams = Column(
+    Channels = Column(
         String,
-        ForeignKey("StreamGroups.StreamGroupId", ondelete="CASCADE"),
+        ForeignKey("ChannelGroups.ChannelGroupId", ondelete="CASCADE"),
         nullable=False,
     )
 
@@ -78,12 +78,12 @@ class CourseDB(TableBase):
         Integer, ForeignKey("UserGroups.GroupId", ondelete="CASCADE"), nullable=False
     )
 
-    TutorStream = Column(ZulipStream, nullable=True)
-    InstructorStream = Column(ZulipStream, nullable=True)
-    FeedbackStream = Column(ZulipStream, nullable=True) # not Null if anonymous feedback enabled
+    TutorChannel = Column(ZulipChannel, nullable=True)
+    InstructorChannel = Column(ZulipChannel, nullable=True)
+    FeedbackChannel = Column(ZulipChannel, nullable=True) # not Null if anonymous feedback enabled
 
-    _streams = relationship(
-        "StreamGroup",
+    _channels = relationship(
+        "ChannelGroup",
         back_populates="_course",
         cascade="all, delete-orphan",
         single_parent=True,
@@ -136,13 +136,13 @@ class Course(PluginCommandMixin, Plugin):
 
         for course in courses:
             course_name = course.CourseName
-            streams: list[str] = await Course._get_stream_names(
+            channels: list[str] = await Course._get_channel_names(
                 session, self.client, course
             )
             emoji: str = Course._get_emoji(course, session)
 
-            streams_concat: str = ", ".join(f"`{s}`" for s in streams)
-            response += f"\n{course_name} | {emoji} :{emoji}: | {streams_concat}"
+            channels_concat: str = ", ".join(f"`{s}`" for s in channels)
+            response += f"\n{course_name} | {emoji} :{emoji}: | {channels_concat}"
 
         yield DMResponse(response)
 
@@ -172,8 +172,8 @@ class Course(PluginCommandMixin, Plugin):
         Create a new empty course
         """
         name: str = args.name
-        streamgroup_emoji: str = args.emoji
-        streams: StreamGroup | None = None
+        channelgroup_emoji: str = args.emoji
+        channels: ChannelGroup | None = None
 
         cleanup_opterations: list[Callable] = []
 
@@ -198,15 +198,15 @@ class Course(PluginCommandMixin, Plugin):
                 return
 
         if (
-            session.query(StreamGroup)
-            .filter(StreamGroup.StreamGroupEmote == streamgroup_emoji)
+            session.query(ChannelGroup)
+            .filter(ChannelGroup.ChannelGroupEmote == channelgroup_emoji)
             .first()
             is not None
         ):
             result = await self.client.send_response(
                 Response.build_message(
                     message,
-                    content=f"A Streamgroup with :{streamgroup_emoji}: already exists. Dou you want to replace it with an empty Streamgroup for your course?",
+                    content=f"A Channelgroup with :{channelgroup_emoji}: already exists. Dou you want to replace it with an empty Channelgroup for your course?",
                 )
             )
             if result["result"] != "success":
@@ -217,7 +217,7 @@ class Course(PluginCommandMixin, Plugin):
                 res = await self.client.send_response(
                     Response.build_message(
                         message,
-                        content=f"Do you want to use the existing Streamgroup with :{streamgroup_emoji}: for your course?",
+                        content=f"Do you want to use the existing Channelgroup with :{channelgroup_emoji}: for your course?",
                     )
                 )
                 if res["result"] != "success":
@@ -226,22 +226,22 @@ class Course(PluginCommandMixin, Plugin):
                 res, msg = await UserInput.confirm(self.client, res["id"], timeout=60)
                 if not res:
                     yield DMResponse(
-                        f"Ok, I will not create a new course then. Please choose another emote because :{streamgroup_emoji}: is already in use :botsad:"
+                        f"Ok, I will not create a new course then. Please choose another emote because :{channelgroup_emoji}: is already in use :botsad:"
                     )
                     return
                 else:
-                    streams: StreamGroup = (
-                        session.query(StreamGroup)
-                        .filter(StreamGroup.StreamGroupEmote == streamgroup_emoji)
+                    channels: ChannelGroup = (
+                        session.query(ChannelGroup)
+                        .filter(ChannelGroup.ChannelGroupEmote == channelgroup_emoji)
                         .first()
                     )
             else:
-                sg: StreamGroup = (
-                    session.query(StreamGroup)
-                    .filter(StreamGroup.StreamGroupEmote == streamgroup_emoji)
+                sg: ChannelGroup = (
+                    session.query(ChannelGroup)
+                    .filter(ChannelGroup.ChannelGroupEmote == channelgroup_emoji)
                     .first()
                 )
-                Streamgroup._delete_group(session, sg)
+                Channelgroup._delete_group(session, sg)
 
         resLan = await self.client.send_response(
             Response.build_message(
@@ -253,14 +253,14 @@ class Course(PluginCommandMixin, Plugin):
         )
 
         try:
-            # get a corresponding (empty) Streamgroup
-            if not streams:
-                streamgroup_name: str = "streams_" + name
-                streams: StreamGroup = Streamgroup._create_and_get_group(
-                    session, streamgroup_name, streamgroup_emoji
+            # get a corresponding (empty) Channelgroup
+            if not channels:
+                channelgroup_name: str = "channels_" + name
+                channels: ChannelGroup = Channelgroup._create_and_get_group(
+                    session, channelgroup_name, channelgroup_emoji
                 )
                 cleanup_opterations.append(
-                    lambda: Streamgroup._delete_group(session, streams)
+                    lambda: Channelgroup._delete_group(session, channels)
                 )
 
             # get a corresponding (empty) Usergroup
@@ -338,13 +338,13 @@ class Course(PluginCommandMixin, Plugin):
             )
 
             # get a corresponding (empty) Channel for Tutors
-            tutors_stream_name: str = name + " - Tutors"
-            tutors_stream_desc: list[str] = [f"Internal Channel for {name}-Tutors"]
+            tutors_channel_name: str = name + " - Tutors"
+            tutors_channel_desc: list[str] = [f"Internal Channel for {name}-Tutors"]
             if lan == "de":
-                tutors_stream_name: str = name + " - Tutoren"
-                tutors_stream_desc: list[str] = [f"Interner Kanal für {name}-Tutoren"]
+                tutors_channel_name: str = name + " - Tutoren"
+                tutors_channel_desc: list[str] = [f"Interner Kanal für {name}-Tutoren"]
 
-            tut_ex = await self.client.get_stream_id_by_name(tutors_stream_name)
+            tut_ex = await self.client.get_channel_id_by_name(tutors_channel_name)
 
             if tut_ex is not None:
                 result = await self.client.send_response(
@@ -364,13 +364,13 @@ class Course(PluginCommandMixin, Plugin):
                         "Ok, I will not create a new course then. Please choose another name."
                     )
                 else:
-                    await self.client.delete_stream(tut_ex)
+                    await self.client.delete_channel(tut_ex)
 
             result: dict[str, Any] = await self.client.add_subscriptions(
-                streams=[
+                channels=[
                     {
-                        "name": tutors_stream_name,
-                        "description": " ".join(tutors_stream_desc),
+                        "name": tutors_channel_name,
+                        "description": " ".join(tutors_channel_desc),
                     }
                 ],
                 principals=[sender.id, self.client.id],
@@ -381,28 +381,28 @@ class Course(PluginCommandMixin, Plugin):
             if result["result"] != "success":
                 raise DMError(result["msg"])
 
-            tutors_stream: ZulipStream = ZulipStream(f"#**{tutors_stream_name}**")
-            await tutors_stream
+            tutors_channel: ZulipChannel = ZulipChannel(f"#**{tutors_channel_name}**")
+            await tutors_channel
 
             cleanup_opterations.append(
-                lambda: self.client.delete_stream(tutors_stream.id)
+                lambda: self.client.delete_channel(tutors_channel.id)
             )
 
             # get a corresponding (empty) Channel for Instructors or None
-            instructor_stream: ZulipStream | None = None
+            instructor_channel: ZulipChannel | None = None
             if opts.i:
 
-                instructor_stream_name: str = name + " - Instructors"
-                instructor_stream_desc: list[str] = [
+                instructor_channel_name: str = name + " - Instructors"
+                instructor_channel_desc: list[str] = [
                     f"Internal Channel for Instructors of {name}"
                 ]
                 if lan == "de":
-                    instructor_stream_name: str = name + " - Instructors"
-                    instructor_stream_desc: list[str] = [
+                    instructor_channel_name: str = name + " - Instructors"
+                    instructor_channel_desc: list[str] = [
                         f"Interner Kanal für {name}-Instructors"
                     ]
 
-                ins_ex = await self.client.get_stream_id_by_name(instructor_stream_name)
+                ins_ex = await self.client.get_channel_id_by_name(instructor_channel_name)
 
                 if ins_ex is not None:
                     result = await self.client.send_response(
@@ -422,13 +422,13 @@ class Course(PluginCommandMixin, Plugin):
                             "Ok, I will not create a new course then. Please choose another name."
                         )
                     else:
-                        await self.client.delete_stream(ins_ex)
+                        await self.client.delete_channel(ins_ex)
 
                 result: dict[str, Any] = await self.client.add_subscriptions(
-                    streams=[
+                    channels=[
                         {
-                            "name": instructor_stream_name,
-                            "description": " ".join(instructor_stream_desc),
+                            "name": instructor_channel_name,
+                            "description": " ".join(instructor_channel_desc),
                         }
                     ],
                     principals=[sender.id, self.client.id],
@@ -439,38 +439,38 @@ class Course(PluginCommandMixin, Plugin):
                 if result["result"] != "success":
                     raise DMError(result["msg"])
 
-                instructor_stream: ZulipStream = ZulipStream(
-                    f"#**{instructor_stream_name}**"
+                instructor_channel: ZulipChannel = ZulipChannel(
+                    f"#**{instructor_channel_name}**"
                 )
-                await instructor_stream
+                await instructor_channel
 
                 cleanup_opterations.append(
-                    lambda: self.client.delete_stream(instructor_stream.id)
+                    lambda: self.client.delete_channel(instructor_channel.id)
                 )
 
             # get a corresponding (empty) Channel for anonymous Feedback or None
-            feedback_stream: ZulipStream | None = None
+            feedback_channel: ZulipChannel | None = None
             if opts.f:
 
-                feedback_stream_name: str = name + " - Feedback"
-                feedback_stream_desc: list[str] = [
+                feedback_channel_name: str = name + " - Feedback"
+                feedback_channel_desc: list[str] = [
                     f"Anonymous Channel for Feedback to {name}"
                 ]
                 if lan == "de":
-                    feedback_stream_desc: list[str] = [
+                    feedback_channel_desc: list[str] = [
                         f"Anonymer Kanal für Feedback zu {name}"
                     ]
 
-                f_ex = await self.client.get_stream_id_by_name(feedback_stream_name)
+                f_ex = await self.client.get_channel_id_by_name(feedback_channel_name)
 
                 if ins_ex is not None:
-                        await self.client.delete_stream(f_ex)
+                        await self.client.delete_channel(f_ex)
 
                 result: dict[str, Any] = await self.client.add_subscriptions(
-                    streams=[
+                    channels=[
                         {
-                            "name": feedback_stream_name,
-                            "description": " ".join(feedback_stream_desc),
+                            "name": feedback_channel_name,
+                            "description": " ".join(feedback_channel_desc),
                         }
                     ],
                     principals=[sender.id, self.client.id],
@@ -479,13 +479,13 @@ class Course(PluginCommandMixin, Plugin):
                 if result["result"] != "success":
                     raise DMError(result["msg"])
 
-                feedback_stream: ZulipStream = ZulipStream(
-                    f"#**{feedback_stream_name}**"
+                feedback_channel: ZulipChannel = ZulipChannel(
+                    f"#**{feedback_channel_name}**"
                 )
-                await feedback_stream
+                await feedback_channel
 
                 cleanup_opterations.append(
-                    lambda: self.client.delete_stream(feedback_stream.id)
+                    lambda: self.client.delete_channel(feedback_channel.id)
                 )
 
 
@@ -493,12 +493,12 @@ class Course(PluginCommandMixin, Plugin):
             course: CourseDB = CourseDB(
                 CourseName=name,
                 CourseLanguage=lan,
-                Streams=streams.StreamGroupId,
+                Channels=channels.ChannelGroupId,
                 TutorsUserGroup=tutors.GroupId,
                 InstructorsUserGroup=instructors.GroupId,
-                TutorStream=tutors_stream,
-                InstructorStream=instructor_stream,
-                FeedbackStream=feedback_stream,
+                TutorChannel=tutors_channel,
+                InstructorChannel=instructor_channel,
+                FeedbackChannel=feedback_channel,
             )
 
             session.add(course)
@@ -526,12 +526,12 @@ class Course(PluginCommandMixin, Plugin):
     @arg(
         "emoji",
         Regex.get_emoji_name,
-        description="The emoji to use for the Streamgroup.",
+        description="The emoji to use for the Channelgroup.",
     )
     @opt(
         "c",
         long_opt="channelgroup",
-        type=StreamGroup.StreamGroupId,
+        type=ChannelGroup.ChannelGroupId,
         description="The id of a Channelgroup containing the Channels for this course.",
     )
     @opt(
@@ -549,19 +549,19 @@ class Course(PluginCommandMixin, Plugin):
     @opt(
         "tuts",
         long_opt="tutor_channel",
-        type=ZulipStream,
+        type=ZulipChannel,
         description="The course has an additional Channel for tutors.",
     )
     @opt(
         "ins",
         long_opt="instructor_channel",
-        type=ZulipStream,
+        type=ZulipChannel,
         description="The course has an additional Channel for Instructors.",
     )
     @opt(
         "fb",
         long_opt="feedback",
-        type=ZulipStream,
+        type=ZulipChannel,
         description="The course has an ANONYMOUS Feedback-Channel.",
     )
     async def create(
@@ -576,8 +576,8 @@ class Course(PluginCommandMixin, Plugin):
         Create a new course with corresponding contents
         """
         name: str = args.name
-        streamgroup_emoji: str = args.emoji
-        streams: StreamGroup | None = None
+        channelgroup_emoji: str = args.emoji
+        channels: ChannelGroup | None = None
 
         cleanup_opterations: list[Callable] = []
 
@@ -602,15 +602,15 @@ class Course(PluginCommandMixin, Plugin):
                 return
 
         if (
-            session.query(StreamGroup)
-            .filter(StreamGroup.StreamGroupEmote == streamgroup_emoji)
+            session.query(ChannelGroup)
+            .filter(ChannelGroup.ChannelGroupEmote == channelgroup_emoji)
             .first()
             is not None
         ):
             result = await self.client.send_response(
                 Response.build_message(
                     message,
-                    content=f"A Streamgroup with :{streamgroup_emoji}: already exists. Dou you want to replace it with a new Streamgroup for your course?",
+                    content=f"A Channelgroup with :{channelgroup_emoji}: already exists. Dou you want to replace it with a new Channelgroup for your course?",
                 )
             )
             if result["result"] != "success":
@@ -621,7 +621,7 @@ class Course(PluginCommandMixin, Plugin):
                 res = await self.client.send_response(
                     Response.build_message(
                         message,
-                        content=f"Do you want to use the existing Streamgroup with :{streamgroup_emoji}: for your course?",
+                        content=f"Do you want to use the existing Channelgroup with :{channelgroup_emoji}: for your course?",
                     )
                 )
                 if res["result"] != "success":
@@ -630,22 +630,22 @@ class Course(PluginCommandMixin, Plugin):
                 res, msg = await UserInput.confirm(self.client, res["id"], timeout=60)
                 if not res:
                     yield DMResponse(
-                        f"Ok, I will not create a new course then. Please choose another emote because :{streamgroup_emoji}: is already in use :botsad:"
+                        f"Ok, I will not create a new course then. Please choose another emote because :{channelgroup_emoji}: is already in use :botsad:"
                     )
                     return
                 else:
-                    streams = (
-                        session.query(StreamGroup)
-                        .filter(StreamGroup.StreamGroupEmote == streamgroup_emoji)
+                    channels = (
+                        session.query(ChannelGroup)
+                        .filter(ChannelGroup.ChannelGroupEmote == channelgroup_emoji)
                         .first()
                     )
             else:
-                sg: StreamGroup = (
-                    session.query(StreamGroup)
-                    .filter(StreamGroup.StreamGroupEmote == streamgroup_emoji)
+                sg: ChannelGroup = (
+                    session.query(ChannelGroup)
+                    .filter(ChannelGroup.ChannelGroupEmote == channelgroup_emoji)
                     .first()
                 )
-                Streamgroup._delete_group(session, sg)
+                Channelgroup._delete_group(session, sg)
 
         resLan = await self.client.send_response(
             Response.build_message(
@@ -657,17 +657,17 @@ class Course(PluginCommandMixin, Plugin):
         )
 
         try:
-            # get corresponding Streamgroup
-            if not streams:
+            # get corresponding Channelgroup
+            if not channels:
                 if opts.s:
-                    streams = opts.s
+                    channels = opts.s
                 else:
-                    streamgroup_name: str = "streams_" + name
-                    streams = Streamgroup._create_and_get_group(
-                        session, streamgroup_name, streamgroup_emoji
+                    channelgroup_name: str = "channels_" + name
+                    channels = Channelgroup._create_and_get_group(
+                        session, channelgroup_name, channelgroup_emoji
                     )
                     cleanup_opterations.append(
-                        lambda: Streamgroup._delete_group(session, streams)
+                        lambda: Channelgroup._delete_group(session, channels)
                     )
 
             # get corresponding Usergroup
@@ -757,19 +757,19 @@ class Course(PluginCommandMixin, Plugin):
                 )
 
             # get corresponding Channel for Tutors
-            tutors_stream: ZulipStream
+            tutors_channel: ZulipChannel
             if opts.tuts:
-                tutors_stream = opts.tuts
+                tutors_channel = opts.tuts
             else:
-                tutors_stream_name: str = name + " - Tutors"
-                tutors_stream_desc: list[str] = [f"Internal Channel for {name}-Tutors"]
+                tutors_channel_name: str = name + " - Tutors"
+                tutors_channel_desc: list[str] = [f"Internal Channel for {name}-Tutors"]
                 if lan == "de":
-                    tutors_stream_name = name + " - Tutoren"
-                    tutors_stream_desc = [
+                    tutors_channel_name = name + " - Tutoren"
+                    tutors_channel_desc = [
                         f"Interner Kanal für {name}-Tutoren"
                     ]
 
-                tut_ex = await self.client.get_stream_id_by_name(tutors_stream_name)
+                tut_ex = await self.client.get_channel_id_by_name(tutors_channel_name)
 
                 if tut_ex is not None:
                     result = await self.client.send_response(
@@ -789,17 +789,17 @@ class Course(PluginCommandMixin, Plugin):
                             "Ok, I will not create a new course then. Please choose another name."
                         )
                     else:
-                        await self.client.delete_stream(tut_ex)
+                        await self.client.delete_channel(tut_ex)
 
                 tutor_ids = Usergroup.get_user_ids_for_group(session, tutors)
                 tutor_ids.append(sender.id)
                 tutor_ids.append(self.client.id)
 
                 result = await self.client.add_subscriptions(
-                    streams=[
+                    channels=[
                         {
-                            "name": tutors_stream_name,
-                            "description": " ".join(tutors_stream_desc),
+                            "name": tutors_channel_name,
+                            "description": " ".join(tutors_channel_desc),
                         }
                     ],
                     principals=tutor_ids,
@@ -809,29 +809,29 @@ class Course(PluginCommandMixin, Plugin):
                 if result["result"] != "success":
                     raise DMError(result["msg"])
 
-                tutors_stream = ZulipStream(f"#**{tutors_stream_name}**")
-                await tutors_stream
+                tutors_channel = ZulipChannel(f"#**{tutors_channel_name}**")
+                await tutors_channel
 
                 cleanup_opterations.append(
-                    lambda: self.client.delete_stream(tutors_stream.id)
+                    lambda: self.client.delete_channel(tutors_channel.id)
                 )
 
             # get a corresponding Channel for Instructors or None
-            instructor_stream: ZulipStream | None = None
+            instructor_channel: ZulipChannel | None = None
             if opts.ins:
-                instructor_stream = opts.ins
+                instructor_channel = opts.ins
             else:
-                instructor_stream_name: str = name + " - Instructors"
-                instructor_stream_desc: list[str] = [
+                instructor_channel_name: str = name + " - Instructors"
+                instructor_channel_desc: list[str] = [
                     f"Internal Channel for Instructors of {name}"
                 ]
                 if lan == "de":
-                    instructor_stream_name = name + " - Instructors"
-                    instructor_stream_desc = [
+                    instructor_channel_name = name + " - Instructors"
+                    instructor_channel_desc = [
                         f"Interner Kanal für {name}-Instructors"
                     ]
 
-                ins_ex = await self.client.get_stream_id_by_name(instructor_stream_name)
+                ins_ex = await self.client.get_channel_id_by_name(instructor_channel_name)
 
                 if ins_ex is not None:
                     result = await self.client.send_response(
@@ -851,17 +851,17 @@ class Course(PluginCommandMixin, Plugin):
                             "Ok, I will not create a new course then. Please choose another name."
                         )
                     else:
-                        await self.client.delete_stream(ins_ex)
+                        await self.client.delete_channel(ins_ex)
 
                 instructor_ids = Usergroup.get_user_ids_for_group(session, instructors)
                 instructor_ids.append(sender.id)
                 instructor_ids.append(self.client.id)
 
                 result: dict[str, Any] = await self.client.add_subscriptions(
-                    streams=[
+                    channels=[
                         {
-                            "name": instructor_stream_name,
-                            "description": " ".join(instructor_stream_desc),
+                            "name": instructor_channel_name,
+                            "description": " ".join(instructor_channel_desc),
                         }
                     ],
                     principals=instructor_ids,
@@ -871,36 +871,36 @@ class Course(PluginCommandMixin, Plugin):
                 if result["result"] != "success":
                     raise DMError(result["msg"])
 
-                instructor_stream = ZulipStream(f"#**{instructor_stream_name}**")
-                await instructor_stream
+                instructor_channel = ZulipChannel(f"#**{instructor_channel_name}**")
+                await instructor_channel
 
                 cleanup_opterations.append(
-                    lambda: self.client.delete_stream(instructor_stream.id)
+                    lambda: self.client.delete_channel(instructor_channel.id)
                 )
             
             # get a corresponding (empty) Channel for anonymous Feedback or None
-            feedback_stream: ZulipStream | None = None
+            feedback_channel: ZulipChannel | None = None
             if opts.fb:
 
-                feedback_stream_name: str = name + " - Feedback"
-                feedback_stream_desc: list[str] = [
+                feedback_channel_name: str = name + " - Feedback"
+                feedback_channel_desc: list[str] = [
                     f"Anonymous Channel for Feedback to {name}"
                 ]
                 if lan == "de":
-                    feedback_stream_desc: list[str] = [
+                    feedback_channel_desc: list[str] = [
                         f"Anonymer Kanal für Feedback zu {name}"
                     ]
 
-                f_ex = await self.client.get_stream_id_by_name(feedback_stream_name)
+                f_ex = await self.client.get_channel_id_by_name(feedback_channel_name)
 
                 if ins_ex is not None:
-                        await self.client.delete_stream(f_ex)
+                        await self.client.delete_channel(f_ex)
 
                 result: dict[str, Any] = await self.client.add_subscriptions(
-                    streams=[
+                    channels=[
                         {
-                            "name": feedback_stream_name,
-                            "description": " ".join(feedback_stream_desc),
+                            "name": feedback_channel_name,
+                            "description": " ".join(feedback_channel_desc),
                         }
                     ],
                     principals=[sender.id, self.client.id],
@@ -909,25 +909,25 @@ class Course(PluginCommandMixin, Plugin):
                 if result["result"] != "success":
                     raise DMError(result["msg"])
 
-                feedback_stream: ZulipStream = ZulipStream(
-                    f"#**{feedback_stream_name}**"
+                feedback_channel: ZulipChannel = ZulipChannel(
+                    f"#**{feedback_channel_name}**"
                 )
-                await feedback_stream
+                await feedback_channel
 
                 cleanup_opterations.append(
-                    lambda: self.client.delete_stream(feedback_stream.id)
+                    lambda: self.client.delete_channel(feedback_channel.id)
                 )
 
             # create and add a Course to the DB
             course: CourseDB = CourseDB(
                 CourseName=name,
                 CourseLanguage=lan,
-                Streams=streams.StreamGroupId,
+                Channels=channels.ChannelGroupId,
                 TutorsUserGroup=tutors.GroupId,
                 InstructorsUserGroup=instructors.GroupId,
-                TutorStream=tutors_stream,
-                InstructorStream=instructor_stream,
-                FeedbackStream=feedback_stream,
+                TutorChannel=tutors_channel,
+                InstructorChannel=instructor_channel,
+                FeedbackChannel=feedback_channel,
             )
 
             session.add(course)
@@ -961,7 +961,7 @@ class Course(PluginCommandMixin, Plugin):
         long_opt="all",
         description="Add all standard steams to the course (Allgemein, Organisation, normal Feedback, Ankündigungen, Technik, Memes).",
     )
-    @opt("g", long_opt="general", description="Add a general stream.")
+    @opt("g", long_opt="general", description="Add a general channel.")
     @opt("o", long_opt="orga", description="Add a Channel for Organization.")
     @opt("fn", long_opt="feedbackbnorm", description="Add a normal  Channel for Feedback.")
     @opt("fa", long_opt="feedbackanon", description="Add an anonymous Channel for Feedback.")
@@ -981,15 +981,15 @@ class Course(PluginCommandMixin, Plugin):
         """
         course: CourseDB = args.course
         lan: str = course.CourseLanguage
-        streams_id: str = course.Streams
-        stremgroup: StreamGroup = (
-            session.query(StreamGroup)
-            .filter(StreamGroup.StreamGroupId == streams_id)
+        channels_id: str = course.Channels
+        stremgroup: ChannelGroup = (
+            session.query(ChannelGroup)
+            .filter(ChannelGroup.ChannelGroupId == channels_id)
             .first()
         )
 
         if opts.a:
-            await Course.add_standard_streams(
+            await Course.add_standard_channels(
                 self.client, session, course.CourseName, stremgroup, lan
             )
 
@@ -997,7 +997,7 @@ class Course(PluginCommandMixin, Plugin):
             if opts.fn and opts.fa:
                 raise DMError("You can only add one (normal OR anonymous) feedback channel at a time.")
             
-            await Course.add_standard_streams(
+            await Course.add_standard_channels(
                 self.client,
                 session,
                 course.CourseName,
@@ -1024,7 +1024,7 @@ class Course(PluginCommandMixin, Plugin):
     @opt(
         "a",
         long_opt="all",
-        description="Delete the whole course (Streamgroup, Usergroups, Channels).",
+        description="Delete the whole course (Channelgroup, Usergroups, Channels).",
     )
     @opt(
         "c",
@@ -1043,7 +1043,7 @@ class Course(PluginCommandMixin, Plugin):
     )
     @opt(
         "tuts",
-        long_opt="tutorial_stream",
+        long_opt="tutorial_channel",
         description="Delete also Channel for Tutors.",
     )
     @opt(
@@ -1062,11 +1062,11 @@ class Course(PluginCommandMixin, Plugin):
 
         course: CourseDB = args.course
         c_name = str(course.CourseName)
-        streams_id = str(course.Streams)
+        channels_id = str(course.Channels)
         tut_ug_id = int(course.TutorsUserGroup)
         ins_ug_id = int(course.InstructorsUserGroup)
-        tut_s: ZulipStream = course.TutorStream
-        ins_s: ZulipStream = course.InstructorStream
+        tut_s: ZulipChannel = course.TutorChannel
+        ins_s: ZulipChannel = course.InstructorChannel
 
         try:
             session.query(CourseDB).filter(
@@ -1078,23 +1078,23 @@ class Course(PluginCommandMixin, Plugin):
             raise DMError(f"Could not delete Course `{course.CourseName}`.") from e
 
         if opts.c or opts.a:
-            sg: StreamGroup = (
-                session.query(StreamGroup)
-                .filter(StreamGroup.StreamGroupId == streams_id)
+            sg: ChannelGroup = (
+                session.query(ChannelGroup)
+                .filter(ChannelGroup.ChannelGroupId == channels_id)
                 .first()
             )
 
-            strm: list[str] = await Streamgroup._get_stream_names(
+            strm: list[str] = await Channelgroup._get_channel_names(
                 session, self.client, [sg]
             )
-            await Streamgroup._remove_streams(session, self.client, sg, strm)
+            await Channelgroup._remove_channels(session, self.client, sg, strm)
 
-            Streamgroup._delete_group(session, sg)
+            Channelgroup._delete_group(session, sg)
 
             for s in strm:
-                sid = await self.client.get_stream_id_by_name(s)
+                sid = await self.client.get_channel_id_by_name(s)
                 if sid is not None:
-                    await self.client.delete_stream(sid)
+                    await self.client.delete_channel(sid)
 
         if opts.t or opts.a:
             ug: UserGroup = (
@@ -1109,10 +1109,10 @@ class Course(PluginCommandMixin, Plugin):
             Usergroup.delete_group(session, ug)
 
         if opts.tuts or opts.a:
-            await self.client.delete_stream(tut_s.id)
+            await self.client.delete_channel(tut_s.id)
 
         if (opts.ins or opts.a) and ins_s is not None:
-            await self.client.delete_stream(ins_s.id)
+            await self.client.delete_channel(ins_s.id)
 
         yield DMResponse(f"Course `{c_name}` deleted.")
 
@@ -1126,7 +1126,7 @@ class Course(PluginCommandMixin, Plugin):
     @opt(
         "c",
         long_opt="channelgroup",
-        type=StreamGroup.StreamGroupId,
+        type=ChannelGroup.ChannelGroupId,
         description="The id of an existing Channelgroup containing the Channels for this course.",
     )
     @opt(
@@ -1137,14 +1137,14 @@ class Course(PluginCommandMixin, Plugin):
     )
     @opt(
         "tuts",
-        long_opt="tutorial_stream",
-        type=ZulipStream,
+        long_opt="tutorial_channel",
+        type=ZulipChannel,
         description="The name of an existing Channel for Instructors.",
     )
     @opt(
         "ins",
         long_opt="instructor_channel",
-        type=ZulipStream,
+        type=ZulipChannel,
         description="The name of an existing Channel for Instructors.",
     )
     async def update(
@@ -1161,21 +1161,21 @@ class Course(PluginCommandMixin, Plugin):
         course: CourseDB = args.course
 
         if opts.s:
-            streams: StreamGroup = opts.s
-            Course._update_streamgroup(course, session, streams)
+            channels: ChannelGroup = opts.s
+            Course._update_channelgroup(course, session, channels)
 
         if opts.t:
             tutors: UserGroup = opts.t
             Course._update_tutorgroup(course, session, tutors)
 
         if opts.tuts:
-            tutstream: ZulipStream = opts.tuts
-            await Course._update_tutorstream(course, session, self.client, tutstream)
+            tutchannel: ZulipChannel = opts.tuts
+            await Course._update_tutorchannel(course, session, self.client, tutchannel)
 
         if opts.ins:
-            insstream: ZulipStream = opts.ins
-            await Course._update_instructorstream(
-                course, session, self.client, insstream
+            inschannel: ZulipChannel = opts.ins
+            await Course._update_instructorchannel(
+                course, session, self.client, inschannel
             )
 
     @command
@@ -1196,20 +1196,20 @@ class Course(PluginCommandMixin, Plugin):
         message: dict[str, Any],
     ) -> AsyncGenerator[response_type, None]:
         """
-        Clear a course (Channels/Tutors), but keep the underlying components (Streamgroup/UserGroup).
+        Clear a course (Channels/Tutors), but keep the underlying components (Channelgroup/UserGroup).
         """
         course: CourseDB = args.course
 
         if opts.s:
-            sg: StreamGroup | None = (
-                session.query(StreamGroup)
-                .filter(StreamGroup.StreamGroupId == course.Streams)
+            sg: ChannelGroup | None = (
+                session.query(ChannelGroup)
+                .filter(ChannelGroup.ChannelGroupId == course.Channels)
                 .first()
             )
-            streams: list[str] = Streamgroup._get_stream_names(
+            channels: list[str] = Channelgroup._get_channel_names(
                 session, self.client, [sg]
             )
-            Streamgroup._remove_streams(session, self.client, sg, streams)
+            Channelgroup._remove_channels(session, self.client, sg, channels)
 
         if opts.t:
             tutors: UserGroup = (
@@ -1237,11 +1237,11 @@ class Course(PluginCommandMixin, Plugin):
         courseName: str | None = None
         courseEmoji: str | None = None
         courseLan: str | None = None
-        courseStreams: StreamGroup | None = None
+        courseChannels: ChannelGroup | None = None
         courseTutors: UserGroup | None = None
         courseInstructors: UserGroup | None = None
-        courseTutorStream: ZulipStream | None = None
-        courseInstructorStream: ZulipStream | None = None
+        courseTutorChannel: ZulipChannel | None = None
+        courseInstructorChannel: ZulipChannel | None = None
 
         cleanup_opterations: list[Callable] = []
 
@@ -1337,10 +1337,10 @@ class Course(PluginCommandMixin, Plugin):
                         .filter(CourseDB.CourseName == result)
                         .one_or_none()
                     )
-                    sgName: str = "streams_" + result
-                    sg: StreamGroup | None = (
-                        session.query(StreamGroup)
-                        .filter(StreamGroup.StreamGroupId == sgName)
+                    sgName: str = "channels_" + result
+                    sg: ChannelGroup | None = (
+                        session.query(ChannelGroup)
+                        .filter(ChannelGroup.ChannelGroupId == sgName)
                         .one_or_none()
                     )
                     if c is None and sg is None:
@@ -1348,7 +1348,7 @@ class Course(PluginCommandMixin, Plugin):
                         break
                     else:
                         await dm(
-                            f"A Course or Streamgroup with the name `{result}` already exists. Please choose another name."
+                            f"A Course or Channelgroup with the name `{result}` already exists. Please choose another name."
                         )
 
             promptLan = await dm(
@@ -1360,53 +1360,53 @@ class Course(PluginCommandMixin, Plugin):
                 )
             )
 
-            # TODO: Create streamgroup
+            # TODO: Create channelgroup
             user_response = await confirm_input(
                 cleandoc(
                     """
-                                                         Now we will add a Streamgroup for your course.
-                                                         We can do this by using an already existing Streamgroup, creating a new Streamgroup with already existing Channels or creating a completely new empty Streamgroup.
-                                                         In every case, you can update the Streamgroup later.
+                                                         Now we will add a Channelgroup for your course.
+                                                         We can do this by using an already existing Channelgroup, creating a new Channelgroup with already existing Channels or creating a completely new empty Channelgroup.
+                                                         In every case, you can update the Channelgroup later.
 
-                                                         Do you want to use an existing Streamgroup for your course?
+                                                         Do you want to use an existing Channelgroup for your course?
                                                          """
                 )
             )
 
             if user_response:
-                # use existing streamgroup
+                # use existing channelgroup
                 while True:
                     user_response = await short_text_input(
-                        "Please provide the name of the Streamgroup."
+                        "Please provide the name of the Channelgroup."
                     )
                     if user_response is None:
                         continue
 
                     sg = (
-                        session.query(StreamGroup)
-                        .filter(StreamGroup.StreamGroupId == user_response)
+                        session.query(ChannelGroup)
+                        .filter(ChannelGroup.ChannelGroupId == user_response)
                         .one_or_none()
                     )
                     if sg is None:
-                        sgs = session.query(StreamGroup.StreamGroupId).all()
+                        sgs = session.query(ChannelGroup.ChannelGroupId).all()
                         closest = difflib.get_close_matches(user_response, sgs, n=1)
 
                         if closest:
                             await dm(
-                                f"A Streamgroup with the name `{user_response}` does not exist. Did you mean `{closest[0]}`?"
+                                f"A Channelgroup with the name `{user_response}` does not exist. Did you mean `{closest[0]}`?"
                             )
                         else:
                             await dm(
-                                f"A Streamgroup with the name `{user_response}` does not exist."
+                                f"A Channelgroup with the name `{user_response}` does not exist."
                             )
 
                         continue
 
-                    courseStreams = sg
+                    courseChannels = sg
                     break
             else:
                 await dm(
-                    "Great, so let's create a new Streamgroup by choosing an emoji for the course :bothappy:"
+                    "Great, so let's create a new Channelgroup by choosing an emoji for the course :bothappy:"
                 )
 
                 while True:
@@ -1424,8 +1424,8 @@ class Course(PluginCommandMixin, Plugin):
                             continue
 
                         sg = (
-                            session.query(StreamGroup)
-                            .filter(StreamGroup.StreamGroupEmote == emote)
+                            session.query(ChannelGroup)
+                            .filter(ChannelGroup.ChannelGroupEmote == emote)
                             .one_or_none()
                         )
                         if sg is None:
@@ -1437,48 +1437,48 @@ class Course(PluginCommandMixin, Plugin):
                             )
 
                 user_response = await confirm_input(
-                    f"Do you want to create the Streamgroup {courseEmoji} from a list of Stream-Name-Regexes?"
+                    f"Do you want to create the Channelgroup {courseEmoji} from a list of Channel-Name-Regexes?"
                 )
                 if user_response:
                     # enter list of names
                     while True:
 
                         user_response = await short_text_input(
-                            "Please enter a list of Channels in the format 'StreamNameRegex1,StreamNameRegex2, ..., StreamNameRegexN'"
+                            "Please enter a list of Channels in the format 'ChannelNameRegex1,ChannelNameRegex2, ..., ChannelNameRegexN'"
                         )
                         if user_response is None:
                             continue
                         else:
                             # parse Channel Names
-                            streamgroup_name: str = "streams_" + courseName
-                            courseStreams: StreamGroup = (
-                                Streamgroup._create_and_get_group(
-                                    session, streamgroup_name, courseEmoji
+                            channelgroup_name: str = "channels_" + courseName
+                            courseChannels: ChannelGroup = (
+                                Channelgroup._create_and_get_group(
+                                    session, channelgroup_name, courseEmoji
                                 )
                             )
                             cleanup_opterations.append(
-                                lambda s=courseStreams: Streamgroup._delete_group(
+                                lambda s=courseChannels: Channelgroup._delete_group(
                                     session, s
                                 )
                             )
 
-                            streams = user_response.split(",")
-                            await Streamgroup.add_streams(
-                                self.client, session, sender, courseStreams, streams
+                            channels = user_response.split(",")
+                            await Channelgroup.add_channels(
+                                self.client, session, sender, courseChannels, channels
                             )
                             break
 
                 else:
-                    # create empty Streamgroup
-                    streamgroup_name = "streams_" + courseName
-                    courseStreams = Streamgroup._create_and_get_group(
-                        session, streamgroup_name, courseEmoji
+                    # create empty Channelgroup
+                    channelgroup_name = "channels_" + courseName
+                    courseChannels = Channelgroup._create_and_get_group(
+                        session, channelgroup_name, courseEmoji
                     )
                     cleanup_opterations.append(
-                        lambda s=courseStreams: Streamgroup._delete_group(session, s)
+                        lambda s=courseChannels: Channelgroup._delete_group(session, s)
                     )
 
-            # add default Streams
+            # add default Channels
             resultG = await confirm_input(
                 "Now you can add the default Channels to your course.\nDo you want to add a general Channel to your course?"
             )
@@ -1496,11 +1496,11 @@ class Course(PluginCommandMixin, Plugin):
             )
 
             # wizard adds Feedback and Announcement per default to improve the communication between instructors and students (they have to be removed manually)
-            await Course.add_standard_streams(
+            await Course.add_standard_channels(
                 client=self.client,
                 session=session,
                 name=courseName,
-                sg=courseStreams,
+                sg=courseChannels,
                 lan=courseLan,
                 principals=[self.client.id, sender.id],
                 g=resultG,
@@ -1699,13 +1699,13 @@ class Course(PluginCommandMixin, Plugin):
             Usergroup.add_user_to_group(session, sender, courseInstructors)
 
             # get a corresponding Channel for Tutors
-            tutors_stream_name = courseName + " - Tutors"
-            tutors_stream_desc = [f"Internal Channel for {courseName}-Tutors"]
+            tutors_channel_name = courseName + " - Tutors"
+            tutors_channel_desc = [f"Internal Channel for {courseName}-Tutors"]
             if courseLan == "de":
-                tutors_stream_name = courseName + " - Tutoren"
-                tutors_stream_desc = [f"Interner Kanal für {courseName}-Tutoren"]
+                tutors_channel_name = courseName + " - Tutoren"
+                tutors_channel_desc = [f"Interner Kanal für {courseName}-Tutoren"]
 
-            tut_ex = await self.client.get_stream_id_by_name(tutors_stream_name)
+            tut_ex = await self.client.get_channel_id_by_name(tutors_channel_name)
 
             if tut_ex is not None:
                 resultts = await confirm_input(
@@ -1714,14 +1714,14 @@ class Course(PluginCommandMixin, Plugin):
                 if not result:
                     while True:
                         res = await short_text_input(
-                            "Please choose another name for the Tutor-Stream."
+                            "Please choose another name for the Tutor-Channel."
                         )
                         if res is None:
-                            await dm("Please provide a name for the Stream.")
+                            await dm("Please provide a name for the Channel.")
                         else:
-                            tut_ex = await self.client.get_stream_id_by_name(res)
+                            tut_ex = await self.client.get_channel_id_by_name(res)
                             if tut_ex is None:
-                                tutors_stream_name = res
+                                tutors_channel_name = res
                                 break
                             else:
                                 await dm(
@@ -1729,7 +1729,7 @@ class Course(PluginCommandMixin, Plugin):
                                 )
 
                 else:
-                    await self.client.delete_stream(tut_ex)
+                    await self.client.delete_channel(tut_ex)
 
             tutor_ids = Usergroup.get_user_ids_for_group(session, courseTutors)
             tutor_ids.append(sender.id)
@@ -1737,10 +1737,10 @@ class Course(PluginCommandMixin, Plugin):
 
             exit_and_inform_on_error(
                 await self.client.add_subscriptions(
-                    streams=[
+                    channels=[
                         {
-                            "name": tutors_stream_name,
-                            "description": " ".join(tutors_stream_desc),
+                            "name": tutors_channel_name,
+                            "description": " ".join(tutors_channel_desc),
                         }
                     ],
                     principals=tutor_ids,
@@ -1749,11 +1749,11 @@ class Course(PluginCommandMixin, Plugin):
                 )
             )
 
-            courseTutorStream = ZulipStream(f"#**{tutors_stream_name}**")
-            await courseTutorStream
+            courseTutorChannel = ZulipChannel(f"#**{tutors_channel_name}**")
+            await courseTutorChannel
 
             cleanup_opterations.append(
-                lambda id=courseTutorStream.id: self.client.delete_stream(id)
+                lambda id=courseTutorChannel.id: self.client.delete_channel(id)
             )
 
             # get a corresponding Channel for Instructors or None
@@ -1762,17 +1762,17 @@ class Course(PluginCommandMixin, Plugin):
             )
             if resultis is not None:
 
-                instructor_stream_name = courseName + " - Instructors"
-                instructor_stream_desc = [
+                instructor_channel_name = courseName + " - Instructors"
+                instructor_channel_desc = [
                     f"Internal Channel for Instructors of {courseName}"
                 ]
                 if courseLan == "de":
-                    instructor_stream_name = courseName + " - Instructors"
-                    instructor_stream_desc = [
+                    instructor_channel_name = courseName + " - Instructors"
+                    instructor_channel_desc = [
                         f"Interner Kanal für {courseName}-Instructors"
                     ]
 
-                ins_ex = await self.client.get_stream_id_by_name(instructor_stream_name)
+                ins_ex = await self.client.get_channel_id_by_name(instructor_channel_name)
 
                 if ins_ex is not None:
                     result = await confirm_input(
@@ -1781,15 +1781,15 @@ class Course(PluginCommandMixin, Plugin):
                     if not result:
                         while True:
                             res = await short_text_input(
-                                "Please choose another name for the Instructor-Stream."
+                                "Please choose another name for the Instructor-Channel."
                             )
                             if res is None:
-                                await dm("Please provide a name for the Stream.")
+                                await dm("Please provide a name for the Channel.")
 
                             else:
-                                ins_ex = await self.client.get_stream_id_by_name(res)
+                                ins_ex = await self.client.get_channel_id_by_name(res)
                                 if ins_ex is None:
-                                    instructor_stream_name = res
+                                    instructor_channel_name = res
                                     break
                                 else:
                                     await dm(
@@ -1797,7 +1797,7 @@ class Course(PluginCommandMixin, Plugin):
                                     )
 
                     else:
-                        await self.client.delete_stream(tut_ex)
+                        await self.client.delete_channel(tut_ex)
 
                 instructor_ids = Usergroup.get_user_ids_for_group(
                     session, courseInstructors
@@ -1807,10 +1807,10 @@ class Course(PluginCommandMixin, Plugin):
 
                 exit_and_inform_on_error(
                     await self.client.add_subscriptions(
-                        streams=[
+                        channels=[
                             {
-                                "name": instructor_stream_name,
-                                "description": " ".join(instructor_stream_desc),
+                                "name": instructor_channel_name,
+                                "description": " ".join(instructor_channel_desc),
                             }
                         ],
                         principals=instructor_ids,
@@ -1819,31 +1819,31 @@ class Course(PluginCommandMixin, Plugin):
                     )
                 )
 
-                courseInstructorStream = ZulipStream(f"#**{instructor_stream_name}**")
-                await courseInstructorStream
+                courseInstructorChannel = ZulipChannel(f"#**{instructor_channel_name}**")
+                await courseInstructorChannel
 
                 cleanup_opterations.append(
-                    lambda ID=courseInstructorStream.id: self.client.delete_stream(ID)
+                    lambda ID=courseInstructorChannel.id: self.client.delete_channel(ID)
                 )
 
-                courseFeedbackStream: ZulipStream | None = None
+                courseFeedbackChannel: ZulipChannel | None = None
                 if resultF:
-                    courseFeedbackStream = ZulipStream(
+                    courseFeedbackChannel = ZulipChannel(
                         f"#**{courseName} - Feedback**"
                     )
-                    await courseFeedbackStream
+                    await courseFeedbackChannel
 
 
                 # create and add a Course to the DB
                 course: CourseDB = CourseDB(
                     CourseName=courseName,
                     CourseLanguage=courseLan,
-                    Streams=courseStreams.StreamGroupId,
+                    Channels=courseChannels.ChannelGroupId,
                     TutorsUserGroup=courseTutors.GroupId,
                     InstructorsUserGroup=courseInstructors.GroupId,
-                    TutorStream=courseTutorStream,
-                    InstructorStream=courseInstructorStream,
-                    FeedbackStream=courseFeedbackStream
+                    TutorChannel=courseTutorChannel,
+                    InstructorChannel=courseInstructorChannel,
+                    FeedbackChannel=courseFeedbackChannel
                 )
 
                 session.add(course)
@@ -1877,11 +1877,11 @@ class Course(PluginCommandMixin, Plugin):
     #       CLASS METHODS
     # ========================================================================================================================
     @staticmethod
-    async def add_standard_streams(
+    async def add_standard_channels(
         client: AsyncClient,
         session: Session,
         name: str,
-        sg: StreamGroup,
+        sg: ChannelGroup,
         lan: Literal["en", "de"],
         principals: list[int] | None,
         g: bool = True,
@@ -1898,7 +1898,7 @@ class Course(PluginCommandMixin, Plugin):
         else:
             principals.append(client.id)
 
-        streams = []
+        channels = []
         for opt, suffix_en, suffix_de, desc_en, desc_de in [
             (
                 g,
@@ -1957,36 +1957,36 @@ class Course(PluginCommandMixin, Plugin):
             desc = desc_en if lan == "en" else desc_de
             full_name = name + " - " + suffix
 
-            streams.append({"name": full_name, "description": desc})
+            channels.append({"name": full_name, "description": desc})
 
         try:
             result: dict[str, Any] = await client.add_subscriptions(
-                streams=streams, principals=principals
+                channels=channels, principals=principals
             )
 
             if result["result"] != "success":
-                raise DMError("Could not add standard streams to the course.")
+                raise DMError("Could not add standard channels to the course.")
 
-            to_add = [ZulipStream(f"#**{s['name']}**") for s in streams]
+            to_add = [ZulipChannel(f"#**{s['name']}**") for s in channels]
 
             for s in to_add:
                 await s
 
-            Streamgroup._add_zulip_streams(session, to_add, sg)
+            Channelgroup._add_zulip_channels(session, to_add, sg)
 
             if fa:
                 fb = next(s for s in to_add if f"{name} - Feedback" in s.name)
-                session.query(CourseDB).filter(CourseDB.CourseName == name).update({'FeedbackStream': fb})
+                session.query(CourseDB).filter(CourseDB.CourseName == name).update({'FeedbackChannel': fb})
                 session.commit()
 
 
         except Exception as e:
             session.rollback()
 
-            for s in streams:
-                sid = await client.get_stream_id_by_name(s["name"])
+            for s in channels:
+                sid = await client.get_channel_id_by_name(s["name"])
                 if sid is not None:
-                    await client.delete_stream(sid)
+                    await client.delete_channel(sid)
 
             raise DMError(
                 f"Something went wrong when creating the default channels :botsad:"
@@ -2023,20 +2023,20 @@ class Course(PluginCommandMixin, Plugin):
         )
 
     @staticmethod
-    def _get_streamgroup(course: CourseDB, session: Session) -> StreamGroup:
+    def _get_channelgroup(course: CourseDB, session: Session) -> ChannelGroup:
         """
-        Get the StreamGroup of a given Course.
+        Get the ChannelGroup of a given Course.
         """
-        ID = int(course.Streams)
-        return session.query(StreamGroup).filter(StreamGroup.StreamGroupId == ID).one()
+        ID = int(course.Channels)
+        return session.query(ChannelGroup).filter(ChannelGroup.ChannelGroupId == ID).one()
 
     @staticmethod
     def _get_emoji(course: CourseDB, session: Session) -> str:
         """
-        Get the Emoji of the StreamGroup associated with a given Course.
+        Get the Emoji of the ChannelGroup associated with a given Course.
         """
-        sg: StreamGroup = Course._get_streamgroup(course, session)
-        return str(sg.StreamGroupEmote)
+        sg: ChannelGroup = Course._get_channelgroup(course, session)
+        return str(sg.ChannelGroupEmote)
 
     @staticmethod
     def _get_tutorgroup(course: CourseDB, session: Session) -> UserGroup:
@@ -2071,48 +2071,48 @@ class Course(PluginCommandMixin, Plugin):
         return Usergroup.get_users_for_group(session, ug)
 
     @staticmethod
-    def _get_streams(course: CourseDB, session: Session) -> list[ZulipStream]:
+    def _get_channels(course: CourseDB, session: Session) -> list[ZulipChannel]:
         """
-        Get the Channels of a Course as list of ZulipStreams.
+        Get the Channels of a Course as list of ZulipChannels.
         """
-        sg: StreamGroup = Course._get_streamgroup(course, session)
-        return Streamgroup._get_streams(session, sg)
+        sg: ChannelGroup = Course._get_channelgroup(course, session)
+        return Channelgroup._get_channels(session, sg)
 
     @staticmethod
-    async def _get_stream_names(
+    async def _get_channel_names(
         session: Session, client: AsyncClient, course: CourseDB
     ) -> list[str]:
         """
         Get the Channel Names of a Course as list of strings.
         """
-        sg: StreamGroup = Course._get_streamgroup(course, session)
-        return await Streamgroup._get_stream_names(session, client, [sg])
+        sg: ChannelGroup = Course._get_channelgroup(course, session)
+        return await Channelgroup._get_channel_names(session, client, [sg])
 
     @staticmethod
-    def _update_streamgroup(
-        course: CourseDB, session: Session, group: StreamGroup
+    def _update_channelgroup(
+        course: CourseDB, session: Session, group: ChannelGroup
     ) -> None:
         """
-        Set the StreamGroup of a given Course.
+        Set the ChannelGroup of a given Course.
         """
-        oldSG: StreamGroup = Course._get_streamgroup(course, session)
+        oldSG: ChannelGroup = Course._get_channelgroup(course, session)
         if oldSG == group:
-            raise DMError("The given Streamgroup is already set for this course.")
+            raise DMError("The given Channelgroup is already set for this course.")
 
         stmt = (
             update(CourseDB)
             .where(CourseDB.CourseId == course.CourseId)
-            .values(Streams=group)
+            .values(Channels=group)
         )
         try:
             session.execute(stmt)
-            session.query(StreamGroup).filter(
-                StreamGroup.StreamGroupId == oldSG.StreamGroupId
+            session.query(ChannelGroup).filter(
+                ChannelGroup.ChannelGroupId == oldSG.ChannelGroupId
             ).delete()
             session.commit()
         except sqlalchemy.exc.IntegrityError as e:
             session.rollback()
-            raise DMError("Could not update Streamgroup :botsad:")
+            raise DMError("Could not update Channelgroup :botsad:")
 
     @staticmethod
     def _update_tutorgroup(
@@ -2167,14 +2167,14 @@ class Course(PluginCommandMixin, Plugin):
             raise DMError("Could not update Instructors :botsad:")
 
     @staticmethod
-    async def _update_tutorstream(
-        course: CourseDB, session: Session, client: AsyncClient, stream: ZulipStream
+    async def _update_tutorchannel(
+        course: CourseDB, session: Session, client: AsyncClient, channel: ZulipChannel
     ) -> None:
         """
         Set the Tutor-Channel of a given Course.
         """
-        oldTS = course.TutorStream
-        if oldTS == stream:
+        oldTS = course.TutorChannel
+        if oldTS == channel:
             raise DMError(
                 "The given Channel is already set as Tutor-Channel for this course."
             )
@@ -2182,7 +2182,7 @@ class Course(PluginCommandMixin, Plugin):
         stmt = (
             update(CourseDB)
             .where(CourseDB.CourseId == course.CourseId)
-            .values(TutorStream=stream)
+            .values(TutorChannel=channel)
         )
         try:
             session.execute(stmt)
@@ -2191,17 +2191,17 @@ class Course(PluginCommandMixin, Plugin):
             session.rollback()
             raise DMError("Could not update Tutor-Channel :botsad:")
 
-        await client.delete_stream(oldTS.id)
+        await client.delete_channel(oldTS.id)
 
     @staticmethod
-    async def _update_instructorstream(
-        course: CourseDB, session: Session, client: AsyncClient, stream: ZulipStream
+    async def _update_instructorchannel(
+        course: CourseDB, session: Session, client: AsyncClient, channel: ZulipChannel
     ) -> None:
         """
         Set the Instructor-Channel of a given Course.
         """
-        oldIS: ZulipStream = course.InstructorStream
-        if oldIS == stream:
+        oldIS: ZulipChannel = course.InstructorChannel
+        if oldIS == channel:
             raise DMError(
                 "The given Channel is already set as Instructor-Channel for this course."
             )
@@ -2209,7 +2209,7 @@ class Course(PluginCommandMixin, Plugin):
         stmt = (
             update(CourseDB)
             .where(CourseDB.CourseId == course.CourseId)
-            .values(InstructorStream=stream)
+            .values(InstructorChannel=channel)
         )
         try:
             session.execute(stmt)
@@ -2218,4 +2218,4 @@ class Course(PluginCommandMixin, Plugin):
             session.rollback()
             raise DMError("Could not update Instructor-Channel :botsad:")
 
-        await client.delete_stream(oldIS.id)
+        await client.delete_channel(oldIS.id)
