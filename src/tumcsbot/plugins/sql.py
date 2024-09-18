@@ -3,14 +3,14 @@
 # See LICENSE file for copyright and license details.
 # TUM CS Bot - https://github.com/ro-i/tumcsbot
 
-from typing import Any, Iterable
+from typing import Any, AsyncGenerator
 
 from sqlalchemy import text
 
 from tumcsbot.lib.db import DB
 from tumcsbot.lib.response import Response
-from tumcsbot.lib.types import DMResponse, Privilege
-from tumcsbot.plugin import PluginCommandMixin,Plugin
+from tumcsbot.lib.types import DMResponse, Privilege, response_type
+from tumcsbot.plugin import PluginCommandMixin, Plugin
 from tumcsbot.plugin_decorators import arg, command, privilege
 
 
@@ -29,7 +29,7 @@ class Source(PluginCommandMixin, Plugin):
         args: Any,
         _opts: Any,
         _message: dict[str, Any],
-    ) -> Iterable[Response]:
+    ) -> AsyncGenerator[response_type, None]:
         """
         Execute a SELECT SQL command in the bot's database.
         """

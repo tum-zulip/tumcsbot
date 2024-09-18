@@ -29,7 +29,7 @@ class UserInput(Plugin):
             }
         )
         if response["result"] != "success":
-            logging.error(f"Could not get previous message: {response}")
+            logging.error("Could not get previous message: %s", response)
             return {}
 
         msg = response["messages"][0]

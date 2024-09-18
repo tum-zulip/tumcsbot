@@ -144,7 +144,7 @@ class GCConfig(PluginCommandMixin, Plugin):
         args: CommandParser.Args,
         _opts: CommandParser.Opts,
         _message: dict[str, Any],
-    ) -> Iterable[Response]:
+    ) -> AsyncGenerator[response_type, None]:
         """
         Ignore channels by the garbage collector.
         """
@@ -171,33 +171,3 @@ class GCConfig(PluginCommandMixin, Plugin):
         for s in channels:
             await s
 
-    @command
-    async def test(
-        self,
-        sender: ZulipUser,
-        _session,
-        args: CommandParser.Args,
-        opts: CommandParser.Opts,
-        message: dict[str, Any],
-    ) -> AsyncGenerator[response_type, None]:
-        response1 = await self.client.send_response(
-            Response.build_message(message, "Test successful.")
-        )
-
-        response2 = await self.client.send_response(
-            Response.build_message(
-                None, "Test successful.", to=[sender.id, 10], msg_type="private"
-            )
-        )
-
-        coro1 = UserInput.choose(self.client, response1["id"], ["check", "cross_mark"])
-        coro2 = UserInput.choose(self.client, response2["id"], ["check", "cross_mark"])
-
-        res = await asyncio.gather(coro1, coro2)
-
-        emote1, msg1 = res[0]
-        emote2, msg2 = res[1]
-
-        yield DMResponse(f"Test successful. {emote1} {emote2}")
-        yield DMResponse(f"{msg1}")
-        yield DMResponse(f"{msg2}")

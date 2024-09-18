@@ -22,7 +22,7 @@ from tumcsbot.lib.types import (
     CommandConfig,
 )
 from tumcsbot.lib.db import DB
-from tumcsbot.plugin_decorators import DMError
+from tumcsbot.lib.types import DMError
 from tumcsbot.lib.utils import get_classes_from_path
 
 HELP_TEMPLATE = cleandoc(
@@ -92,7 +92,7 @@ class Help(PluginCommandMixin, Plugin):
             else:
                 plugins = session.query(PluginTable).all()
 
-        result: CommandConfig = [
+        result: list[CommandConfig] = [
             CommandConfig.from_dict(json.loads(str(p.config)))
             for p in plugins
             if p is not None

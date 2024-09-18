@@ -15,7 +15,7 @@ from tumcsbot.plugin_decorators import (
     privilege,
     arg,
 )
-from tumcsbot.lib.types import Privilege, response_type, ZulipUser, DMResponse
+from tumcsbot.lib.types import Privilege, response_type, ZulipUser, DMResponse, DMError
 
 
 class Messages(TableBase):  # type: ignore
@@ -57,8 +57,8 @@ class Msg(PluginCommandMixin, Plugin):
         try:
             session.add(Messages(MsgId=ident, MsgText=args.text))
             session.commit()
-        except sqlalchemy.exc.IntegrityError:
-            raise DMError(f"Identifier {ident} already exists.")
+        except sqlalchemy.exc.IntegrityError as e:
+            raise DMError(f"Identifier {ident} already exists.") from e
         yield DMResponse(f"Message with identifier {ident} added.")
 
     @command

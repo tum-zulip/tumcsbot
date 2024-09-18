@@ -26,15 +26,13 @@ from abc import ABC, abstractmethod
 import threading
 from typing import Any, Callable, Iterable, Type, TypeVar, final
 
+from sqlalchemy import Column, String
 
 from tumcsbot.lib.client import AsyncClient, PluginContext
 from tumcsbot.lib.conf import Conf
 from tumcsbot.lib.response import Response, StrEnum
 from tumcsbot.lib.command_parser import CommandParser
 from tumcsbot.lib.db import DB, TableBase
-
-from sqlalchemy import Column, String
-
 from tumcsbot.lib.types import AsyncClientMixin, CommandConfig, ZulipUser
 
 

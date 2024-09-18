@@ -91,9 +91,9 @@ class GarbageCollector(Plugin):
                 if bot_owner is None:
                     logging.error("bot_owner is not set")
                     return
-                else:
-                    bot_owner = ZulipUser(int(bot_owner))
-                    await bot_owner
+                
+                bot_owner = ZulipUser(int(bot_owner))
+                await bot_owner
 
                 channels_to_collect: dict[int, ZulipChannel] = {}
                 channel_admin_members: dict[int, frozenset[ZulipUser]] = {}

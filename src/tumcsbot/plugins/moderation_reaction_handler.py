@@ -10,6 +10,7 @@ Provide also an interactive command so administrators are able to
 change the alert words and specify the emojis to use for the reactions.
 """
 
+import urllib
 from typing import Any, Iterable, Callable
 
 from tumcsbot.lib.response import Response
@@ -17,7 +18,6 @@ from tumcsbot.lib.types import ZulipChannel, ZulipUser
 from tumcsbot.plugin import Event, Plugin
 from tumcsbot.lib.db import DB
 
-import urllib
 
 from tumcsbot.plugins.moderate import (
     ReactionAction,
@@ -116,12 +116,12 @@ class ModerationReactionHandler(Plugin):
 
             responses = []
             for action in actions:
-                type = action.Action
+                ty = action.Action
                 data = action.Data
-                if type == "delete":
+                if ty == "delete":
                     await self.client.delete_message(mid)
 
-                elif type == "respond":
+                elif ty == "respond":
                     responses.append(
                         Response.build_message(
                             message,
@@ -131,7 +131,7 @@ class ModerationReactionHandler(Plugin):
                         )
                     )
 
-                elif type == "dm":
+                elif ty == "dm":
                     responses.append(
                         Response.build_message(
                             message=None,

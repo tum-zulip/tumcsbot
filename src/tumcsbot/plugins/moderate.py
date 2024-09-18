@@ -295,7 +295,7 @@ class Moderate(PluginCommandMixin, Plugin):
         session: Session,
         args: CommandParser.Args,
         opts: CommandParser.Opts,
-        message: dict[str, Any],
+        _message: dict[str, Any],
     ) -> AsyncGenerator[response_type, None]:
         user: ZulipUser
 
@@ -386,11 +386,11 @@ class Moderate(PluginCommandMixin, Plugin):
     )
     async def authorize(
         self,
-        sender: ZulipUser,
+        _sender: ZulipUser,
         session: Session,
         args: CommandParser.Args,
         opts: CommandParser.Opts,
-        message: dict[str, Any],
+        _message: dict[str, Any],
     ) -> AsyncGenerator[response_type, None]:
         moderation_config: ModerationConfig = args.moderation_config
         group: UserGroup | None = opts.group
@@ -426,11 +426,12 @@ class Moderate(PluginCommandMixin, Plugin):
                 yield DMMessage(
                     member,
                     cleandoc(
-                    f"""
+                        f"""
                         Hey,
                         The group '{group.GroupName}' you are a member of has been granted moderation rights for `{moderation_config.ModerationConfigName}`.
                         *hint: use the moderate command for more information*
-                    """),
+                    """
+                    ),
                 )
             yield DMResponse(
                 f"Notified members of group '{group.GroupName}' about the new moderation rights."

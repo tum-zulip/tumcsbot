@@ -20,7 +20,7 @@ class Ping(Plugin):
     """
     zulip_events = ["message"]
 
-    def handle_event(self, event: Event) -> Response | Iterable[Response]:
+    async def handle_event(self, event: Event) -> Response | Iterable[Response]:
         return Response.build_reaction(event.data["message"], "wave")
 
     async def is_responsible(self, event: Event) -> bool:

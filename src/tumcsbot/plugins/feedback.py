@@ -20,6 +20,7 @@ from tumcsbot.lib.types import (
     ZulipUser,
 )
 
+
 class Feedback(PluginCommandMixin, Plugin):
     """
     Give anonymous feedback on courses
@@ -42,10 +43,20 @@ class Feedback(PluginCommandMixin, Plugin):
         course : Course | None  = None
 
         prompt1 = await self.client.send_response(Response.build_message(message, content="What is the name of the course you want to give Feedback to?"))
+        course: Course | None = None
+
+        prompt1 = await self.client.send_response(
+            Response.build_message(
+                message,
+                content="What is the name of the course you want to give Feedback to?",
+            )
+        )
         if prompt1["result"] != "success":
             raise DMError("Could not send message to user")
 
-        result1, _ = await UserInput.short_text_response(self.client, prompt1["id"], timeout=60)
+        result1, _ = await UserInput.short_text_response(
+            self.client, prompt1["id"], timeout=60
+        )
         if result1 is None:
             raise DMError("No response from user")
 
@@ -61,31 +72,56 @@ class Feedback(PluginCommandMixin, Plugin):
         # TODO: @Janez Rotman
         max_topic_length = 60
         topic : str = "New Feedback"
+        topic: str = f"New Feedback"
 
-        prompt2 = await self.client.send_response(Response.build_message(message, content=f"In which (new) topic do you want to write your Feedback (max. {max_topic_length} Characters)?\n If no topic is given, the default topic `New Feedback` will be used."))
+        prompt2 = await self.client.send_response(
+            Response.build_message(
+                message,
+                content=f"In which (new) topic do you want to write your Feedback (max. {max_topic_length} Characters)?\n If no topic is given, the default topic `New Feedback` will be used.",
+            )
+        )
         if prompt2["result"] != "success":
             raise DMError("Could not send message to user")
 
-        result2, _ = await UserInput.short_text_response(self.client, prompt2["id"], timeout=60, allow_spaces=True,max_length=max_topic_length)
+        result2, _ = await UserInput.short_text_response(
+            self.client,
+            prompt2["id"],
+            timeout=60,
+            allow_spaces=True,
+            max_length=max_topic_length,
+        )
         if result2 is not None and len(result2) <= max_topic_length:
             topic = result2
 
-
-        prompt3 = await self.client.send_response(Response.build_message(message, content="Now you have 10 minutes to write your Feedback, please remember to be respectful and constructive:"))
+        prompt3 = await self.client.send_response(
+            Response.build_message(
+                message,
+                content="Now you have 10 minutes to write your Feedback, please remember to be respectful and constructive:",
+            )
+        )
         if prompt3["result"] != "success":
             raise DMError("Could not send message to user")
 
-        result3, _ = await UserInput.short_text_response(self.client, prompt3["id"], timeout=600, allow_spaces=True)
+        result3, _ = await UserInput.short_text_response(
+            self.client, prompt3["id"], timeout=600, allow_spaces=True
+        )
         if result3 is None:
             raise DMError("No response from user")
+        else:
+            response = await self.client.send_message(
+                {
+                    "type": "stream",
+                    "to": course.FeedbackChannel.id,
+                    "topic": topic,
+                    "content": result3,
+                }
+            )
 
-        response = await self.client.send_message({"type": "stream",
-                                        "to": course.FeedbackChannel.id, 
-                                        "topic": topic, 
-                                        "content": result3
-                                        })
+            if response["result"] != "success":
+                raise DMError(
+                    "Something went wrong when sending your message to the Feedback-Channel :botsweat:"
+                )
 
-        if response["result"] != "success":
-            raise DMError("Something went wrong when sending your message to the Feedback-Channel :botsweat:")
-
-        yield DMResponse("Your Feedback is now sent to the Feedback-Channel of the course :bothappy:")
+        yield DMResponse(
+            "Your Feedback is now sent to the Feedback-Channel of the course :bothappy:"
+        )
