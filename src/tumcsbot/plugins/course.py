@@ -1714,7 +1714,7 @@ class Course(PluginCommandMixin, Plugin):
                             names = result2ci.split(",")
 
                             for name in names:
-                                real_name : str | None = Regex.get_user_name(name)
+                                real_name = Regex.get_user_name(name)
                                 if real_name is None:
                                     await dm(
                                         f"Could not find a user with the name {name}."

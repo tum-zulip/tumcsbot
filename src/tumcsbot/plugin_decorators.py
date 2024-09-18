@@ -176,7 +176,7 @@ def opt(
                     f"Error: Cannot use both short and long options for `{opt}`"
                 )
 
-            if opt_value:
+            if long_opt and opt_value:
                 setattr(opts, long_opt, opt_value)
             elif long_opt:
                 setattr(opts, opt, long_opt_value)

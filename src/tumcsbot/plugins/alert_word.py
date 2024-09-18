@@ -19,8 +19,7 @@ from tumcsbot.lib.response import Response
 from tumcsbot.lib.regex import Regex
 from tumcsbot.lib.command_parser import CommandParser
 from tumcsbot.lib.db import DB, Session, TableBase
-from tumcsbot.lib.types import Privilege, ZulipUser
-from tumcsbot.lib.types import response_type
+from tumcsbot.lib.types import Privilege, ZulipUser, DMResponse, response_type
 from tumcsbot.plugin import Event, PluginCommandMixin, Plugin
 from tumcsbot.plugin_decorators import command, privilege, arg
 
@@ -114,7 +113,9 @@ class AlertWord(PluginCommandMixin, Plugin):
         """
         session.merge(Alert(Phrase=args.alert_phrase.lower(), Emoji=args.emoji))
         session.commit()
-        yield Response.ok(message)
+        yield DMResponse(
+            f"Alert word `{args.alert_phrase}` added with emoji `{args.emoji}`."
+        )
 
     @command
     @privilege(Privilege.ADMIN)
@@ -133,7 +134,7 @@ class AlertWord(PluginCommandMixin, Plugin):
         alert_phrase: str = args.alert_phrase.lower()
         session.query(Alert).filter(Alert.Phrase == alert_phrase).delete()
         session.commit()
-        yield Response.ok(message)
+        yield DMResponse(f"Alert word `{alert_phrase}` removed.")
 
     async def handle_event(self, event: Event) -> Response | Iterable[Response]:
         if (

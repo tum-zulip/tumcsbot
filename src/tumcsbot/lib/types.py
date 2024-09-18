@@ -1,6 +1,6 @@
 from __future__ import annotations
 from abc import ABC, abstractmethod
-from typing import Any, AsyncGenerator, Callable, Coroutine, cast
+from typing import Any, AsyncGenerator, Callable, Coroutine, cast, Generator
 
 from dataclasses import dataclass, field
 from enum import Enum
@@ -217,7 +217,7 @@ class ZulipUser(
             self._name = uname
             self._id = uid
 
-    async def __ainit__(self) -> Coroutine[None, None, None]:
+    async def __ainit__(self) -> None:
         if self._name is None and self._id is None:
             raise ValueError("User ID and name not set.")
 
@@ -318,7 +318,7 @@ class ZulipChannel(
     def __str__(self) -> str:
         return f"ZulipChannel(ID: {self._id}, name: {self._name})"
 
-    async def __ainit__(self) -> Coroutine[None, None, None]:
+    async def __ainit__(self) -> None:
         if self._name is None and self._id is None:
             raise ValueError("Channel ID and name not set.")
 
@@ -337,9 +337,11 @@ class ZulipChannel(
                 )
             self._name = result["name"]
 
+        return None
+
     async def __await__(self) -> Coroutine[None, None, None]:
-        async for _ in self.__ainit__().__await__():
-            pass
+        for e in self.__ainit__().__await__():
+            await e
         return self
 
     def __yaml__(self) -> dict[str, Any]:

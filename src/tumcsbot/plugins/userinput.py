@@ -67,7 +67,7 @@ class UserInput(Plugin):
         ) or await self.is_responsible_message(event)
 
     async def handle_event(self, event: Event) -> Response | Iterable[Response]:
-        q: asyncio.Queue
+        q: asyncio.Queue[dict[str, Any]]
         if event.data["type"] == "reaction":
             mid: int = event.data["message_id"]
             q = UserInput.pending_inputs[mid]
@@ -84,7 +84,7 @@ class UserInput(Plugin):
         return Response.none()
 
     @staticmethod
-    async def _wait_for_queue(q: asyncio.Queue, timeout: int) -> Any:
+    async def _wait_for_queue(q: asyncio.Queue[disct[str, Any]], timeout: int) -> Any:
         for _ in range(timeout):
             try:
                 return await asyncio.wait_for(q.get(), 1)
@@ -120,7 +120,7 @@ class UserInput(Plugin):
     ) -> tuple[str | None, dict[str, Any]]:
         """Ask the user for confirmation."""
 
-        q = asyncio.Queue(1)
+        q: asyncio.Queue[dict[str, Any]] = asyncio.Queue(1)
         cls.pending_inputs[message_id] = q
 
         # wait for UI to be ready, if we send instantly, the reaction might not be registered
