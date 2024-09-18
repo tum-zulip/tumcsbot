@@ -28,8 +28,8 @@ class Channels(PluginCommandMixin, Plugin):
     @arg("pattern", str, description="The pattern to search for.")
     async def _list(
         self,
-        sender: ZulipUser,
-        _session,
+        _sender: ZulipUser,
+        _session: Session,
         args: CommandParser.Args,
         _opts: CommandParser.Opts,
         _message: dict[str, Any],
@@ -129,7 +129,7 @@ class Channels(PluginCommandMixin, Plugin):
     async def create(
         self,
         sender: ZulipUser,
-        session,
+        _session: Session,
         args: CommandParser.Args,
         opts: CommandParser.Opts,
         message: dict[str, Any],
@@ -165,7 +165,7 @@ class Channels(PluginCommandMixin, Plugin):
     async def rename(
         self,
         sender: ZulipUser,
-        _session,
+        _session: Session,
         args: CommandParser.Args,
         _opts: CommandParser.Opts,
         _message: dict[str, Any],
@@ -176,7 +176,8 @@ class Channels(PluginCommandMixin, Plugin):
             line: str = f"{old} -> {new}"
 
             try:
-                old_id: int = await sender.client.get_channel_id(old)["stream_id"]
+                old_chan: dict[str, Any] = await sender.client.get_channel_id(old)
+                old_id: int = old_chan["stream_id"]
             except Exception as e:
                 self.logger.exception(e)
                 yield PartialError(f"Failed to get channel id for {old}")

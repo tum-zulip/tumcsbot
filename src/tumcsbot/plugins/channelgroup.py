@@ -119,7 +119,7 @@ class Channelgroup(PluginCommandMixin, Plugin):
     # ========================================================================================================================
 
     async def handle_event(self, event: Event) -> Response | Iterable[Response]:
-        data: dict[str:Any] = event.data
+        data: dict[str, Any] = event.data
         if data["type"] == "reaction":
             self.logger.debug("User reacted to a claimed message")
             return await self.handle_reaction_event(data)
@@ -465,7 +465,7 @@ class Channelgroup(PluginCommandMixin, Plugin):
             session, self.client, [group]
         )
 
-        channels: list[tuple[str, None]] = [
+        channels: list[tuple[str, str | None]] = [
             (channel_name, None) for channel_name in channel_names
         ]
 
@@ -509,7 +509,7 @@ class Channelgroup(PluginCommandMixin, Plugin):
             session, self.client, [group]
         )
 
-        channels: list[tuple[str, None]] = [
+        channels: list[tuple[str, str | None]] = [
             (channel_name, None) for channel_name in channel_names
         ]
 
@@ -554,7 +554,7 @@ class Channelgroup(PluginCommandMixin, Plugin):
             session, self.client, [group]
         )
 
-        channels: list[tuple[str, None]] = [
+        channels: list[tuple[str, str | None]] = [
             (channel_name, None) for channel_name in channel_names
         ]
 
@@ -794,7 +794,7 @@ class Channelgroup(PluginCommandMixin, Plugin):
         Make the message, written in a channel and addressed to @**TUMCSBot**, "special" for a given Channelgroup.
         If a user reacts on a "special" message with the emoji that is assigned to the group the message is special for, the user gets subscribed to all channels belonging to this group
         """
-        group: ChannelGroup | None = args.group_id
+        group: ChannelGroup = args.group_id
         msg_id: int = message["id"]
 
         if not opts.a and not group:
@@ -851,10 +851,10 @@ class Channelgroup(PluginCommandMixin, Plugin):
         Make a specified message "special" for a given Channelgroup.
         If a user reacts on a "special" message with the emoji that is assigned to the group the message is special for, the user gets subscribed to all channels belonging to this group.
         """
-        if not opts.a:
-            group_id: str = args.group_id
-            msg_id: int = args.message_id
+        group_id: str = args.group_id
+        msg_id: int = args.message_id
 
+        if not opts.a:
             if not group_id:
                 raise DMError(
                     "Either argument `group_id` or flag `-a` necessary, see `help channelgroup`."
@@ -871,9 +871,6 @@ class Channelgroup(PluginCommandMixin, Plugin):
                 )
 
         else:
-            group_id: str = args.group_id
-            msg_id: int = args.message_id
-
             if group_id:
                 raise DMError(
                     "The argument `group_id` and flag `-a` are mutually exclusive, see `help channelgroup`."
@@ -887,13 +884,16 @@ class Channelgroup(PluginCommandMixin, Plugin):
             raise DMError("Claim only channel messages.")
 
         channel = await self.client.get_channel_by_id(msg["channel_id"])
+        if not channel:
+            raise DMError("Channel not found")
+
         name = channel["name"]
 
         await Channelgroup._claim(
             group=group, session=session, message_id=msg_id, all=opts.a
         )
 
-        if not opts.a:
+        if group is not None:
             resp = f"Claimed message {msg_id} in #**{name}** for Channelgroup `{group.ChannelGroupId}`."
         else:
             resp = f"Claimed message {msg_id} in #**{name}** for all Channelgroups."
@@ -925,10 +925,10 @@ class Channelgroup(PluginCommandMixin, Plugin):
         """
         Reverts "special" status of a claimed message.
         """
-        if not opts.a:
-            group_id: str = args.group_id
-            msg_id: int = args.message_id
+        group_id: str = args.group_id
+        msg_id: int = args.message_id
 
+        if not opts.a:
             if not group_id:
                 raise DMError(
                     "Either argument `group_id` or flag `-a` necessary, see `help channelgroup`."
@@ -945,9 +945,6 @@ class Channelgroup(PluginCommandMixin, Plugin):
                 )
 
         else:
-            group_id: str = args.group_id
-            msg_id: int = args.message_id
-
             if group_id:
                 raise DMError(
                     "The argument `group_id` and flag `-a` are mutually exclusive, see `help channelgroup`."
@@ -961,13 +958,15 @@ class Channelgroup(PluginCommandMixin, Plugin):
             raise DMError("Unclaim only channel messages.")
 
         channel = await self.client.get_channel_by_id(msg["channel_id"])
+        if not channel:
+            raise DMError("Channel not found")
         name = channel["name"]
 
         await Channelgroup._unclaim(
             group=group, session=session, message_id=msg_id, all=opts.a
         )
 
-        if not opts.a:
+        if group is not None:
             resp = f"Unlaimed message {msg_id} in #**{name}** for Channelgroup `{group.ChannelGroupId}`."
         else:
             resp = f"Unlaimed message {msg_id} in #**{name}** for all Channelgroups."
@@ -994,6 +993,8 @@ class Channelgroup(PluginCommandMixin, Plugin):
         await Channelgroup._announce(session, message, self.client)
 
         channel = await self.client.get_channel_by_id(message["channel_id"])
+        if not channel:
+            raise DMError("Channel not found")
         name = channel["name"]
         yield DMMessage(sender, f"Announced message in Channel #**{name}**.")
 
@@ -1014,7 +1015,13 @@ class Channelgroup(PluginCommandMixin, Plugin):
         msg_id: int = args.message_id
 
         msg = await self.client.get_message_by_id(msg_id)
+        if not msg:
+            raise DMError("Message not found")
+
         channel = await self.client.get_channel_by_id(msg["channel_id"])
+        if not channel:
+            raise DMError("Channel not found")
+
         name = channel["name"]
 
         await Channelgroup._unannounce(session, msg_id, self.client)
@@ -1135,7 +1142,7 @@ class Channelgroup(PluginCommandMixin, Plugin):
         Returns:
             None
         """
-        u_id: int = group.UserGroupId
+        u_id: int = int(group.UserGroupId)
         try:
             session.query(ChannelGroup).filter(
                 ChannelGroup.ChannelGroupId == group.ChannelGroupId
@@ -1154,7 +1161,7 @@ class Channelgroup(PluginCommandMixin, Plugin):
         client: AsyncClient,
         group: ChannelGroup,
         channel_patterns: list[str],
-    ):
+    ) -> None:
         """
         Remove the channels of a list of channel patterns from a ChannelGroup.
 
@@ -1200,9 +1207,9 @@ class Channelgroup(PluginCommandMixin, Plugin):
                     failed.append(f"#**{channel.name}**")
 
         if failed:
-            s: str = " ".join(failed)
+            sf: str = " ".join(failed)
             raise DMError(
-                f"Could not delete channels(s) {s} from Channelgroup `{group.ChannelGroupId}`."
+                f"Could not delete channels(s) {sf} from Channelgroup `{group.ChannelGroupId}`."
             )
 
     @staticmethod
@@ -1211,7 +1218,7 @@ class Channelgroup(PluginCommandMixin, Plugin):
         client: AsyncClient,
         group: ChannelGroup,
         channel_ids: list[int],
-    ):
+    ) -> None:
         for id in channel_ids:
             if (
                 session.query(ChannelGroupMember)
@@ -1239,7 +1246,7 @@ class Channelgroup(PluginCommandMixin, Plugin):
         sender: ZulipUser,
         group: ChannelGroup,
         channel_patterns: list[str],
-    ):
+    ) -> None:
         """
         Add the channels of a list of channel patterns to a ChannelGroup.
 
@@ -1263,14 +1270,14 @@ class Channelgroup(PluginCommandMixin, Plugin):
             channels.extend(s)
 
         if not channels:
-            channel_patterns_output: list[str] = map(lambda s: f"`{s}`", channel_patterns)
+            channel_patterns_output: list[str] = list(map(lambda s: f"`{s}`", channel_patterns))
             out: str = ", ".join(channel_patterns_output)
             raise DMError(
                 f"Could not find any (public) channels associated with { out }."
             )
 
-        for s in channels:
-            channel: ZulipChannel = ZulipChannel(f"#**{s}**")
+        for st in channels:
+            channel: ZulipChannel = ZulipChannel(f"#**{st}**")
             await channel
 
             if (
@@ -1298,7 +1305,7 @@ class Channelgroup(PluginCommandMixin, Plugin):
     @staticmethod
     def _add_zulip_channels(
         session: Session, channels: list[ZulipChannel], group: ChannelGroup
-    ):
+    ) -> None:
         failed: list[str] = []
         for channel in channels:
             if (
@@ -1324,7 +1331,7 @@ class Channelgroup(PluginCommandMixin, Plugin):
             )
 
     @staticmethod
-    async def _subscribe(client: AsyncClient, user_id: int, group_id: str):
+    async def _subscribe(client: AsyncClient, user_id: int, group_id: str) -> None:
         """
         Subscribe a single user to a ChannelGroup.
 
@@ -1350,7 +1357,7 @@ class Channelgroup(PluginCommandMixin, Plugin):
                 session, client, [group]
             )
 
-            channels: list[(str, None)] = [
+            channels: list[tuple[str, None]] = [
                 (channel_name, None) for channel_name in channel_names
             ]
 
@@ -1359,7 +1366,7 @@ class Channelgroup(PluginCommandMixin, Plugin):
             Usergroup.add_user_to_group(session, sender, members)
 
     @staticmethod
-    async def _unsubscribe(client: AsyncClient, user_id: int, group_id: str):
+    async def _unsubscribe(client: AsyncClient, user_id: int, group_id: str) -> None:
         """
         Unsubscribe a single user from a ChannelGroup.
 
@@ -1381,7 +1388,7 @@ class Channelgroup(PluginCommandMixin, Plugin):
             sender: ZulipUser = ZulipUser(user_id)
             sender.set_client(client)
             await sender
-            channel_names: list[str] = await Channelgroup._get_unique_channel_names_client(
+            channel_names: list[str] = await Channelgroup._get_unique_channel_names(
                 session, client, sender, group
             )
 
@@ -1392,7 +1399,7 @@ class Channelgroup(PluginCommandMixin, Plugin):
     @staticmethod
     async def _claim(
         group: ChannelGroup | None, session: Session, message_id: int, all=False
-    ):
+    ) -> None:
         """
         Make a message "special" for a given group or for all ChannelGroups.
 
@@ -1410,6 +1417,9 @@ class Channelgroup(PluginCommandMixin, Plugin):
         """
 
         if not all:
+            if group is None:
+                raise DMError("No group specified.")
+
             if (
                 session.query(GroupClaim)
                 .filter(GroupClaim.MessageId == message_id)
@@ -1445,8 +1455,8 @@ class Channelgroup(PluginCommandMixin, Plugin):
 
     @staticmethod
     async def _unclaim(
-        group: ChannelGroup, session: Session, message_id: int, all: bool = False
-    ):
+        group: ChannelGroup | None, session: Session, message_id: int, all: bool = False
+    ) -> None:
         """
         Reverts "special status" of a claimed message.
 
@@ -1464,6 +1474,9 @@ class Channelgroup(PluginCommandMixin, Plugin):
         """
 
         if not all:
+            if group is None:
+                raise DMError("No group specified.")
+
             if (
                 session.query(GroupClaim)
                 .filter(GroupClaim.GroupId == group.ChannelGroupId)
@@ -1515,7 +1528,7 @@ class Channelgroup(PluginCommandMixin, Plugin):
                         )
 
     @staticmethod
-    async def _announce(session: Session, message, client: AsyncClient):
+    async def _announce(session: Session, message:dict[str, Any], client: AsyncClient) -> None:
         """
         Triggers a (for all groups) claimed announcement message from the bot with a list o all existing Channelgroups.
 
@@ -1611,7 +1624,7 @@ class Channelgroup(PluginCommandMixin, Plugin):
         return _announcement_msg.format(table)
 
     @staticmethod
-    async def _unannounce(session: Session, message_id: int, client: AsyncClient):
+    async def _unannounce(session: Session, message_id: int, client: AsyncClient) -> None:
         """
         Reverts "special status" of a announced message.
 
@@ -1646,7 +1659,7 @@ class Channelgroup(PluginCommandMixin, Plugin):
         await client.delete_message(message_id)
 
     @staticmethod
-    async def _fix(client: AsyncClient, session: Session, group: ChannelGroup):
+    async def _fix(client: AsyncClient, session: Session, group: ChannelGroup) -> None:
         """
         Makes sure that every subscriber of the given group is subscribed to all channels of this group.
 
@@ -1674,7 +1687,7 @@ class Channelgroup(PluginCommandMixin, Plugin):
         await client.subscribe_users_multiple_channels(user_ids, channels)
 
     @staticmethod
-    async def _fix_all(client: AsyncClient, session: Session):
+    async def _fix_all(client: AsyncClient, session: Session) -> None:
         """
           Fixing all Channels of all ChannelGroups
 

@@ -72,7 +72,6 @@ class Feedback(PluginCommandMixin, Plugin):
         # TODO: @Janez Rotman
         max_topic_length = 60
         topic : str = "New Feedback"
-        topic: str = f"New Feedback"
 
         prompt2 = await self.client.send_response(
             Response.build_message(
