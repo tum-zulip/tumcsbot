@@ -625,7 +625,7 @@ class AsyncClient:
         Example usage: await client.get_channel_id('devel')
         """
         channel_encoded = quote(channel, safe="")
-        url = f"get_channel_id?stream={channel_encoded}"
+        url = f"get_stream_id?stream={channel_encoded}"
         return await self.call_endpoint(
             url=url,
             method="GET",
