@@ -63,7 +63,7 @@ class Channels(PluginCommandMixin, Plugin):
         sender: ZulipUser,
         _session: Session,
         args: CommandParser.Args,
-        _opts: CommandParser.Opts,
+        opts: CommandParser.Opts,
         _message: dict[str, Any],
     ) -> AsyncGenerator[response_type, None]:
         """

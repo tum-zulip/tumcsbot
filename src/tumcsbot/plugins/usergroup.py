@@ -74,7 +74,7 @@ class UserGroupMember(TableBase):  # type: ignore
     GroupId = Column(
         Integer, ForeignKey("UserGroups.GroupId", ondelete="CASCADE"), primary_key=True
     )
-    User = Column(ZulipUser, primary_key=True)
+    User = Column(ZulipUser, primary_key=True) # type: ignore
 
     # This establishes the relationship between UserGroupMember and UserGroup
     groups: Mapped[list["UserGroup"]] = relationship(
@@ -310,14 +310,14 @@ class Usergroup(PluginCommandMixin, Plugin):
 
     @staticmethod
     def get_name_by_id(session: Session, ID: int) -> str:
-        ug: UserGroup = (
+        ug: UserGroup | None = (
             session.query(UserGroup).filter(UserGroup.GroupId == ID).one_or_none()
         )
-        if not ug:
+        if ug is None:
             raise DMError(
                 f"Uuups, it looks like i could not find any UserGroup associated with `{ID}` :botsceptical:"
             )
-        return ug.GroupName
+        return str(ug.GroupName)
 
     @staticmethod
     def create_group(session: Session, name: str) -> None:
@@ -420,10 +420,7 @@ class Usergroup(PluginCommandMixin, Plugin):
                 f"{user.mention_silent} is not in usergroup '{group.GroupName}'"
             )
         try:
-            session.query(UserGroupMember) \
-                .filter(UserGroupMember.User == user) \
-                .filter(UserGroupMember.GroupId == group.GroupId) \
-                .delete() # type: ignore[arg-type]
+            session.query(UserGroupMember).filter(UserGroupMember.User == user).filter(UserGroupMember.GroupId == group.GroupId).delete() # type: ignore[arg-type]
             session.commit()
         except sqlalchemy.exc.IntegrityError as e:
             session.rollback()
@@ -453,9 +450,9 @@ class Usergroup(PluginCommandMixin, Plugin):
     def get_groups_for_user(session: Session, user: ZulipUser) -> list[UserGroup]:
         return (
             session.query(UserGroup) \
-            .filter(UserGroup.GroupId == UserGroupMember.GroupId) \
-            .filter(UserGroupMember.User == user) \
-            .all() # type: ignore
+            .filter(UserGroup.GroupId == UserGroupMember.GroupId)
+            .filter(UserGroupMember.User == user) # type: ignore[arg-type]
+            .all()
         )
 
     @staticmethod

@@ -217,14 +217,15 @@ class Channelgroup(PluginCommandMixin, Plugin):
 
                 for group_id in group_ids_d:
                     with DB.session() as session:
-                        s: ChannelGroup = (
+                        s: ChannelGroup | None = (
                             session.query(ChannelGroup)
                             .filter(ChannelGroup.ChannelGroupId == group_id)
                             .one()
                         )
-                        await Channelgroup._remove_channels_by_id(
-                            session, self.client, s, [id_d]
-                        )
+                        if s is not None:
+                            await Channelgroup._remove_channels_by_id(
+                                session, s, [id_d]
+                            )
 
                 # messages
                 with DB.session() as session:
@@ -1786,9 +1787,9 @@ class Channelgroup(PluginCommandMixin, Plugin):
         """
         claimedByOne: bool
         claimedByAll: bool
-        group_id: str = Channelgroup._get_group_id_from_emoji_event(em)
+        group_id: str | None = Channelgroup._get_group_id_from_emoji_event(em)
 
-        if not group_id:
+        if group_id is None:
             return False
 
         with DB.session() as session:
@@ -1874,7 +1875,7 @@ class Channelgroup(PluginCommandMixin, Plugin):
             .all()
         ):
             result = await client.get_channel_by_id(s.Channel.id)
-            if result == None:
+            if result is None:
                 raise DMError()
             name: str = result["name"]
             channels.append(name)

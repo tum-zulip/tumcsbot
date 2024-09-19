@@ -183,7 +183,7 @@ class UserInput(Plugin):
         timeout: int = 10,
         max_length: int | None = 32,
         min_length: int | None = 1,
-        allow_spaces = False,
+        allow_spaces: bool = False,
     ) -> tuple[str | None, dict[str, Any]]:
         """Ask the user for a short text."""
 

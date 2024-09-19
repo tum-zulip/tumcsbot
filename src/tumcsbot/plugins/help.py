@@ -126,7 +126,8 @@ class Help(PluginCommandMixin, Plugin):
         for sub in cmd.subcommands:
             if not privileged and sub.privilege != Privilege.USER:
                 continue
-            msg += Help._format_subcommand(cmd.name, sub, privileged)
+            if cmd.name is not None:
+                msg += Help._format_subcommand(cmd.name, sub, privileged)
 
         return Response.build_message(
             message, content=msg, msg_type="private", to=message["sender_email"]
@@ -162,7 +163,8 @@ class Help(PluginCommandMixin, Plugin):
             and subcommand.privilege > Privilege.USER
             else ""
         )
-        out = f"""
+        if subcommand.name is not None:
+            out = f"""
 ```spoiler {subcommand.name.replace('_', ' ').title()}
 {privilage}
 {subcommand.short_help_msg}\n
@@ -191,8 +193,8 @@ class Help(PluginCommandMixin, Plugin):
             [
                 " - " + cmd.name
                 for cmd in commands
-                if privileged
-                or any(subcmd.privilege == Privilege.USER for subcmd in cmd.subcommands)
+                if cmd.name is not None and (privileged
+                or any(subcmd.privilege == Privilege.USER for subcmd in cmd.subcommands))
             ]
         )
 

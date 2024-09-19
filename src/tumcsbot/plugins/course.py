@@ -171,7 +171,7 @@ class Course(PluginCommandMixin, Plugin):
         channelgroup_emoji: str = args.emoji
         channels: ChannelGroup | None = None
 
-        cleanup_opterations: list[Callable] = []
+        cleanup_opterations: list[ Callable[[],None] | Callable[[], Coroutine[Any, Any, dict[str, Any]]] ] = []
 
         if (
             session.query(CourseDB).filter(CourseDB.CourseName == name).first()
@@ -578,9 +578,9 @@ class Course(PluginCommandMixin, Plugin):
         """
         name: str = args.name
         channelgroup_emoji: str = args.emoji
-        channels: ChannelGroup
+        channels: ChannelGroup | None
 
-        cleanup_opterations: list[Callable] = []
+        cleanup_opterations: list[ Callable[[],None] | Callable[[], Coroutine[Any, Any, dict[str, Any]]] ] = []
 
         if (
             session.query(CourseDB).filter(CourseDB.CourseName == name).first()
@@ -660,7 +660,7 @@ class Course(PluginCommandMixin, Plugin):
 
         try:
             # get corresponding Channelgroup
-            if not channels:
+            if channels is None:
                 if opts.s:
                     channels = opts.s
                 else:
@@ -668,6 +668,8 @@ class Course(PluginCommandMixin, Plugin):
                     channels = Channelgroup._create_and_get_group(
                         session, channelgroup_name, channelgroup_emoji
                     )
+                    if channels is None:
+                        raise DMError("Could not create channelgroup")
                     cleanup_opterations.append(
                         lambda: Channelgroup._delete_group(session, channels)
                     )
@@ -984,7 +986,7 @@ class Course(PluginCommandMixin, Plugin):
         Add standard Channels to a given course. If Channels with the same names already exist, they will be transferred and not replaced with new ones.
         """
         course: CourseDB = args.course
-        lan: Literal["en", "de"] = str(course.CourseLanguage)
+        lan: Literal["en", "de"] = cast(Literal["en", "de"], str(course.CourseLanguage))
         channels_id: str = str(course.Channels)
         stremgroup: ChannelGroup | None = (
             session.query(ChannelGroup)
@@ -1267,7 +1269,7 @@ class Course(PluginCommandMixin, Plugin):
         courseTutorChannel: ZulipChannel | None = None
         courseInstructorChannel: ZulipChannel | None = None
 
-        cleanup_opterations: list[Callable] = []
+        cleanup_opterations: list[Callable[[],None] | Callable[[int], Coroutine[Any, Any, dict[str, Any]]] ] = []
 
         async def or_exit(coro: Coroutine[None, None, T]) -> T:
             task = asyncio.create_task(coro)
@@ -1278,7 +1280,7 @@ class Course(PluginCommandMixin, Plugin):
                 raise DMError(
                     "You have exited the wizard. Have a nice day :bothappypad:"
                 )
-            return done.pop().result()
+            return cast(T, done.pop().result())
 
         def exit_and_inform_on_error(client_response: dict[str, Any]) -> dict[str, Any]:
             if client_response["result"] != "success":
@@ -1712,7 +1714,7 @@ class Course(PluginCommandMixin, Plugin):
                             names = result2ci.split(",")
 
                             for name in names:
-                                real_name = Regex.get_user_name(name)
+                                real_name = str(Regex.get_user_name(name))
                                 if real_name is None:
                                     await dm(
                                         f"Could not find a user with the name {name}."
@@ -1888,10 +1890,12 @@ class Course(PluginCommandMixin, Plugin):
         except Exception as e:
             logging.exception(e)
             session.rollback()
+            cleanup_result : None | Coroutine[Any, Any, dict[str, Any]]
             for cleanup in cleanup_opterations:
-                result = cleanup()
-                if result and inspect.isawaitable(result):
-                    await result
+                # TODO: too few arguments
+                cleanup_result = cleanup()
+                if cleanup_result and inspect.isawaitable(cleanup_result):
+                    await cleanup_result
                     # avoid rate limiting
                     await asyncio.sleep(0.2)
 
@@ -2019,10 +2023,10 @@ class Course(PluginCommandMixin, Plugin):
         except Exception as e:
             session.rollback()
 
-            for s in channels:
-                sid = await client.get_channel_id_by_name(s["name"])
-                if sid is not None:
-                    await client.delete_channel(sid)
+            for c in channels:
+                cid = await client.get_channel_id_by_name(c["name"])
+                if cid is not None:
+                    await client.delete_channel(cid)
 
             raise DMError(
                 f"Something went wrong when creating the default channels :botsad:"
@@ -2209,7 +2213,8 @@ class Course(PluginCommandMixin, Plugin):
         """
         Set the Tutor-Channel of a given Course.
         """
-        oldTS = course.TutorChannel
+        oldTS = cast(ZulipChannel, course.TutorChannel)
+        await oldTS
         if oldTS == channel:
             raise DMError(
                 "The given Channel is already set as Tutor-Channel for this course."
@@ -2236,7 +2241,8 @@ class Course(PluginCommandMixin, Plugin):
         """
         Set the Instructor-Channel of a given Course.
         """
-        oldIS: ZulipChannel = await course.InstructorChannel
+        oldIS: ZulipChannel = cast(ZulipChannel, course.InstructorChannel)
+        await oldIS
         if oldIS == channel:
             raise DMError(
                 "The given Channel is already set as Instructor-Channel for this course."

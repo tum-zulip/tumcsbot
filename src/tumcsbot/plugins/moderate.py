@@ -797,7 +797,7 @@ class Moderate(PluginCommandMixin, Plugin):
         msg += "\n**Authorized channels:**\n"
         channels: list[ZulipChannel] = []
         for s in cfg.channels:
-            channel = ZulipChannel(s.Channel)
+            channel = cast(ZulipChannel, s.Channel)
             await channel
             channels.append(channel)
         msg += ", ".join([s.mention for s in channels]) + "\n"
