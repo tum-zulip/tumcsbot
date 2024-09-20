@@ -828,8 +828,7 @@ class Moderate(PluginCommand, Plugin):
             action_str, data = next(iter(action.items()))
             Moderate.ensure_valid_action(action_str)
             return ReactionAction(Action=action_str, Data=data)
-        else:
-            raise ValueError("Error: Action must be a string or a dictionary")
+        raise ValueError("Error: Action must be a string or a dictionary")
 
     @staticmethod
     def ensure_valid_action(action: str) -> None:

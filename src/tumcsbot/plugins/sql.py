@@ -8,7 +8,6 @@ from typing import Any, AsyncGenerator
 from sqlalchemy import text
 
 from tumcsbot.lib.db import DB
-from tumcsbot.lib.response import Response
 from tumcsbot.lib.types import DMResponse, Privilege, response_type
 from tumcsbot.plugin import PluginCommand, Plugin
 from tumcsbot.plugin_decorators import arg, command, privilege

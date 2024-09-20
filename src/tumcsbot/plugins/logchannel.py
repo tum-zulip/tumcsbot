@@ -121,4 +121,4 @@ class LogChannel(PluginCommand, Plugin):
 
             logging.getLogger().addHandler(ZulipLogHandler(channel.id, self.client))
         else:
-            logging.error(f"Channel {logstram} not found")
+            logging.error("Channel %s not found", logstram)
