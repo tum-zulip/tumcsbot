@@ -2,6 +2,7 @@ import difflib
 from typing import Any, Callable
 from argparse import Namespace
 
+import logging
 import regex
 
 from tumcsbot.lib.regex import Regex
@@ -248,10 +249,10 @@ class CommandParser:
             if CommandParser._match_argument_to_target(positional, arg, solution):
                 remainder.pop(i)
                 continue
-            elif CommandParser._match_argument_to_target(optional, arg, solution):
+            if CommandParser._match_argument_to_target(optional, arg, solution):
                 remainder.pop(i)
                 continue
-            elif CommandParser._match_argument_to_target(greedy, arg, solution):
+            if CommandParser._match_argument_to_target(greedy, arg, solution):
                 remainder.pop(i)
                 continue
 
@@ -283,7 +284,7 @@ class CommandParser:
             return ({}, tokens)
 
         skip_next_token = False
-        import logging
+
         logging.debug(f"Tokens: {tokens}")
         for index in range(len(tokens)):
             if skip_next_token:

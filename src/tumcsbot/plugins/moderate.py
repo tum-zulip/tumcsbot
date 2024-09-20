@@ -18,7 +18,6 @@ from sqlalchemy import Column, ForeignKey, Integer, String, UniqueConstraint
 from sqlalchemy.orm import relationship, Mapped
 import yaml
 
-from tumcsbot.lib.response import Response
 from tumcsbot.lib.regex import Regex
 from tumcsbot.lib.command_parser import CommandParser
 from tumcsbot.lib.db import TableBase, serialize_model, Session, deserialize_model
@@ -479,11 +478,11 @@ class Moderate(PluginCommand, Plugin):
     )
     async def revoke(
         self,
-        sender: ZulipUser,
+        _sender: ZulipUser,
         session: Session,
         args: CommandParser.Args,
         opts: CommandParser.Opts,
-        message: dict[str, Any],
+        _message: dict[str, Any],
     ) -> AsyncGenerator[response_type, None]:
         config: ModerationConfig = args.moderation_config
 
@@ -773,15 +772,15 @@ class Moderate(PluginCommand, Plugin):
         msg = ""
         if len(authorizations) == 0:
             return "*No authorizations configured*\n"
-        else:
-            for g in authorizations:
-                msg += f" - {g.group.GroupName}\n"
-                if verbose:
-                    members = [m for m in g.group.members]
-                    for m in members:
-                        await m
-                    msg += "    " + ", ".join([m.mention_silent for m in members])
-                    msg += "\n"
+
+        for g in authorizations:
+            msg += f" - {g.group.GroupName}\n"
+            if verbose:
+                members = list(g.group.members)
+                for m in members:
+                    await m
+                msg += "    " + ", ".join([m.mention_silent for m in members])
+                msg += "\n"
         return msg
 
     @staticmethod
@@ -814,7 +813,7 @@ class Moderate(PluginCommand, Plugin):
         try:
             config = yaml.safe_load(yaml_content)
         except yaml.YAMLError as e:
-            raise DMError(f"Error: Could not parse configuration: {str(e)}")
+            raise DMError(f"Error: Could not parse configuration: {str(e)}") from e
         return config
 
     @staticmethod
@@ -822,7 +821,7 @@ class Moderate(PluginCommand, Plugin):
         if isinstance(action, str):
             Moderate.ensure_valid_action(action)
             return ReactionAction(Action=action)
-        elif isinstance(action, dict):
+        if isinstance(action, dict):
             if len(action.keys()) != 1:
                 raise DMError("Error: Action must have exactly one key")
 

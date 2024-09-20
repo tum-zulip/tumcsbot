@@ -29,7 +29,6 @@ from typing import Any, Callable, Iterable, Type, TypeVar, final, AsyncGenerator
 from sqlalchemy import Column, String
 
 from tumcsbot.lib.client import AsyncClient, PluginContext, Event, EventType
-from tumcsbot.lib.conf import Conf
 from tumcsbot.lib.response import Response
 from tumcsbot.lib.command_parser import CommandParser
 from tumcsbot.lib.db import DB, TableBase, Session
@@ -109,7 +108,7 @@ class Plugin(threading.Thread, ABC):
         invoker = getattr(_fn, "invoke")
         if invoker is None:
             raise AttributeError(f"{_fn} has no attribute 'invoke'")
-        
+
         async for result in invoker(sender, session, message, **kwargs):
             yield result
 
@@ -134,7 +133,6 @@ class Plugin(threading.Thread, ABC):
 
         This method is called by the worker thread/process.
         """
-        """Run the plugin."""
         try:
             while self.running:
                 self.logger.debug("Waiting for event")
@@ -291,9 +289,9 @@ class PluginCommand(Plugin):
             with DB.session() as session:
                 responses = await func(sender, session, args, opts, message)
             return responses
-        else:
-            self.logger.debug("command not found: %s", command)
-            return Response.command_not_found(message)
+
+        self.logger.debug("command not found: %s", command)
+        return Response.command_not_found(message)
 
     async def handle_event(self, event: Event) -> Response | Iterable[Response]:
         """Defaults to assume event to be a message event.

@@ -5,11 +5,11 @@
 
 import asyncio
 import logging
-from typing import Any, Callable, Iterable, Literal, cast
+from typing import Any, Iterable, Literal, cast
 
 from tumcsbot.lib.client import AsyncClient, Event
 from tumcsbot.lib.response import Response
-from tumcsbot.lib.types import DMError, ZulipUser
+from tumcsbot.lib.types import DMError
 from tumcsbot.plugin import Plugin
 
 

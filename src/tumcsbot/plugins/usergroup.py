@@ -12,7 +12,6 @@ change the alert words and specify the emojis to use for the reactions.
 
 # TODO: replacement for zulip usergroups. Replace as soon as api allows bot requests for usergroups
 
-import logging
 from typing import Any, AsyncGenerator, cast
 from sqlalchemy import Column, Integer, String, ForeignKey
 import sqlalchemy

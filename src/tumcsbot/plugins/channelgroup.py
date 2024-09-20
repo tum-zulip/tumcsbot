@@ -163,15 +163,15 @@ class Channelgroup(PluginCommand, Plugin):
     ) -> Response | Iterable[Response]:
         emj: str = event["emoji_name"]
         user_id: int = event["user_id"]
-        group_id: str | None = Channelgroup._get_group_id_from_emoji_event(emj)
+        group_id: str | None = Channelgroup.get_group_id_from_emoji_event(emj)
 
         try:
             if group_id is None:
                 return Response.none()
             if event["op"] == "add":
-                await Channelgroup._subscribe(self.client, user_id, group_id)
+                await Channelgroup.subscribe_h(self.client, user_id, group_id)
             if event["op"] == "remove":
-                await Channelgroup._unsubscribe(self.client, user_id, group_id)
+                await Channelgroup.unsubscribe_h(self.client, user_id, group_id)
         except DMError:
             self.logger.info("Failed to (un)subscribe the user to Channelgroup")
             Response.build_message(
@@ -192,11 +192,11 @@ class Channelgroup(PluginCommand, Plugin):
                 id_c: int = channel["channel_id"]
 
                 # Get all the groups this channel belongs to.
-                group_ids_c: list[str] = Channelgroup._get_group_ids_from_channel_id(
+                group_ids_c: list[str] = Channelgroup.get_group_ids_from_channel_id(
                     id_c
                 )
                 # Get all user ids to subscribe to this new channel ...
-                user_ids_c: list[int] = Channelgroup._get_group_subscribers(group_ids_c)
+                user_ids_c: list[int] = Channelgroup.get_group_subscribers(group_ids_c)
                 # ... and subscribe them.
                 await self.client.subscribe_users(user_ids_c, name_c)
 
@@ -206,7 +206,7 @@ class Channelgroup(PluginCommand, Plugin):
                 name_d: str = channel["name"]
                 id_d: int = channel["channel_id"]
 
-                group_ids_d: list[str] = Channelgroup._get_group_ids_from_channel_id(
+                group_ids_d: list[str] = Channelgroup.get_group_ids_from_channel_id(
                     id_d
                 )
 
@@ -223,7 +223,7 @@ class Channelgroup(PluginCommand, Plugin):
                             .one()
                         )
                         if s is not None:
-                            await Channelgroup._remove_channels_by_id(
+                            await Channelgroup.remove_channels_by_id(
                                 session, s, [id_d]
                             )
 
@@ -232,7 +232,7 @@ class Channelgroup(PluginCommand, Plugin):
                     claims: list[GroupClaim] = session.query(GroupClaim).all()
                     for claim in claims:
                         msg = await self.client.get_message_by_id(int(claim.MessageId))
-                        if msg["type"] == "channel" and msg["channel_id"] == id:
+                        if msg["type"] == "channel" and msg["channel_id"] == id_d:
                             try:
                                 session.query(GroupClaim).filter(
                                     GroupClaim.MessageId == msg["id"]
@@ -244,7 +244,7 @@ class Channelgroup(PluginCommand, Plugin):
                     claimsAll: list[GroupClaimAll] = session.query(GroupClaimAll).all()
                     for claim in claimsAll:
                         msg = await self.client.get_message_by_id(int(claim.MessageId))
-                        if msg["type"] == "channel" and msg["channel_id"] == id:
+                        if msg["type"] == "channel" and msg["channel_id"] == id_d:
                             try:
                                 session.query(GroupClaimAll).filter(
                                     GroupClaimAll.MessageId == msg["id"]
@@ -262,7 +262,7 @@ class Channelgroup(PluginCommand, Plugin):
                 event.data["type"] == "reaction"
                 and event.data["op"] in ["add", "remove"]
                 and event.data["user_id"] != self.client.id
-                and Channelgroup._message_is_claimed(
+                and Channelgroup.message_is_claimed(
                     event.data["message_id"], event.data["emoji_name"]
                 )
             )
@@ -304,7 +304,7 @@ class Channelgroup(PluginCommand, Plugin):
         if opts.a:
             groups = session.query(ChannelGroup).all()
         else:
-            groups = Channelgroup._get_groups_for_user(session, sender)
+            groups = Channelgroup.get_groups_for_user(session, sender)
             response = (
                 sender.mention_silent
                 + " is in the following Channelgroups:\n\n"
@@ -319,7 +319,7 @@ class Channelgroup(PluginCommand, Plugin):
         for group in groups:
             group_id = group.ChannelGroupId
             emoji = group.ChannelGroupEmote
-            channels: list[str] = await Channelgroup._get_channel_names(
+            channels: list[str] = await Channelgroup.get_channel_names(
                 session, self.client, [group]
             )
 
@@ -366,7 +366,7 @@ class Channelgroup(PluginCommand, Plugin):
         if not emoji_name:
             raise DMError(f"{emoji_name} is not a valid emote.")
 
-        Channelgroup._create_group(session, Id, emoji_name)
+        Channelgroup.create_group(session, Id, emoji_name)
         yield DMResponse(f"Channelgroup `{Id}` created.")
 
     @command
@@ -389,7 +389,7 @@ class Channelgroup(PluginCommand, Plugin):
         """
         group: ChannelGroup = args.group_id
 
-        Channelgroup._delete_group(session, group)
+        Channelgroup.delete_group_h(session, group)
         yield DMResponse(f"Channelgroup `{group.ChannelGroupId}` deleted")
 
     @command
@@ -414,7 +414,7 @@ class Channelgroup(PluginCommand, Plugin):
         group: ChannelGroup = args.group_id
         channel_patterns: list[str] = args.channels
 
-        await Channelgroup._add_channels(
+        await Channelgroup.add_channels_h(
             self.client, session, sender, group, channel_patterns
         )
         yield DMResponse(f"Added channels to Channelgroup `{group.ChannelGroupId}`.")
@@ -441,7 +441,7 @@ class Channelgroup(PluginCommand, Plugin):
         group: ChannelGroup = args.group_id
         channel_patterns: list[str] = args.channels
 
-        await Channelgroup._remove_channels(
+        await Channelgroup.remove_channels_h(
             session, self.client, group, channel_patterns
         )
         yield DMResponse(
@@ -467,9 +467,9 @@ class Channelgroup(PluginCommand, Plugin):
         Subscribe to a Channelgroup.
         """
         group: ChannelGroup = args.group_id
-        members: UserGroup = Channelgroup._get_usergroup(session, group)
+        members: UserGroup = Channelgroup.get_usergroup(session, group)
         user_id: list[int] = [sender.id]
-        channel_names: list[str] = await Channelgroup._get_channel_names(
+        channel_names: list[str] = await Channelgroup.get_channel_names(
             session, self.client, [group]
         )
 
@@ -510,10 +510,10 @@ class Channelgroup(PluginCommand, Plugin):
         Subscribe a list of users to a Channelgroup.
         """
         group: ChannelGroup = args.group_id
-        members: UserGroup = Channelgroup._get_usergroup(session, group)
+        members: UserGroup = Channelgroup.get_usergroup(session, group)
         users: list[ZulipUser] = args.user
         user_ids: list[int] = [user.id for user in users]
-        channel_names: list[str] = await Channelgroup._get_channel_names(
+        channel_names: list[str] = await Channelgroup.get_channel_names(
             session, self.client, [group]
         )
 
@@ -554,11 +554,11 @@ class Channelgroup(PluginCommand, Plugin):
         Subscribe the members of a usergroup to a Channelgroup.
         """
         group: ChannelGroup = args.channelgroup_id
-        members: UserGroup = Channelgroup._get_usergroup(session, group)
+        members: UserGroup = Channelgroup.get_usergroup(session, group)
         ugroup: UserGroup = args.usergroup
         users: list[ZulipUser] = Usergroup.get_users_for_group(session, ugroup)
         user_ids: list[int] = Usergroup.get_user_ids_for_group(session, ugroup)
-        channel_names: list[str] = await Channelgroup._get_channel_names(
+        channel_names: list[str] = await Channelgroup.get_channel_names(
             session, self.client, [group]
         )
 
@@ -604,9 +604,9 @@ class Channelgroup(PluginCommand, Plugin):
         Unsubscribe from a Channelgroup.
         """
         group: ChannelGroup = args.group_id
-        members: UserGroup = Channelgroup._get_usergroup(session, group)
+        members: UserGroup = Channelgroup.get_usergroup(session, group)
         user_id: int = sender.id
-        channel_names: list[str] = await Channelgroup._get_unique_channel_names(
+        channel_names: list[str] = await Channelgroup.get_unique_channel_names(
             session, self.client, sender, group
         )
 
@@ -659,10 +659,10 @@ class Channelgroup(PluginCommand, Plugin):
         Unsubscribe a list of users from a Channelgroup.
         """
         group: ChannelGroup = args.group_id
-        members: UserGroup = Channelgroup._get_usergroup(session, group)
+        members: UserGroup = Channelgroup.get_usergroup(session, group)
         users: list[ZulipUser] = args.user
         user_ids: list[int] = [user.id for user in users]
-        channel_names: list[str] = await Channelgroup._get_unique_channel_names(
+        channel_names: list[str] = await Channelgroup.get_unique_channel_names(
             session, self.client, sender, group
         )
 
@@ -716,11 +716,11 @@ class Channelgroup(PluginCommand, Plugin):
         Unsubscribe the members of a usergroup from a Channelgroup.
         """
         group: ChannelGroup = args.channelgroup_id
-        members: UserGroup = Channelgroup._get_usergroup(session, group)
+        members: UserGroup = Channelgroup.get_usergroup(session, group)
         ugroup: UserGroup = args.usergroup
         users: list[ZulipUser] = Usergroup.get_users_for_group(session, ugroup)
         user_ids: list[int] = Usergroup.get_user_ids_for_group(session, ugroup)
-        channel_names: list[str] = await Channelgroup._get_unique_channel_names(
+        channel_names: list[str] = await Channelgroup.get_unique_channel_names(
             session, self.client, sender, group
         )
 
@@ -767,13 +767,13 @@ class Channelgroup(PluginCommand, Plugin):
         group: ChannelGroup | None = args.group_id
 
         if opts.a:
-            await Channelgroup._fix_all(self.client, session)
+            await Channelgroup.fix_all_h(self.client, session)
         else:
             if group is None:
                 raise DMError(
                     "Missing `group_id` of Channelgroup, see `help channelgroup`."
                 )
-            await Channelgroup._fix(self.client, session, group)
+            await Channelgroup.fix_h(self.client, session, group)
 
         yield ReactionResponse("ok")
 
@@ -822,7 +822,7 @@ class Channelgroup(PluginCommand, Plugin):
             raise DMError("Stream not found")
         name = channel["name"]
 
-        await Channelgroup._claim(
+        await Channelgroup.claim_h(
             group=group, session=session, message_id=msg_id, All=opts.a
         )
 
@@ -897,7 +897,7 @@ class Channelgroup(PluginCommand, Plugin):
 
         name = channel["name"]
 
-        await Channelgroup._claim(
+        await Channelgroup.claim_h(
             group=group, session=session, message_id=msg_id, All=opts.a
         )
 
@@ -970,7 +970,7 @@ class Channelgroup(PluginCommand, Plugin):
             raise DMError("Channel not found")
         name = channel["name"]
 
-        await Channelgroup._unclaim(
+        await Channelgroup.unclaim_h(
             group=group, session=session, message_id=msg_id, All=opts.a
         )
 
@@ -998,7 +998,7 @@ class Channelgroup(PluginCommand, Plugin):
         if message["type"] != "channel":
             raise DMError("Claim only channel messages.")
 
-        await Channelgroup._announce(session, message, self.client)
+        await Channelgroup.announce_h(session, message, self.client)
 
         channel = await self.client.get_channel_by_id(message["channel_id"])
         if not channel:
@@ -1032,7 +1032,7 @@ class Channelgroup(PluginCommand, Plugin):
 
         name = channel["name"]
 
-        await Channelgroup._unannounce(session, msg_id, self.client)
+        await Channelgroup.unannounce_h(session, msg_id, self.client)
 
         yield DMResponse(f"Unannounced message in Channel #**{name}**.")
 
@@ -1041,7 +1041,7 @@ class Channelgroup(PluginCommand, Plugin):
     # ========================================================================================================================
 
     @staticmethod
-    def _create_group(session: Session, ID: str, emote: str) -> None:
+    def create_group(session: Session, ID: str, emote: str) -> None:
         """
         Create a new ChannelGroup.
 
@@ -1064,7 +1064,7 @@ class Channelgroup(PluginCommand, Plugin):
         ):
             raise DMError(f"Channelgroup `{ID}` already exists")
 
-        ugroup: UserGroup = Channelgroup._create_usergroup(session, ID)
+        ugroup: UserGroup = Channelgroup.create_usergroup(session, ID)
         group = ChannelGroup(
             ChannelGroupId=ID, ChannelGroupEmote=emote, UserGroupId=ugroup.GroupId
         )
@@ -1076,7 +1076,7 @@ class Channelgroup(PluginCommand, Plugin):
             raise DMError(f"Could not create Channelgroup `{ID}`.") from e
 
     @staticmethod
-    def _create_and_get_group(session: Session, ID: str, emote: str) -> ChannelGroup:
+    def create_and_get_group(session: Session, ID: str, emote: str) -> ChannelGroup:
         """
         Create a new ChannelGroup.
 
@@ -1099,7 +1099,7 @@ class Channelgroup(PluginCommand, Plugin):
         ):
             raise DMError(f"Channelgroup `{ID}` already exists")
 
-        ugroup: UserGroup = Channelgroup._create_usergroup(session, ID)
+        ugroup: UserGroup = Channelgroup.create_usergroup(session, ID)
         group = ChannelGroup(
             ChannelGroupId=ID, ChannelGroupEmote=emote, UserGroupId=ugroup.GroupId
         )
@@ -1113,7 +1113,7 @@ class Channelgroup(PluginCommand, Plugin):
         return group
 
     @staticmethod
-    def _create_usergroup(session: Session, ID: str) -> UserGroup:
+    def create_usergroup(session: Session, ID: str) -> UserGroup:
         """
         Create a new UserGroup for the subscribers of a ChannelGroup.
 
@@ -1140,7 +1140,7 @@ class Channelgroup(PluginCommand, Plugin):
         return group
 
     @staticmethod
-    def _delete_group(session: Session, group: ChannelGroup) -> None:
+    def delete_group_h(session: Session, group: ChannelGroup) -> None:
         """
         Delete a ChannelGroup.
 
@@ -1168,7 +1168,7 @@ class Channelgroup(PluginCommand, Plugin):
             ) from e
 
     @staticmethod
-    async def _remove_channels(
+    async def remove_channels_h(
         session: Session,
         client: AsyncClient,
         group: ChannelGroup,
@@ -1225,7 +1225,7 @@ class Channelgroup(PluginCommand, Plugin):
             )
 
     @staticmethod
-    async def _remove_channels_by_id(
+    async def remove_channels_by_id(
         session: Session,
         group: ChannelGroup,
         channel_ids: list[int],
@@ -1251,7 +1251,7 @@ class Channelgroup(PluginCommand, Plugin):
                 session.rollback()
 
     @staticmethod
-    async def _add_channels(
+    async def add_channels_h(
         client: AsyncClient,
         session: Session,
         _sender: ZulipUser,
@@ -1318,7 +1318,7 @@ class Channelgroup(PluginCommand, Plugin):
             )
 
     @staticmethod
-    def _add_zulip_channels(
+    def add_zulip_channels(
         session: Session, channels: list[ZulipChannel], group: ChannelGroup
     ) -> None:
         failed: list[str] = []
@@ -1348,7 +1348,7 @@ class Channelgroup(PluginCommand, Plugin):
             )
 
     @staticmethod
-    async def _subscribe(client: AsyncClient, user_id: int, group_id: str) -> None:
+    async def subscribe_h(client: AsyncClient, user_id: int, group_id: str) -> None:
         """
         Subscribe a single user to a ChannelGroup.
 
@@ -1366,11 +1366,11 @@ class Channelgroup(PluginCommand, Plugin):
                 .filter(ChannelGroup.ChannelGroupId == group_id)
                 .one()
             )
-            members: UserGroup = Channelgroup._get_usergroup(session, group)
+            members: UserGroup = Channelgroup.get_usergroup(session, group)
             sender: ZulipUser = ZulipUser(user_id)
             sender.set_client(client)
             await sender
-            channel_names: list[str] = await Channelgroup._get_channel_names(
+            channel_names: list[str] = await Channelgroup.get_channel_names(
                 session, client, [group]
             )
 
@@ -1383,7 +1383,7 @@ class Channelgroup(PluginCommand, Plugin):
             Usergroup.add_user_to_group(session, sender, members)
 
     @staticmethod
-    async def _unsubscribe(client: AsyncClient, user_id: int, group_id: str) -> None:
+    async def unsubscribe_h(client: AsyncClient, user_id: int, group_id: str) -> None:
         """
         Unsubscribe a single user from a ChannelGroup.
 
@@ -1401,11 +1401,11 @@ class Channelgroup(PluginCommand, Plugin):
                 .filter(ChannelGroup.ChannelGroupId == group_id)
                 .one()
             )
-            members: UserGroup = Channelgroup._get_usergroup(session, group)
+            members: UserGroup = Channelgroup.get_usergroup(session, group)
             sender: ZulipUser = ZulipUser(user_id)
             sender.set_client(client)
             await sender
-            channel_names: list[str] = await Channelgroup._get_unique_channel_names(
+            channel_names: list[str] = await Channelgroup.get_unique_channel_names(
                 session, client, sender, group
             )
 
@@ -1414,7 +1414,7 @@ class Channelgroup(PluginCommand, Plugin):
             await client.remove_subscriptions(user_id, channel_names)
 
     @staticmethod
-    async def _claim(
+    async def claim_h(
         group: ChannelGroup | None, session: Session, message_id: int, All: bool = False
     ) -> None:
         """
@@ -1471,7 +1471,7 @@ class Channelgroup(PluginCommand, Plugin):
                 raise DMError(f"Could not claim message '{message_id}'.") from e
 
     @staticmethod
-    async def _unclaim(
+    async def unclaim_h(
         group: ChannelGroup | None, session: Session, message_id: int, All: bool = False
     ) -> None:
         """
@@ -1545,7 +1545,7 @@ class Channelgroup(PluginCommand, Plugin):
                         )
 
     @staticmethod
-    async def _announce(
+    async def announce_h(
         session: Session, message: dict[str, Any], client: AsyncClient
     ) -> None:
         """
@@ -1646,7 +1646,7 @@ class Channelgroup(PluginCommand, Plugin):
         return _announcement_msg.format(table)
 
     @staticmethod
-    async def _unannounce(
+    async def unannounce_h(
         session: Session, message_id: int, client: AsyncClient
     ) -> None:
         """
@@ -1683,7 +1683,7 @@ class Channelgroup(PluginCommand, Plugin):
         await client.delete_message(message_id)
 
     @staticmethod
-    async def _fix(client: AsyncClient, session: Session, group: ChannelGroup) -> None:
+    async def fix_h(client: AsyncClient, session: Session, group: ChannelGroup) -> None:
         """
         Makes sure that every subscriber of the given group is subscribed to all channels of this group.
 
@@ -1698,9 +1698,9 @@ class Channelgroup(PluginCommand, Plugin):
         Returns:
             None
         """
-        ugroup: UserGroup = Channelgroup._get_usergroup(session, group)
+        ugroup: UserGroup = Channelgroup.get_usergroup(session, group)
         user_ids: list[int] = Usergroup.get_user_ids_for_group(session, ugroup)
-        channel_names: list[str] = await Channelgroup._get_channel_names(
+        channel_names: list[str] = await Channelgroup.get_channel_names(
             session, client, [group]
         )
 
@@ -1711,7 +1711,7 @@ class Channelgroup(PluginCommand, Plugin):
         await client.subscribe_users_multiple_channels(user_ids, channels)
 
     @staticmethod
-    async def _fix_all(client: AsyncClient, session: Session) -> None:
+    async def fix_all_h(client: AsyncClient, session: Session) -> None:
         """
           Fixing all Channels of all ChannelGroups
 
@@ -1728,14 +1728,14 @@ class Channelgroup(PluginCommand, Plugin):
         groups: list[ChannelGroup] = session.query(ChannelGroup).all()
 
         for group in groups:
-            await Channelgroup._fix(client, session, group)
+            await Channelgroup.fix_h(client, session, group)
 
     # ========================================================================================================================
     #       HELPER METHODS
     # ========================================================================================================================
 
     @staticmethod
-    def _get_group_id_from_emoji_event(emoji: str) -> str | None:
+    def get_group_id_from_emoji_event(emoji: str) -> str | None:
         """
         Get the identifier of a Channelgroup by an emoji name.
         Returns None if given emoji is not associated with any ChannelGroup.
@@ -1752,7 +1752,7 @@ class Channelgroup(PluginCommand, Plugin):
         return result
 
     @staticmethod
-    def _get_group_ids_from_channel_id(Id: int) -> list[str]:
+    def get_group_ids_from_channel_id(Id: int) -> list[str]:
         """
         Get a list of all ChannelGroup-identifiers that a channel is a member in.
         Returns empty list if channel is not member of any ChannelGroup.
@@ -1768,7 +1768,7 @@ class Channelgroup(PluginCommand, Plugin):
         return list(result)
 
     @staticmethod
-    def _get_group_subscribers(groups: list[str]) -> list[int]:
+    def get_group_subscribers(groups: list[str]) -> list[int]:
         """
         Get a list of all User-IDs of the subscribers from all ChannelGroups in a given list of ChannelGroup-identifiers.
         Returns empty list either when there are no ChannelGroups associated with the given identifiers or if there are no subscribers for in the ChannelGroups.
@@ -1776,20 +1776,20 @@ class Channelgroup(PluginCommand, Plugin):
         result: list[int] = []
         with DB.session() as session:
             for g_id in groups:
-                u_group: UserGroup = Channelgroup._get_usergroup_by_id(session, g_id)
+                u_group: UserGroup = Channelgroup.get_usergroup_by_id(session, g_id)
                 res: list[int] = Usergroup.get_user_ids_for_group(session, u_group)
                 result.extend(res)
         return result
 
     @staticmethod
-    def _message_is_claimed(msg_id: int, em: str) -> bool:
+    def message_is_claimed(msg_id: int, em: str) -> bool:
         """
         Decides whether the message of a given message-id is in any form claimed
         (either by all Channelgroups or by the Channelgroup associated with a given emote).
         """
         claimedByOne: bool
         claimedByAll: bool
-        group_id: str | None = Channelgroup._get_group_id_from_emoji_event(em)
+        group_id: str | None = Channelgroup.get_group_id_from_emoji_event(em)
 
         if group_id is None:
             return False
@@ -1811,7 +1811,7 @@ class Channelgroup(PluginCommand, Plugin):
         return claimedByOne or claimedByAll
 
     @staticmethod
-    async def _get_channel_names(
+    async def get_channel_names(
         session: Session, client: AsyncClient, groups: list[ChannelGroup]
     ) -> list[str]:
         """
@@ -1841,7 +1841,7 @@ class Channelgroup(PluginCommand, Plugin):
         return list(channels)
 
     @staticmethod
-    def _get_channels(session: Session, group: ChannelGroup) -> list[ZulipChannel]:
+    def get_channels(session: Session, group: ChannelGroup) -> list[ZulipChannel]:
         """
         Get a list of all channels that are members of a given Channelgroup.
         """
@@ -1857,16 +1857,16 @@ class Channelgroup(PluginCommand, Plugin):
         return channels
 
     @staticmethod
-    async def _get_unique_channel_names(
+    async def get_unique_channel_names(
         session: Session, client: AsyncClient, user: ZulipUser, group: ChannelGroup
     ) -> list[str]:
         """
         Get a list of the names of all channels that are members only in a given ChannelGroup and not in any other ChannelGroup.
         """
-        groups: list[ChannelGroup] = Channelgroup._get_groups_for_user(session, user)
+        groups: list[ChannelGroup] = Channelgroup.get_groups_for_user(session, user)
         groups.remove(group)
 
-        channelsToKeep: list[str] = await Channelgroup._get_channel_names(
+        channelsToKeep: list[str] = await Channelgroup.get_channel_names(
             session, client, groups
         )
 
@@ -1884,7 +1884,7 @@ class Channelgroup(PluginCommand, Plugin):
         return [channel for channel in channels if channel not in channelsToKeep]
 
     @staticmethod
-    def _get_usergroup(session: Session, group: ChannelGroup) -> UserGroup:
+    def get_usergroup(session: Session, group: ChannelGroup) -> UserGroup:
         """
         Get the UserGroup for the subscribers of a given ChannelGroup.
         """
@@ -1897,7 +1897,7 @@ class Channelgroup(PluginCommand, Plugin):
         return session.query(UserGroup).filter(UserGroup.GroupId == Id).one()
 
     @staticmethod
-    def _get_usergroup_by_id(session: Session, group_id: str) -> UserGroup:
+    def get_usergroup_by_id(session: Session, group_id: str) -> UserGroup:
         """
         Get the UserGroup for the subscribers of a ChannelGroup, given its ChannelGroup-identifier.
         """
@@ -1910,7 +1910,7 @@ class Channelgroup(PluginCommand, Plugin):
         return session.query(UserGroup).filter(UserGroup.GroupId == Id).one()
 
     @staticmethod
-    def _get_groups_for_user(session: Session, user: ZulipUser) -> list[ChannelGroup]:
+    def get_groups_for_user(session: Session, user: ZulipUser) -> list[ChannelGroup]:
         """
         Get a list of ChannelGroups that a given user is subscribed to.
         """

@@ -18,7 +18,7 @@ import signal
 from graphlib import TopologicalSorter
 import sys
 import threading
-from typing import Any, Iterable, Type, TypeVar, Callable
+from typing import Any, Iterable, Type, TypeVar
 
 from zulip import Client as ZulipClient
 from tumcsbot.lib import response

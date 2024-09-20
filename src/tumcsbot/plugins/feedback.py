@@ -70,7 +70,7 @@ class Feedback(PluginCommand, Plugin):
 
         # TODO: @Janez Rotman
         max_topic_length = 60
-        topic: str = f"New Feedback"
+        topic: str = "New Feedback"
 
         prompt2 = await self.client.send_response(
             Response.build_message(
@@ -105,20 +105,20 @@ class Feedback(PluginCommand, Plugin):
         )
         if result3 is None:
             raise DMError("No response from user")
-        else:
-            response = await self.client.send_message(
-                {
-                    "type": "stream",
-                    "to": fbc.id,
-                    "topic": topic,
-                    "content": result3,
-                }
-            )
 
-            if response["result"] != "success":
-                raise DMError(
-                    "Something went wrong when sending your message to the Feedback-Channel :botsweat:"
-                )
+        response = await self.client.send_message(
+            {
+                "type": "stream",
+                "to": fbc.id,
+                "topic": topic,
+                "content": result3,
+            }
+        )
+
+        if response["result"] != "success":
+            raise DMError(
+                "Something went wrong when sending your message to the Feedback-Channel :botsweat:"
+            )
 
         yield DMResponse(
             "Your Feedback is now sent to the Feedback-Channel of the course :bothappy:"

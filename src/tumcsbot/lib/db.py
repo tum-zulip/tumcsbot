@@ -1,7 +1,10 @@
+import logging
+
 from os.path import isabs
 from contextlib import contextmanager
 from typing import Generator, Any
 import yaml
+
 
 
 from sqlalchemy import create_engine
@@ -84,7 +87,6 @@ async def serialize_model(
 
     # Determine which foreign keys to skip because they are handled by relationships
     skip_keys = set()
-    import logging
 
     logging.debug(
         len(exclude_tables) * "        " + f"mapper.columns: {mapper.columns}"

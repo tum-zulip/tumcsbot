@@ -131,8 +131,8 @@ class Channels(PluginCommand, Plugin):
         sender: ZulipUser,
         _session: Session,
         args: CommandParser.Args,
-        opts: CommandParser.Opts,
-        message: dict[str, Any],
+        _opts: CommandParser.Opts,
+        _message: dict[str, Any],
     ) -> AsyncGenerator[response_type, None]:
         """
         todo: this is wrong documentation

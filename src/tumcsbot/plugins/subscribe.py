@@ -6,8 +6,6 @@
 from typing import AsyncGenerator, Any
 from tumcsbot.lib.db import Session
 
-from tumcsbot.lib.response import Response
-from tumcsbot.lib.regex import Regex
 from tumcsbot.lib.types import (
     Privilege,
     PartialError,

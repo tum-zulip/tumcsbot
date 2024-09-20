@@ -188,7 +188,7 @@ class GarbageCollector(Plugin):
 
         if last_modified_date + threshhold < time.time():
             return True
-        
+
         return False
 
     async def _get_admin_users(self) -> list[ZulipUser]:
@@ -281,7 +281,7 @@ class GarbageCollector(Plugin):
                 self.pending_garbage_collections.remove(channel.id)
                 logging.info("deleting channel %s", channel.name)
                 await self.client.call_endpoint(
-                    url="streams/%d" % (channel.id,),
+                    url=f"streams/{channel.id}",
                     method="DELETE",
                     request={},
                 )

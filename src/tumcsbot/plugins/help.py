@@ -74,7 +74,7 @@ class Help(PluginCommand, Plugin):
 
     @staticmethod
     def _get_help_info(
-        command: str | None = None, privilege: Privilege = Privilege.USER
+        command: str | None = None, _privilege: Privilege = Privilege.USER
     ) -> list[CommandConfig]:
         """Get help information from each command.
 
@@ -117,7 +117,6 @@ class Help(PluginCommand, Plugin):
             msg += PRIVILAGE_MSG + "\n"
 
         msg += "\n" + cmd.short_help_msg
-        CommandConfig
 
         msg += f"\n```text\n{cmd.syntax_for(Privilege.ADMIN if privileged else Privilege.USER)}\n```\n\n"
 

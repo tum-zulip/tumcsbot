@@ -79,8 +79,8 @@ class Msg(PluginCommand, Plugin):
         try:
             session.query(Messages).filter(Messages.MsgId == ident).delete()
             session.commit()
-        except sqlalchemy.exc.IntegrityError:
-            raise DMError(f"No message with identifier {ident} found.")
+        except sqlalchemy.exc.IntegrityError as e:
+            raise DMError(f"No message with identifier {ident} found.") from e
 
         yield DMResponse(f"Message with identifier {ident} removed.")
 

@@ -1,11 +1,9 @@
 from __future__ import annotations
-from argparse import Namespace
 from functools import wraps
 from typing import AsyncGenerator, Callable, Any, Iterable, cast
 from inspect import cleandoc
 
 import sqlalchemy
-from sqlalchemy import Column
 
 from tumcsbot.lib.db import Session
 from tumcsbot.lib.response import Response
@@ -151,7 +149,7 @@ def opt(
             python_type = to_python_type(ty)
         else:
             python_type = bool
-        
+
         meta.opts.insert(
             0, OptConfig(opt, long_opt, python_type, description, priv)
         )
@@ -453,9 +451,9 @@ class command:
                     error_message = f"An error occurred: {errors[0]}"
 
                 if len(successful) > 0:
-                    error_message + "\nHowever, the following were successful: " + ", ".join(
+                    error_message += "\nHowever, the following were successful: " + ", ".join(
                         successful
-                    ),
+                    )
 
                 # This case covers both multiple errors with no success, and a single error with no success
                 responses.append(Response.build_message(message, error_message))
@@ -482,7 +480,7 @@ class command:
             opts_dict = {s: kwargs.get(s) or kwargs.get(l) for s, l in opts_names}
             opts_dict.update({l: kwargs.get(l) or kwargs.get(s) for s, l in opts_names})
             opts_ns = CommandParser.Opts(**opts_dict)
-            
+
             async for response in fn(
                 self, sender, session, args_ns, opts_ns, message
             ):
