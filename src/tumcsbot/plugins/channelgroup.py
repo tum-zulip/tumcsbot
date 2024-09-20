@@ -4,7 +4,7 @@
 # TUM CS Bot - https://github.com/ro-i/tumcsbot
 
 from inspect import cleandoc
-import logging
+
 from typing import Any, Iterable, AsyncGenerator, cast
 from sqlalchemy import Column, String, Integer, ForeignKey
 import sqlalchemy
@@ -146,12 +146,12 @@ class Channelgroup(PluginCommand, Plugin):
     async def handle_delete_message(
         self, event: dict[str, Any]
     ) -> Response | Iterable[Response]:
-        id: int = event["message_id"]
+        Id: int = event["message_id"]
         with DB.session() as session:
             try:
-                session.query(GroupClaim).filter(GroupClaim.MessageId == id).delete()
+                session.query(GroupClaim).filter(GroupClaim.MessageId == Id).delete()
                 session.query(GroupClaimAll).filter(
-                    GroupClaimAll.MessageId == id
+                    GroupClaimAll.MessageId == Id
                 ).delete()
                 session.commit()
             except sqlalchemy.exc.IntegrityError:
@@ -172,7 +172,7 @@ class Channelgroup(PluginCommand, Plugin):
                 await Channelgroup._subscribe(self.client, user_id, group_id)
             if event["op"] == "remove":
                 await Channelgroup._unsubscribe(self.client, user_id, group_id)
-        except DMError as e:
+        except DMError:
             self.logger.info("Failed to (un)subscribe the user to Channelgroup")
             Response.build_message(
                 message=None,
@@ -314,8 +314,7 @@ class Channelgroup(PluginCommand, Plugin):
         if len(groups) == 0:
             if opts.a:
                 raise DMError("No Channel groups found")
-            else:
-                raise DMError("You are not in any Channelgroups")
+            raise DMError("You are not in any Channelgroups")
 
         for group in groups:
             group_id = group.ChannelGroupId
@@ -361,14 +360,14 @@ class Channelgroup(PluginCommand, Plugin):
         """
         Create a new Channelgroup.
         """
-        id: str = args.group_id
+        Id: str = args.group_id
         emoji_name: str | None = args.emoji
 
         if not emoji_name:
             raise DMError(f"{emoji_name} is not a valid emote.")
 
-        Channelgroup._create_group(session, id, emoji_name)
-        yield DMResponse(f"Channelgroup `{id}` created.")
+        Channelgroup._create_group(session, Id, emoji_name)
+        yield DMResponse(f"Channelgroup `{Id}` created.")
 
     @command
     @privilege(Privilege.ADMIN)
@@ -824,7 +823,7 @@ class Channelgroup(PluginCommand, Plugin):
         name = channel["name"]
 
         await Channelgroup._claim(
-            group=group, session=session, message_id=msg_id, all=opts.a
+            group=group, session=session, message_id=msg_id, All=opts.a
         )
 
         if not opts.a:
@@ -899,7 +898,7 @@ class Channelgroup(PluginCommand, Plugin):
         name = channel["name"]
 
         await Channelgroup._claim(
-            group=group, session=session, message_id=msg_id, all=opts.a
+            group=group, session=session, message_id=msg_id, All=opts.a
         )
 
         if group is not None:
@@ -972,7 +971,7 @@ class Channelgroup(PluginCommand, Plugin):
         name = channel["name"]
 
         await Channelgroup._unclaim(
-            group=group, session=session, message_id=msg_id, all=opts.a
+            group=group, session=session, message_id=msg_id, All=opts.a
         )
 
         if group is not None:
@@ -1215,7 +1214,7 @@ class Channelgroup(PluginCommand, Plugin):
                         ChannelGroupMember.ChannelGroupId == group.ChannelGroupId
                     ).delete()
                     session.commit()
-                except sqlalchemy.exc.IntegrityError as e:
+                except sqlalchemy.exc.IntegrityError:
                     session.rollback()
                     failed.append(f"#**{channel.name}**")
 
@@ -1231,10 +1230,10 @@ class Channelgroup(PluginCommand, Plugin):
         group: ChannelGroup,
         channel_ids: list[int],
     ) -> None:
-        for id in channel_ids:
+        for Id in channel_ids:
             if (
                 session.query(ChannelGroupMember)
-                .filter(ChannelGroupMember.Channel == id)
+                .filter(ChannelGroupMember.Channel == Id)
                 .filter(ChannelGroupMember.ChannelGroupId == group.ChannelGroupId)
                 .first()
                 is None
@@ -1243,19 +1242,19 @@ class Channelgroup(PluginCommand, Plugin):
             try:
                 # search for the listed channels in the db and delete them
                 session.query(ChannelGroupMember).filter(
-                    ChannelGroupMember.Channel == id
+                    ChannelGroupMember.Channel == Id
                 ).filter(
                     ChannelGroupMember.ChannelGroupId == group.ChannelGroupId
                 ).delete()
                 session.commit()
-            except sqlalchemy.exc.IntegrityError as e:
+            except sqlalchemy.exc.IntegrityError:
                 session.rollback()
 
     @staticmethod
     async def _add_channels(
         client: AsyncClient,
         session: Session,
-        sender: ZulipUser,
+        _sender: ZulipUser,
         group: ChannelGroup,
         channel_patterns: list[str],
     ) -> None:
@@ -1308,7 +1307,7 @@ class Channelgroup(PluginCommand, Plugin):
                     )
                 )
                 session.commit()
-            except sqlalchemy.exc.IntegrityError as e:
+            except sqlalchemy.exc.IntegrityError:
                 session.rollback()
                 failed.append(f"#**{channel.name}**")
 
@@ -1338,7 +1337,7 @@ class Channelgroup(PluginCommand, Plugin):
                     )
                 )
                 session.commit()
-            except sqlalchemy.exc.IntegrityError as e:
+            except sqlalchemy.exc.IntegrityError:
                 session.rollback()
                 failed.append(f"#**{channel.name}**")
 
@@ -1416,7 +1415,7 @@ class Channelgroup(PluginCommand, Plugin):
 
     @staticmethod
     async def _claim(
-        group: ChannelGroup | None, session: Session, message_id: int, all: bool = False
+        group: ChannelGroup | None, session: Session, message_id: int, All: bool = False
     ) -> None:
         """
         Make a message "special" for a given group or for all ChannelGroups.
@@ -1434,7 +1433,7 @@ class Channelgroup(PluginCommand, Plugin):
             None
         """
 
-        if not all:
+        if not All:
             if group is None:
                 raise DMError("No group specified.")
 
@@ -1469,11 +1468,11 @@ class Channelgroup(PluginCommand, Plugin):
                 session.commit()
             except sqlalchemy.exc.IntegrityError as e:
                 session.rollback()
-                raise DMError(f"Could not claim message '{message_id}'.")
+                raise DMError(f"Could not claim message '{message_id}'.") from e
 
     @staticmethod
     async def _unclaim(
-        group: ChannelGroup | None, session: Session, message_id: int, all: bool = False
+        group: ChannelGroup | None, session: Session, message_id: int, All: bool = False
     ) -> None:
         """
         Reverts "special status" of a claimed message.
@@ -1491,7 +1490,7 @@ class Channelgroup(PluginCommand, Plugin):
             None
         """
 
-        if not all:
+        if not All:
             if group is None:
                 raise DMError("No group specified.")
 
@@ -1524,7 +1523,7 @@ class Channelgroup(PluginCommand, Plugin):
                 session.commit()
             except sqlalchemy.exc.IntegrityError as e:
                 session.rollback()
-                raise DMError(f"Could not unclaim message '{message_id}'.")
+                raise DMError(f"Could not unclaim message '{message_id}'.") from e
 
             # delete msg from claim_db of every channel
             for g in session.query(ChannelGroup).all():
@@ -1569,6 +1568,9 @@ class Channelgroup(PluginCommand, Plugin):
         # Remove the requesting message.
         response = await client.delete_message(message["id"])
 
+        if response["result"] != "success":
+            raise DMError("Could not delete message.")
+
         # Send own message.
         botMessage: dict[str, Any] = await client.send_response(
             Response.build_message(message, announcement_msg)
@@ -1577,13 +1579,13 @@ class Channelgroup(PluginCommand, Plugin):
             raise DMError("Could not announce.")
 
         # Insert the id of the bots message into the database.
-        id = botMessage["id"]
+        Id = botMessage["id"]
         try:
-            session.add(GroupClaimAll(MessageId=id))
+            session.add(GroupClaimAll(MessageId=Id))
             session.commit()
         except sqlalchemy.exc.IntegrityError as e:
             session.rollback()
-            raise DMError(f"Could not claim message '{ id }'.") from e
+            raise DMError(f"Could not claim message '{ Id }'.") from e
 
         # Get all the currently existing emojis.
         all_emojis: list[str] = [
@@ -1750,7 +1752,7 @@ class Channelgroup(PluginCommand, Plugin):
         return result
 
     @staticmethod
-    def _get_group_ids_from_channel_id(id: int) -> list[str]:
+    def _get_group_ids_from_channel_id(Id: int) -> list[str]:
         """
         Get a list of all ChannelGroup-identifiers that a channel is a member in.
         Returns empty list if channel is not member of any ChannelGroup.
@@ -1760,7 +1762,7 @@ class Channelgroup(PluginCommand, Plugin):
             result = {
                 str(sg.ChannelGroupId)
                 for sg in session.query(ChannelGroupMember)
-                .filter(ChannelGroupMember.Channel == id)
+                .filter(ChannelGroupMember.Channel == Id)
                 .all()
             }
         return list(result)
@@ -1891,8 +1893,8 @@ class Channelgroup(PluginCommand, Plugin):
             .filter(ChannelGroup.ChannelGroupId == group.ChannelGroupId)
             .one()
         )
-        id: int = int(s.UserGroupId)
-        return session.query(UserGroup).filter(UserGroup.GroupId == id).one()
+        Id: int = int(s.UserGroupId)
+        return session.query(UserGroup).filter(UserGroup.GroupId == Id).one()
 
     @staticmethod
     def _get_usergroup_by_id(session: Session, group_id: str) -> UserGroup:
@@ -1904,8 +1906,8 @@ class Channelgroup(PluginCommand, Plugin):
             .filter(ChannelGroup.ChannelGroupId == group_id)
             .one()
         )
-        id: int = int(s.UserGroupId)
-        return session.query(UserGroup).filter(UserGroup.GroupId == id).one()
+        Id: int = int(s.UserGroupId)
+        return session.query(UserGroup).filter(UserGroup.GroupId == Id).one()
 
     @staticmethod
     def _get_groups_for_user(session: Session, user: ZulipUser) -> list[ChannelGroup]:
@@ -1919,10 +1921,10 @@ class Channelgroup(PluginCommand, Plugin):
 
         result: list[ChannelGroup] = []
 
-        for id in ug_ids:
+        for Id in ug_ids:
             s = (
                 session.query(ChannelGroup)
-                .filter(ChannelGroup.UserGroupId == id)
+                .filter(ChannelGroup.UserGroupId == Id)
                 .one_or_none()
             )
             if s:
