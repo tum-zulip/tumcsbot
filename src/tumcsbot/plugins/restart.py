@@ -6,11 +6,11 @@
 from typing import Any, Iterable
 
 from tumcsbot.lib.response import Response
-from tumcsbot.plugin import PluginCommandMixin, Plugin
+from tumcsbot.plugin import PluginCommand, Plugin
 from tumcsbot.lib.client import Event
 
 
-class Restart(PluginCommandMixin, Plugin):
+class Restart(PluginCommand, Plugin):
     syntax = "restart"
     description = "Restart the bot.\n[only bot owner]"
 

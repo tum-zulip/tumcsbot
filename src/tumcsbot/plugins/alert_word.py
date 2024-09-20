@@ -20,7 +20,7 @@ from tumcsbot.lib.regex import Regex
 from tumcsbot.lib.command_parser import CommandParser
 from tumcsbot.lib.db import DB, Session, TableBase
 from tumcsbot.lib.types import Privilege, ZulipUser, DMResponse, response_type
-from tumcsbot.plugin import PluginCommandMixin, Plugin
+from tumcsbot.plugin import PluginCommand, Plugin
 from tumcsbot.plugin_decorators import command, privilege, arg
 from tumcsbot.lib.client import Event
 
@@ -32,7 +32,7 @@ class Alert(TableBase):  # type: ignore
     Emoji = Column(String, nullable=False)
 
 
-class AlertWord(PluginCommandMixin, Plugin):
+class AlertWord(PluginCommand, Plugin):
     """Manage reactions on certain words or phrases with emojis."""
 
     def _init_plugin(self) -> None:

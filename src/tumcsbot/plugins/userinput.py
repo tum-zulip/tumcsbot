@@ -5,7 +5,7 @@
 
 import asyncio
 import logging
-from typing import Any, Callable, Iterable, Literal
+from typing import Any, Callable, Iterable, Literal, cast
 
 from tumcsbot.lib.client import AsyncClient, Event
 from tumcsbot.lib.response import Response
@@ -32,7 +32,7 @@ class UserInput(Plugin):
             logging.error("Could not get previous message: %s", response)
             return {}
 
-        msg = response["messages"][0]
+        msg = cast(dict[str, Any], response["messages"][0])
 
         print(msg["display_recipient"], message["display_recipient"])
 
@@ -156,7 +156,7 @@ class UserInput(Plugin):
     ) -> tuple[str | None, dict[str, Any]]:
         """Ask the user for a reaction."""
 
-        q = asyncio.Queue(1)
+        q: asyncio.Queue[dict[str, Any]] = asyncio.Queue(1)
         cls.pending_inputs[message_id] = q
 
         try:
@@ -187,7 +187,7 @@ class UserInput(Plugin):
     ) -> tuple[str | None, dict[str, Any]]:
         """Ask the user for a short text."""
 
-        q = asyncio.Queue(1)
+        q: asyncio.Queue[dict[str, Any]] = asyncio.Queue(1)
         cls.pending_inputs[message_id] = q
 
         try:

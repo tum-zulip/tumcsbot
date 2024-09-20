@@ -107,7 +107,7 @@ class TumCSBot:
 
         asyncio.run(self.init_db())
 
-        self.event_listener: asyncio.Task[Callable] | None = None
+        self.event_listener: asyncio.Task[None] | None = None
 
         # Cleanup properly on SIGTERM and SIGINT.
         for s in [signal.SIGINT, signal.SIGTERM]:

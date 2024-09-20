@@ -300,7 +300,7 @@ class CommandParser:
             else:
                 opt = token[2:]
 
-            logging.debug(f"Opt: {opt}")
+            logging.debug("Opt: %s", opt)
 
             if not opt in opts:
                 # Invalid option.

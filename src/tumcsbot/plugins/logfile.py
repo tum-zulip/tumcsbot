@@ -8,10 +8,10 @@ from typing import Any, Iterable
 
 from tumcsbot.lib.response import Response
 from tumcsbot.lib.conf import Conf
-from tumcsbot.plugin import PluginCommandMixin,Plugin
+from tumcsbot.plugin import PluginCommand,Plugin
 
 
-class Logfile(PluginCommandMixin, Plugin):
+class Logfile(PluginCommand, Plugin):
     syntax = "logfile"
     description = "Get the bot's own logfile.\n[bot owner only]"
 

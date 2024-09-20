@@ -19,7 +19,7 @@ from tumcsbot.lib.types import (
     ZulipUser,
 )
 from tumcsbot.lib.command_parser import CommandParser
-from tumcsbot.plugin import PluginCommandMixin, Plugin
+from tumcsbot.plugin import PluginCommand, Plugin
 from tumcsbot.plugin_decorators import (
     command,
     privilege,
@@ -27,7 +27,7 @@ from tumcsbot.plugin_decorators import (
 )
 
 
-class Subscribe(PluginCommandMixin, Plugin):
+class Subscribe(PluginCommand, Plugin):
     """
     Subscribe users to a channel.
     ---

@@ -774,8 +774,6 @@ class AsyncClient:
         self, channels: Iterable[dict[str, Any]], **kwargs: Any
     ) -> dict[str, Any]:
         request = {"subscriptions": channels, **kwargs}
-        import json
-        print(json.dumps(request))
         return await self.call_endpoint(
             url="users/me/subscriptions",
             request=request,

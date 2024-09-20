@@ -9,7 +9,7 @@ import sqlalchemy
 
 from tumcsbot.lib.command_parser import CommandParser
 from tumcsbot.lib.db import Session, TableBase
-from tumcsbot.plugin import PluginCommandMixin, Plugin
+from tumcsbot.plugin import PluginCommand, Plugin
 from tumcsbot.plugin_decorators import (
     command,
     privilege,
@@ -25,7 +25,7 @@ class Messages(TableBase):  # type: ignore
     MsgText = Column(String, nullable=False)
 
 
-class Msg(PluginCommandMixin, Plugin):
+class Msg(PluginCommand, Plugin):
     """
     Store a message for later use, send or delete a stored message \
     or list all stored messages. The text must be quoted but may

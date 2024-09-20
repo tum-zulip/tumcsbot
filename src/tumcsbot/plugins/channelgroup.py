@@ -5,7 +5,7 @@
 
 from inspect import cleandoc
 import logging
-from typing import Any, Iterable, AsyncGenerator
+from typing import Any, Iterable, AsyncGenerator, cast
 from sqlalchemy import Column, String, Integer, ForeignKey
 import sqlalchemy
 from sqlalchemy.orm import relationship, Mapped
@@ -14,7 +14,7 @@ from tumcsbot.lib.regex import Regex
 
 from tumcsbot.lib.response import Response
 from tumcsbot.lib.client import AsyncClient, Event
-from tumcsbot.plugin import Plugin, PluginCommandMixin
+from tumcsbot.plugin import Plugin, PluginCommand
 from tumcsbot.lib.command_parser import CommandParser
 from tumcsbot.lib.db import DB, Session, TableBase
 from tumcsbot.plugin_decorators import command, privilege, opt, arg
@@ -65,7 +65,7 @@ class ChannelGroup(TableBase):  # type: ignore
 
     @hybrid_property
     def usergroup(self) -> UserGroup:
-        return self._usergroup
+        return cast(UserGroup, self._usergroup)
 
 
 class ChannelGroupMember(TableBase):  # type: ignore
@@ -109,7 +109,7 @@ class GroupClaimAll(TableBase):  # type: ignore
     # UniqueConstraint('MessageId', name='uq_group_claims_all_message_id')
 
 
-class Channelgroup(PluginCommandMixin, Plugin):
+class Channelgroup(PluginCommand, Plugin):
     """
     Manage ChannelGroups.
     """
@@ -136,7 +136,7 @@ class Channelgroup(PluginCommandMixin, Plugin):
                 op = "unknown operation (" + op + ")"
 
             self.logger.info(
-                f"Channels %s %s", ', '.join([f'#**{s['name']}**' for s in data['channels']]), op
+                "Channels %s %s", ', '.join([f'#**{s['name']}**' for s in data['channels']]), op
             )
             self.logger.debug(data)
             return await self.handle_channel_event(data)
@@ -212,7 +212,7 @@ class Channelgroup(PluginCommandMixin, Plugin):
 
                 if group_ids_d:
                     self.logger.info(
-                        f"Channel {name_d} being deleted from groups {group_ids_d}"
+                        "Channel %s being deleted from groups %s", name_d, group_ids_d
                     )
 
                 for group_id in group_ids_d:

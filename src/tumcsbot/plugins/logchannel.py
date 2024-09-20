@@ -10,7 +10,7 @@ from tumcsbot.lib.client import AsyncClient
 from tumcsbot.lib.conf import Conf
 from tumcsbot.lib.db import DB
 from tumcsbot.lib.response import Response
-from tumcsbot.plugin import PluginCommandMixin, Plugin
+from tumcsbot.plugin import PluginCommand, Plugin
 from tumcsbot.plugins.garbage_collector import GarbageCollectorIgnoreChannelsTable
 
 
@@ -64,7 +64,7 @@ class ZulipLogHandler(logging.Handler):
             return
 
 
-class LogChannel(PluginCommandMixin, Plugin):
+class LogChannel(PluginCommand, Plugin):
     """
     Send log messages to a Zulip channel.
     """
@@ -86,7 +86,7 @@ class LogChannel(PluginCommandMixin, Plugin):
             streams=[
                 {
                     "name": logstram,
-                    "description": f"Log channel of TUM CS Bot",
+                    "description": "Log channel of TUM CS Bot",
                 }
             ],
             principals=principals,
@@ -94,7 +94,7 @@ class LogChannel(PluginCommandMixin, Plugin):
         )
 
         if response["result"] != "success":
-            logging.warning(f"Could not add subscribers to {logstram}")
+            logging.warning("Could not add subscribers to %s", logstram)
             return
 
         response = self.client.as_sync().get_streams()

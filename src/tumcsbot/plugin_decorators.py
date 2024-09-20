@@ -1,14 +1,15 @@
 from __future__ import annotations
 from argparse import Namespace
 from functools import wraps
-from typing import AsyncGenerator, Callable, Any, Iterable
+from typing import AsyncGenerator, Callable, Any, Iterable, cast
 from inspect import cleandoc
 
 import sqlalchemy
+from sqlalchemy import Column
 
 from tumcsbot.lib.db import Session
 from tumcsbot.lib.response import Response
-from tumcsbot.plugin import PluginCommandMixin
+from tumcsbot.plugin import PluginCommand
 from tumcsbot.lib.command_parser import CommandParser
 from tumcsbot.lib.types import (
     ZulipChannelNotFound,
@@ -44,7 +45,7 @@ def get_meta(func: Any) -> SubCommandConfig:
     return func.__tumsbot_plugin_meta__
 
 
-def to_python_type(ty: type) -> Any:
+def to_python_type(ty: arg_type) -> Callable[[Any], Any]:
     """Convert a SQLAlchemy InstrumentedAttribute (Column Type) to a Python type or return the original type if it is not a SQLAlchemy Column type."""
     if isinstance(ty, sqlalchemy.orm.InstrumentedAttribute):
         columns = ty.property.columns
@@ -52,9 +53,9 @@ def to_python_type(ty: type) -> Any:
             raise ValueError(f"Expected exactly one column, got {len(columns)}")
 
         column = columns[0]
-        return column.type.python_type
+        return cast(Callable[[Any], Any], column.type.python_type)
 
-    return ty
+    return cast(Callable[[Any], Any], ty)
 
 
 async def process_arg(
@@ -115,7 +116,7 @@ def arg(
 
         @wraps(func)
         async def wrapper(
-            self,
+            self: PluginCommand,
             sender: ZulipUser,
             session: Session,
             args: CommandParser.Args,
@@ -123,7 +124,7 @@ def arg(
             message: dict[str, Any],
         ) -> AsyncGenerator[response_type, None]:
             if privilege is not None:  # and todo: check if option is present
-                if not await sender.isPrivileged:
+                if not sender.isPrivileged:
                     raise UserNotPrivilegedException()
 
             await process_arg(name, greedy, optional, ty, args, session)
@@ -146,14 +147,18 @@ def opt(
 ) -> command_decorator_type:
     def decorator(func: command_func_type) -> command_func_type:
         meta = get_meta(func)
-        python_type = to_python_type(ty)
+        if ty is not None:
+            python_type = to_python_type(ty)
+        else:
+            python_type = bool
+        
         meta.opts.insert(
             0, OptConfig(opt, long_opt, python_type, description, priv)
         )
 
         @wraps(func)
         async def wrapper(
-            self,
+            self: PluginCommand,
             sender: ZulipUser,
             session: Session,
             args: CommandParser.Args,
@@ -202,7 +207,7 @@ def privilege(privilege: Privilege) -> command_decorator_type:
 
         @wraps(func)
         async def wrapper(
-            self,
+            self: PluginCommand,
             sender: ZulipUser,
             session: Session,
             args: CommandParser.Args,
@@ -231,6 +236,7 @@ class command:
             raise ValueError("name or function must be provided")
 
         if name is None:
+            fn = cast(command_func_type, fn)
             self._name = fn.__name__
 
     def __call__(self, fn: command_func_type) -> command:
@@ -299,11 +305,11 @@ class command:
     def optional_args(self) -> dict[str, Any]:
         return {arg.name: arg.ty for arg in self.meta.args if arg.optional}
 
-    def __set_name__(self, owner, _) -> None:
+    def __set_name__(self, owner: type[PluginCommand], _: str) -> None:
 
-        if not issubclass(owner, PluginCommandMixin):
+        if not issubclass(owner, PluginCommand):
             raise TypeError(
-                f"Command decorator can only be used on PluginCommandMixin subclasses. {owner} is not a subclass of PluginCommandMixin."
+                f"Command decorator can only be used on PluginCommand subclasses. {owner} is not a subclass of PluginCommand."
             )
 
         if len(owner._tumcs_bot_commands.subcommands) == 0:
@@ -325,11 +331,16 @@ class command:
         )
 
         # replace ourself with the original method
+
+        fn_opt = getattr(self, "fn")
+        if fn_opt is None:
+            raise ValueError("fn is not set")
+        fn = cast(command_func_type, fn_opt)
         outer_self = self
 
-        @wraps(self.fn)
+        @wraps(fn)
         async def wrapper(
-            self,
+            self: PluginCommand,
             sender: ZulipUser,
             session: Session,
             args: CommandParser.Args,
@@ -471,7 +482,8 @@ class command:
             opts_dict = {s: kwargs.get(s) or kwargs.get(l) for s, l in opts_names}
             opts_dict.update({l: kwargs.get(l) or kwargs.get(s) for s, l in opts_names})
             opts_ns = CommandParser.Opts(**opts_dict)
-            async for response in outer_self.fn(
+            
+            async for response in fn(
                 self, sender, session, args_ns, opts_ns, message
             ):
                 yield response

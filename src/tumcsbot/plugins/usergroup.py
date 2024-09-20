@@ -22,7 +22,7 @@ import yaml
 
 from tumcsbot.lib.command_parser import CommandParser
 from tumcsbot.lib.db import Session, TableBase, serialize_model
-from tumcsbot.plugin import PluginCommandMixin, Plugin
+from tumcsbot.plugin import PluginCommand, Plugin
 from tumcsbot.lib.types import (
     DMError,
     DMMessage,
@@ -82,7 +82,7 @@ class UserGroupMember(TableBase):  # type: ignore
     )
 
 
-class Usergroup(PluginCommandMixin, Plugin):
+class Usergroup(PluginCommand, Plugin):
     """
     Manage user groups.
     Alternative to Zulip user groups, as the bot does not have access to the api.

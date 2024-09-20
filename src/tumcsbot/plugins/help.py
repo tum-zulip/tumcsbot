@@ -9,8 +9,7 @@ from typing import Any, Iterable
 
 from tumcsbot.lib.response import Response
 from tumcsbot.plugin import (
-
-    PluginCommandMixin,
+    PluginCommand,
     Plugin,
     PluginTable,
 )
@@ -43,11 +42,11 @@ HELP_TEMPLATE = cleandoc(
 PRIVILAGE_MSG = "**[administrator/moderator rights needed]**"
 
 
-class Help(PluginCommandMixin, Plugin):
+class Help(PluginCommand, Plugin):
     """Post a help message to the requesting user."""
 
     # This plugin depends on all the others because it needs their db entries.
-    dependencies = PluginCommandMixin.dependencies + [
+    dependencies = PluginCommand.dependencies + [
         plugin_class.plugin_name()
         for plugin_class in get_classes_from_path("tumcsbot.plugins", Plugin)  # type: ignore
     ]
@@ -98,7 +97,7 @@ class Help(PluginCommandMixin, Plugin):
             if p is not None
         ]
         # Sort by name.
-        return sorted(result, key=lambda c: c.name)
+        return sorted(result, key=lambda c: "" if c.name is None else c.name)
 
     def _help_command(
         self, message: dict[str, Any], command: str, privileged: bool = False
@@ -171,7 +170,7 @@ class Help(PluginCommandMixin, Plugin):
 ````text\n
 {cmd_name} {subcommand.syntax_for(Privilege.USER if not privileged else Privilege.ADMIN)}
 ````\n
-"""    
+"""
         for opt in subcommand.opts:
             if not privileged and opt.privilege and opt.privilege != Privilege.USER:
                 continue
@@ -193,8 +192,13 @@ class Help(PluginCommandMixin, Plugin):
             [
                 " - " + cmd.name
                 for cmd in commands
-                if cmd.name is not None and (privileged
-                or any(subcmd.privilege == Privilege.USER for subcmd in cmd.subcommands))
+                if cmd.name is not None
+                and (
+                    privileged
+                    or any(
+                        subcmd.privilege == Privilege.USER for subcmd in cmd.subcommands
+                    )
+                )
             ]
         )
 

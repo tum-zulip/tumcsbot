@@ -8,12 +8,12 @@ from typing import Any, AsyncGenerator
 from tumcsbot.lib.db import Session
 
 from tumcsbot.lib.command_parser import CommandParser
-from tumcsbot.plugin import PluginCommandMixin, Plugin
+from tumcsbot.plugin import PluginCommand, Plugin
 from tumcsbot.plugin_decorators import command, arg
 from tumcsbot.lib.types import response_type, ZulipUser, DMResponse
 
 
-class Search(PluginCommandMixin, Plugin):
+class Search(PluginCommand, Plugin):
 
     syntax = "search <string>"
     msg_template: str = "Hi, I hope that these search results may help you: {}"

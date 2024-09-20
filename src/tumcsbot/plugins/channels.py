@@ -7,7 +7,7 @@ from typing import Any, AsyncGenerator
 
 from tumcsbot.lib.command_parser import CommandParser
 from tumcsbot.lib.utils import split
-from tumcsbot.plugin import PluginCommandMixin, Plugin
+from tumcsbot.plugin import PluginCommand, Plugin
 from tumcsbot.plugin_decorators import command, arg, privilege, opt
 from tumcsbot.lib.regex import Regex
 from tumcsbot.lib.db import Session
@@ -22,7 +22,7 @@ from tumcsbot.lib.types import (
 )
 
 
-class Channels(PluginCommandMixin, Plugin):
+class Channels(PluginCommand, Plugin):
 
     @command(name="list")
     @arg("pattern", str, description="The pattern to search for.")

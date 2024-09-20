@@ -5,7 +5,7 @@
 
 import unittest
 
-from typing import cast, Any
+from typing import Any
 
 from tumcsbot.lib.command_parser import CommandParser
 

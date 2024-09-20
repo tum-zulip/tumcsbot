@@ -18,13 +18,13 @@ from tumcsbot.lib.types import (
     ZulipUser,
     response_type,
 )
-from tumcsbot.plugin import Plugin, PluginCommandMixin
+from tumcsbot.plugin import Plugin, PluginCommand
 from tumcsbot.plugin_decorators import arg, command, opt, privilege
 
 from tumcsbot.plugins.garbage_collector import GarbageCollectorIgnoreChannelsTable
 
 
-class GCConfig(PluginCommandMixin, Plugin):
+class GCConfig(PluginCommand, Plugin):
     """
     Manage configuration variables for the garbage collector.
     """

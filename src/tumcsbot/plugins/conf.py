@@ -7,7 +7,7 @@ from typing import Any, AsyncGenerator
 
 from tumcsbot.lib.db import Session
 from tumcsbot.lib.conf import Conf
-from tumcsbot.plugin import PluginCommandMixin, Plugin
+from tumcsbot.plugin import PluginCommand, Plugin
 from tumcsbot.lib.command_parser import CommandParser
 from tumcsbot.lib.types import (
     response_type,
@@ -22,7 +22,7 @@ from tumcsbot.plugin_decorators import (
     arg,
 )
 
-class ConfPlugin(PluginCommandMixin, Plugin):
+class ConfPlugin(PluginCommand, Plugin):
     """
     Manage configuration variables.
     """

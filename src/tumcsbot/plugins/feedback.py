@@ -6,7 +6,7 @@
 from typing import Any, AsyncGenerator, cast
 
 from tumcsbot.lib.response import Response
-from tumcsbot.plugin import Plugin, PluginCommandMixin
+from tumcsbot.plugin import Plugin, PluginCommand
 from tumcsbot.lib.command_parser import CommandParser
 from tumcsbot.lib.db import Session
 from tumcsbot.plugin_decorators import command, privilege
@@ -22,7 +22,7 @@ from tumcsbot.lib.types import (
 )
 
 
-class Feedback(PluginCommandMixin, Plugin):
+class Feedback(PluginCommand, Plugin):
     """
     Give anonymous feedback on courses
     """

@@ -13,7 +13,7 @@ PluginContext   All information a plugin may need.
 _Plugin         Abstract base class for every plugin.
 PluginThread    Base class for plugins that live in a separate thread.
 PluginProcess   Base class for plugins that live in a separate process.
-PluginCommandMixin   Mixin class tailored for interactive commands.
+PluginCommand   Mixin class tailored for interactive commands.
 """
 
 from __future__ import annotations
@@ -192,7 +192,7 @@ class Plugin(threading.Thread, ABC):
         return logging.getLogger(self.plugin_name())
 
 
-class PluginCommandMixin(Plugin):
+class PluginCommand(Plugin):
     """Base class tailored for interactive commands.
 
     This class is intendet to be inherited form **in addition** one of
@@ -289,10 +289,10 @@ class PluginCommandMixin(Plugin):
             )
             await sender
             with DB.session() as session:
-                result = await func(sender, session, args, opts, message)
-            return result
+                responses = await func(sender, session, args, opts, message)
+            return responses
         else:
-            self.logger.debug(f"command not found: {command}")
+            self.logger.debug("command not found: %s", command)
             return Response.command_not_found(message)
 
     async def handle_event(self, event: Event) -> Response | Iterable[Response]:

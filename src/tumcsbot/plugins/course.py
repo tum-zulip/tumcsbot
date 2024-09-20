@@ -9,9 +9,8 @@ import difflib
 from inspect import cleandoc
 import inspect
 import logging
-from typing import Any, AsyncGenerator, TypeVar
+from typing import Coroutine, Literal, cast, Any, Callable, Iterable, AsyncGenerator, TypeVar
 
-from typing import Coroutine, Literal, cast, Any, Callable, Iterable, AsyncGenerator
 import sqlalchemy
 from sqlalchemy import (
     Column,
@@ -20,15 +19,14 @@ from sqlalchemy import (
     ForeignKey,
     update,
 )
-from sqlalchemy.orm import relationship, Mapped
-from sqlalchemy.ext.hybrid import hybrid_property
+from sqlalchemy.orm import relationship
 from tumcsbot.lib.regex import Regex
 
 from tumcsbot.lib.response import Response
 from tumcsbot.lib.client import AsyncClient, Event
-from tumcsbot.plugin import Plugin, PluginCommandMixin
+from tumcsbot.plugin import Plugin, PluginCommand
 from tumcsbot.lib.command_parser import CommandParser
-from tumcsbot.lib.db import DB, TableBase, Session, TableBase, serialize_model
+from tumcsbot.lib.db import TableBase, Session, TableBase, serialize_model
 from tumcsbot.plugin_decorators import command, privilege, arg, opt
 from tumcsbot.plugins.usergroup import UserGroup, Usergroup
 from tumcsbot.plugins.userinput import UserInput
@@ -45,10 +43,10 @@ from tumcsbot.lib.types import (
     response_type,
     ZulipUser,
     ZulipChannel,
-    YAMLSerializableMixin,
 )
 
 T = TypeVar("T")
+
 
 class CourseDB(TableBase):  # type: ignore
     """Represents a course in the system."""
@@ -74,9 +72,9 @@ class CourseDB(TableBase):  # type: ignore
         Integer, ForeignKey("UserGroups.GroupId", ondelete="CASCADE"), nullable=False
     )
 
-    TutorChannel = Column(ZulipChannel, nullable=True) # type: ignore
-    InstructorChannel = Column(ZulipChannel, nullable=True) # type: ignore
-    FeedbackChannel = Column(ZulipChannel, nullable=True) # type: ignore # not Null if anonymous feedback enabled
+    TutorChannel = Column(ZulipChannel, nullable=True)  # type: ignore
+    InstructorChannel = Column(ZulipChannel, nullable=True)  # type: ignore
+    FeedbackChannel = Column(ZulipChannel, nullable=True)  # type: ignore # not Null if anonymous feedback enabled
 
     _channels = relationship(
         "ChannelGroup",
@@ -101,7 +99,7 @@ class CourseDB(TableBase):  # type: ignore
     )
 
 
-class Course(PluginCommandMixin, Plugin):
+class Course(PluginCommand, Plugin):
     """
     Manage Courses.
     """
@@ -171,7 +169,9 @@ class Course(PluginCommandMixin, Plugin):
         channelgroup_emoji: str = args.emoji
         channels: ChannelGroup | None = None
 
-        cleanup_opterations: list[ Callable[[],None] | Callable[[], Coroutine[Any, Any, dict[str, Any]]] ] = []
+        cleanup_opterations: list[
+            Callable[[], None] | Callable[[], Coroutine[Any, Any, dict[str, Any]]]
+        ] = []
 
         if (
             session.query(CourseDB).filter(CourseDB.CourseName == name).first()
@@ -397,11 +397,11 @@ class Course(PluginCommandMixin, Plugin):
                 ]
                 if lan == "de":
                     instructor_channel_name = name + " - Instructors"
-                    instructor_channel_desc = [
-                        f"Interner Kanal für {name}-Instructors"
-                    ]
+                    instructor_channel_desc = [f"Interner Kanal für {name}-Instructors"]
 
-                ins_ex = await self.client.get_channel_id_by_name(instructor_channel_name)
+                ins_ex = await self.client.get_channel_id_by_name(
+                    instructor_channel_name
+                )
 
                 if ins_ex is not None:
                     result6 = await self.client.send_response(
@@ -438,9 +438,7 @@ class Course(PluginCommandMixin, Plugin):
                 if result_ins_s["result"] != "success":
                     raise DMError(result_ins_s["msg"])
 
-                instructor_channel = ZulipChannel(
-                    f"#**{instructor_channel_name}**"
-                )
+                instructor_channel = ZulipChannel(f"#**{instructor_channel_name}**")
                 await instructor_channel
 
                 cleanup_opterations.append(
@@ -456,13 +454,13 @@ class Course(PluginCommandMixin, Plugin):
                     f"Anonymous Channel for Feedback to {name}"
                 ]
                 if lan == "de":
-                    feedback_channel_desc = [
-                        f"Anonymer Kanal für Feedback zu {name}"
-                    ]
+                    feedback_channel_desc = [f"Anonymer Kanal für Feedback zu {name}"]
 
                 f_ex = await self.client.get_channel_id_by_name(feedback_channel_name)
                 if f_ex is None:
-                    raise DMError("Uuups, i cannot get the channel id for the feedback channel")
+                    raise DMError(
+                        "Uuups, i cannot get the channel id for the feedback channel"
+                    )
 
                 if ins_ex is not None:
                     await self.client.delete_channel(f_ex)
@@ -480,15 +478,12 @@ class Course(PluginCommandMixin, Plugin):
                 if result_fb_s["result"] != "success":
                     raise DMError(result_fb_s["msg"])
 
-                feedback_channel = ZulipChannel(
-                    f"#**{feedback_channel_name}**"
-                )
+                feedback_channel = ZulipChannel(f"#**{feedback_channel_name}**")
                 await feedback_channel
 
                 cleanup_opterations.append(
                     lambda: self.client.delete_channel(feedback_channel.id)
                 )
-
 
             # create and add a Course to the DB
             course: CourseDB = CourseDB(
@@ -580,7 +575,9 @@ class Course(PluginCommandMixin, Plugin):
         channelgroup_emoji: str = args.emoji
         channels: ChannelGroup | None
 
-        cleanup_opterations: list[ Callable[[],None] | Callable[[], Coroutine[Any, Any, dict[str, Any]]] ] = []
+        cleanup_opterations: list[
+            Callable[[], None] | Callable[[], Coroutine[Any, Any, dict[str, Any]]]
+        ] = []
 
         if (
             session.query(CourseDB).filter(CourseDB.CourseName == name).first()
@@ -771,9 +768,7 @@ class Course(PluginCommandMixin, Plugin):
                 tutors_channel_desc: list[str] = [f"Internal Channel for {name}-Tutors"]
                 if lan == "de":
                     tutors_channel_name = name + " - Tutoren"
-                    tutors_channel_desc = [
-                        f"Interner Kanal für {name}-Tutoren"
-                    ]
+                    tutors_channel_desc = [f"Interner Kanal für {name}-Tutoren"]
 
                 tut_ex = await self.client.get_channel_id_by_name(tutors_channel_name)
 
@@ -833,11 +828,11 @@ class Course(PluginCommandMixin, Plugin):
                 ]
                 if lan == "de":
                     instructor_channel_name = name + " - Instructors"
-                    instructor_channel_desc = [
-                        f"Interner Kanal für {name}-Instructors"
-                    ]
+                    instructor_channel_desc = [f"Interner Kanal für {name}-Instructors"]
 
-                ins_ex = await self.client.get_channel_id_by_name(instructor_channel_name)
+                ins_ex = await self.client.get_channel_id_by_name(
+                    instructor_channel_name
+                )
 
                 if ins_ex is not None:
                     result_ins = await self.client.send_response(
@@ -883,7 +878,7 @@ class Course(PluginCommandMixin, Plugin):
                 cleanup_opterations.append(
                     lambda: self.client.delete_channel(instructor_channel.id)
                 )
-            
+
             # get a corresponding (empty) Channel for anonymous Feedback or None
             feedback_channel: ZulipChannel | None = None
             if opts.fb:
@@ -893,14 +888,12 @@ class Course(PluginCommandMixin, Plugin):
                     f"Anonymous Channel for Feedback to {name}"
                 ]
                 if lan == "de":
-                    feedback_channel_desc = [
-                        f"Anonymer Kanal für Feedback zu {name}"
-                    ]
+                    feedback_channel_desc = [f"Anonymer Kanal für Feedback zu {name}"]
 
                 f_ex = await self.client.get_channel_id_by_name(feedback_channel_name)
 
                 if f_ex is not None:
-                        await self.client.delete_channel(f_ex)
+                    await self.client.delete_channel(f_ex)
 
                 result_fb_s: dict[str, Any] = await self.client.add_subscriptions(
                     channels=[
@@ -915,9 +908,7 @@ class Course(PluginCommandMixin, Plugin):
                 if result_fb_s["result"] != "success":
                     raise DMError(result_fb_s["msg"])
 
-                feedback_channel = ZulipChannel(
-                    f"#**{feedback_channel_name}**"
-                )
+                feedback_channel = ZulipChannel(f"#**{feedback_channel_name}**")
                 await feedback_channel
 
                 cleanup_opterations.append(
@@ -969,8 +960,16 @@ class Course(PluginCommandMixin, Plugin):
     )
     @opt("g", long_opt="general", description="Add a general channel.")
     @opt("o", long_opt="orga", description="Add a Channel for Organization.")
-    @opt("fn", long_opt="feedbackbnorm", description="Add a normal  Channel for Feedback.")
-    @opt("fa", long_opt="feedbackanon", description="Add an anonymous Channel for Feedback.")
+    @opt(
+        "fn",
+        long_opt="feedbackbnorm",
+        description="Add a normal  Channel for Feedback.",
+    )
+    @opt(
+        "fa",
+        long_opt="feedbackanon",
+        description="Add an anonymous Channel for Feedback.",
+    )
     @opt("n", long_opt="announcements", description="Add a Channel for Announcements.")
     @opt("m", long_opt="memes", description="Add a Channel for Memes.")
     @opt("t", long_opt="tech", description="Add a Channel for Tech-Support.")
@@ -995,22 +994,26 @@ class Course(PluginCommandMixin, Plugin):
         )
 
         if stremgroup is None:
-            raise DMError(f"Could not find Channelgroup for Course `{course.CourseName}`.")
+            raise DMError(
+                f"Could not find Channelgroup for Course `{course.CourseName}`."
+            )
 
         if opts.a:
             await Course.add_standard_channels(
-                client=self.client, 
-                session=session, 
-                name=str(course.CourseName), 
-                sg=stremgroup, 
+                client=self.client,
+                session=session,
+                name=str(course.CourseName),
+                sg=stremgroup,
                 lan=lan,
-                principals=[sender.id, self.client.id]
+                principals=[sender.id, self.client.id],
             )
 
         else:
             if opts.fn and opts.fa:
-                raise DMError("You can only add one (normal OR anonymous) feedback channel at a time.")
-            
+                raise DMError(
+                    "You can only add one (normal OR anonymous) feedback channel at a time."
+                )
+
             await Course.add_standard_channels(
                 client=self.client,
                 session=session,
@@ -1082,10 +1085,10 @@ class Course(PluginCommandMixin, Plugin):
         ins_ug_id = int(course.InstructorsUserGroup)
 
         tut_s = cast(ZulipChannel, course.TutorChannel)
-        await tut_s 
+        await tut_s
 
         ins_s = cast(ZulipChannel, course.InstructorChannel)
-        await ins_s 
+        await ins_s
 
         try:
             session.query(CourseDB).filter(
@@ -1102,7 +1105,7 @@ class Course(PluginCommandMixin, Plugin):
                 .filter(ChannelGroup.ChannelGroupId == channels_id)
                 .first()
             )
-            
+
             if sg is not None:
                 strm: list[str] = await Channelgroup._get_channel_names(
                     session, self.client, [sg]
@@ -1117,13 +1120,17 @@ class Course(PluginCommandMixin, Plugin):
                         await self.client.delete_channel(sid)
 
         if opts.t or opts.a:
-            ugt: UserGroup | None = session.query(UserGroup).filter(UserGroup.GroupId == tut_ug_id).first()
+            ugt: UserGroup | None = (
+                session.query(UserGroup).filter(UserGroup.GroupId == tut_ug_id).first()
+            )
 
             if ugt is not None:
                 Usergroup.delete_group(session, ugt)
 
         if opts.i or opts.a:
-            ugi: UserGroup | None = session.query(UserGroup).filter(UserGroup.GroupId == ins_ug_id).first()
+            ugi: UserGroup | None = (
+                session.query(UserGroup).filter(UserGroup.GroupId == ins_ug_id).first()
+            )
 
             if ugi is not None:
                 Usergroup.delete_group(session, ugi)
@@ -1269,7 +1276,9 @@ class Course(PluginCommandMixin, Plugin):
         courseTutorChannel: ZulipChannel | None = None
         courseInstructorChannel: ZulipChannel | None = None
 
-        cleanup_opterations: list[Callable[[],None] | Callable[[int], Coroutine[Any, Any, dict[str, Any]]] ] = []
+        cleanup_opterations: list[
+            Callable[[], None] | Callable[[int], Coroutine[Any, Any, dict[str, Any]]]
+        ] = []
 
         async def or_exit(coro: Coroutine[None, None, T]) -> T:
             task = asyncio.create_task(coro)
@@ -1414,7 +1423,10 @@ class Course(PluginCommandMixin, Plugin):
                         .one_or_none()
                     )
                     if sg is None:
-                        sgs : list[str] = [ str(id) for id in session.query(ChannelGroup.ChannelGroupId).all() ]
+                        sgs: list[str] = [
+                            str(id)
+                            for id in session.query(ChannelGroup.ChannelGroupId).all()
+                        ]
                         closest = difflib.get_close_matches(sg_name, sgs, n=1)
 
                         if closest:
@@ -1443,24 +1455,24 @@ class Course(PluginCommandMixin, Plugin):
 
                     if sg_emoji is None:
                         continue
-                    else:
-                        emote = Regex.get_emoji_name(sg_emoji)
-                        if emote is None:
-                            await dm("Please provide a valid emoji.")
-                            continue
 
-                        sg = (
-                            session.query(ChannelGroup)
-                            .filter(ChannelGroup.ChannelGroupEmote == emote)
-                            .one_or_none()
-                        )
-                        if sg is None:
-                            courseEmoji = emote
-                            break
-                        else:
-                            await dm(
-                                f"A course with the emote :{emote}: already exists. Please choose another emoji."
-                            )
+                    emote = Regex.get_emoji_name(sg_emoji)
+                    if emote is None:
+                        await dm("Please provide a valid emoji.")
+                        continue
+
+                    sg = (
+                        session.query(ChannelGroup)
+                        .filter(ChannelGroup.ChannelGroupEmote == emote)
+                        .one_or_none()
+                    )
+                    if sg is None:
+                        courseEmoji = emote
+                        break
+
+                    await dm(
+                        f"A course with the emote :{emote}: already exists. Please choose another emoji."
+                    )
 
                 sg_emoji_conf = await confirm_input(
                     f"Do you want to create the Channelgroup {courseEmoji} from a list of Channel-Name-Regexes?"
@@ -1477,10 +1489,8 @@ class Course(PluginCommandMixin, Plugin):
                         else:
                             # parse Channel Names
                             channelgroup_name = "channels_" + courseName
-                            courseChannels = (
-                                Channelgroup._create_and_get_group(
-                                    session, channelgroup_name, courseEmoji
-                                )
+                            courseChannels = Channelgroup._create_and_get_group(
+                                session, channelgroup_name, courseEmoji
                             )
                             cleanup_opterations.append(
                                 lambda s=courseChannels: Channelgroup._delete_group(
@@ -1492,7 +1502,7 @@ class Course(PluginCommandMixin, Plugin):
                                 raise DMError(
                                     "Could not create Channelgroup for course."
                                 )
-                            
+
                             channels = sg_regex.split(",")
                             await Channelgroup._add_channels(
                                 self.client, session, sender, courseChannels, channels
@@ -1528,7 +1538,7 @@ class Course(PluginCommandMixin, Plugin):
 
             if courseChannels is None:
                 raise DMError("Could not create Channelgroup for course.")
-            
+
             if courseLan is None:
                 raise DMError("Could not determine the language of the course.")
 
@@ -1699,13 +1709,13 @@ class Course(PluginCommandMixin, Plugin):
                         usergroup_name_ins = usergroup_name_ins[:-1] + str(vers)
 
                 result2bi = await confirm_input(
-                    f"Do you want to create the Usergroup from a list of Instructor-Names?"
+                    "Do you want to create the Usergroup from a list of Instructor-Names?"
                 )
                 if result2bi:
                     # enter list of names
                     while True:
                         result2ci = await short_text_input(
-                            f"Please enter a list of Names in the format 'Name1,Name2, ..., NameN'"
+                            "Please enter a list of Names in the format 'Name1,Name2, ..., NameN'"
                         )
                         if result2ci is None:
                             continue
@@ -1746,7 +1756,7 @@ class Course(PluginCommandMixin, Plugin):
 
             if tut_ex is not None:
                 resultts = await confirm_input(
-                    f"Channel for Tutors of this course already exists. Dou you want to replace it with a new Channel for your course?"
+                    "Channel for Tutors of this course already exists. Dou you want to replace it with a new Channel for your course?"
                 )
                 if not result:
                     while True:
@@ -1809,7 +1819,9 @@ class Course(PluginCommandMixin, Plugin):
                         f"Interner Kanal für {courseName}-Instructors"
                     ]
 
-                ins_ex = await self.client.get_channel_id_by_name(instructor_channel_name)
+                ins_ex = await self.client.get_channel_id_by_name(
+                    instructor_channel_name
+                )
 
                 if ins_ex is not None:
                     result1 = await confirm_input(
@@ -1857,7 +1869,9 @@ class Course(PluginCommandMixin, Plugin):
                     )
                 )
 
-                courseInstructorChannel = ZulipChannel(f"#**{instructor_channel_name}**")
+                courseInstructorChannel = ZulipChannel(
+                    f"#**{instructor_channel_name}**"
+                )
                 await courseInstructorChannel
 
                 cleanup_opterations.append(
@@ -1871,7 +1885,6 @@ class Course(PluginCommandMixin, Plugin):
                     )
                     await courseFeedbackChannel
 
-
                 # create and add a Course to the DB
                 course: CourseDB = CourseDB(
                     CourseName=courseName,
@@ -1881,7 +1894,7 @@ class Course(PluginCommandMixin, Plugin):
                     InstructorsUserGroup=courseInstructors.GroupId,
                     TutorChannel=courseTutorChannel,
                     InstructorChannel=courseInstructorChannel,
-                    FeedbackChannel=courseFeedbackChannel
+                    FeedbackChannel=courseFeedbackChannel,
                 )
 
                 session.add(course)
@@ -1890,10 +1903,12 @@ class Course(PluginCommandMixin, Plugin):
         except Exception as e:
             logging.exception(e)
             session.rollback()
-            cleanup_result : None | Coroutine[Any, Any, dict[str, Any]]
-            for cleanup in cleanup_opterations:
+            cleanup_result: None | Coroutine[Any, Any, dict[str, Any]]
+            op: Callable[[], None] | Callable[[int], Coroutine[Any, Any, dict[str, Any]]]
+            for op in cleanup_opterations:
                 # TODO: too few arguments
-                cleanup_result = cleanup()
+                cleanup_result = op()
+
                 if cleanup_result and inspect.isawaitable(cleanup_result):
                     await cleanup_result
                     # avoid rate limiting
@@ -2016,9 +2031,10 @@ class Course(PluginCommandMixin, Plugin):
 
             if fa:
                 fb = next(s for s in to_add if f"{name} - Feedback" in s.name)
-                session.query(CourseDB).filter(CourseDB.CourseName == name).update({'FeedbackChannel': fb})
+                session.query(CourseDB).filter(CourseDB.CourseName == name).update(
+                    {"FeedbackChannel": fb}
+                )
                 session.commit()
-
 
         except Exception as e:
             session.rollback()
@@ -2068,7 +2084,9 @@ class Course(PluginCommandMixin, Plugin):
         Get the ChannelGroup of a given Course.
         """
         ID = int(course.Channels)
-        return session.query(ChannelGroup).filter(ChannelGroup.ChannelGroupId == ID).one()
+        return (
+            session.query(ChannelGroup).filter(ChannelGroup.ChannelGroupId == ID).one()
+        )
 
     @staticmethod
     def get_emoji(course: CourseDB, session: Session) -> str:

@@ -23,7 +23,7 @@ from tumcsbot.lib.regex import Regex
 from tumcsbot.lib.command_parser import CommandParser
 from tumcsbot.lib.db import TableBase, serialize_model, Session, deserialize_model
 from tumcsbot.lib.types import ZulipChannel
-from tumcsbot.plugin import PluginCommandMixin, Plugin
+from tumcsbot.plugin import PluginCommand, Plugin
 from tumcsbot.plugin_decorators import arg, command, opt, privilege
 from tumcsbot.plugins.usergroup import UserGroup, UserGroupMember, Usergroup
 
@@ -107,7 +107,7 @@ class ReactionActionType(Enum):
     RESPOND = 2
 
 
-class Moderate(PluginCommandMixin, Plugin):
+class Moderate(PluginCommand, Plugin):
 
     # pylint: disable=line-too-long
     _default_config: list[tuple[str, str, str | None, str]] = [
