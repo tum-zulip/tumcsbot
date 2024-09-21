@@ -2,15 +2,17 @@
 
 # See LICENSE file for copyright and license details.
 # TUM CS Bot - https://github.com/ro-i/tumcsbot
-
+from typing import Any, AsyncGenerator
 import logging
 
-from tumcsbot.lib.types import ZulipChannel
+from tumcsbot.lib.types import ZulipChannel, ZulipUser, response_type, DMResponse, DMError, Privilege
 from tumcsbot.lib.client import AsyncClient
 from tumcsbot.lib.conf import Conf
-from tumcsbot.lib.db import DB
+from tumcsbot.lib.db import DB, Session
+from tumcsbot.lib.command_parser import CommandParser
 from tumcsbot.lib.response import Response
 from tumcsbot.plugin import PluginCommand, Plugin
+from tumcsbot.plugin_decorators import command, privilege, arg
 from tumcsbot.plugins.garbage_collector import GarbageCollectorIgnoreChannelsTable
 
 
@@ -122,3 +124,32 @@ class LogChannel(PluginCommand, Plugin):
             logging.getLogger().addHandler(ZulipLogHandler(channel.id, self.client))
         else:
             logging.error("Channel %s not found", logstram)
+
+
+
+    @command
+    @arg("channel", str, description="The channel to send log messages to.")
+    @privilege(Privilege.ADMIN)
+    async def set(self,
+        sender: ZulipUser,
+        _session: Session,
+        args: CommandParser.Args,
+        _opts: CommandParser.Opts,
+        _message: dict[str, Any],
+    ) -> AsyncGenerator[response_type, None]:
+        """
+        Set the channel to send log messages to.
+        """
+        # check if channel exists
+        response = await self.client.add_subscriptions(
+            channels=[{"name": args.channel, "description": "Log channel of TUM CS Bot"}],
+            principals=[self.client.id, sender.id],
+            invite_only=True,
+            history_public_to_subscribers=True,
+        )
+
+        if response["result"] != "success":
+            raise DMError("Could not add subscribers to " + args.channel + ": " + response["msg"])
+        
+        Conf.set("logchannel", args.channel)
+        yield DMResponse("Log channel set to `" + args.channel + "`. Restart the bot to apply changes.")

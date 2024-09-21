@@ -16,6 +16,7 @@ from tumcsbot.lib.regex import Regex
 from tumcsbot.lib.client import AsyncClient
 from tumcsbot.lib.response import Response
 
+
 class DMError(Exception):
     pass
 
@@ -453,7 +454,6 @@ class ArgConfig:
     name: str
     ty: Callable[[Any], Any]
     description: str | None = None
-    privilege: Privilege | None = None
     greedy: bool = False
     optional: bool = False
 
@@ -469,7 +469,6 @@ class ArgConfig:
             name=d["name"],
             ty=d["ty"],
             description=d["description"],
-            privilege=Privilege.from_str(d["privilege"]),
             greedy=d["greedy"],
             optional=d["optional"],
         )
@@ -485,13 +484,15 @@ class OptConfig:
 
     @property
     def syntax(self) -> str:
+        print(self)
         if self.ty is None:
             raise ValueError("Type of option not set.")
         try:
             type_name = self.ty.__name__
         except AttributeError:
             type_name = "arg"
-        ty = " <" + type_name + ">" if self.ty is not None else ""
+        # Todo: (jr) -v option not formatted correctly
+        ty = " <" + type_name + ">" if self.ty is not None and type(self.ty) is not bool else ""
         return "[-" + self.opt + ty + "]"
 
     @staticmethod
@@ -527,11 +528,7 @@ class SubCommandConfig:
         if self.name is None:
             raise ValueError("Name of command is not set.")
 
-        args = [
-            arg.syntax
-            for arg in self.args
-            if not arg.privilege or arg.privilege <= privilege
-        ]
+        args = [arg.syntax for arg in self.args]
         opts = [
             opt.syntax
             for opt in self.opts

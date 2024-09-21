@@ -271,11 +271,12 @@ class Moderate(PluginCommand, Plugin):
     # pylint: enable=line-too-long
 
     @command(name="list")
-    @arg(
+    @opt(
+        "u",
         "user",
         ZulipUser,
-        optional=True,
         description="The user for which the config should be displayed. Defaults to the sender of the command",
+        priv=Privilege.ADMIN,
     )
     @opt(
         "a",
@@ -292,14 +293,14 @@ class Moderate(PluginCommand, Plugin):
         self,
         sender: ZulipUser,
         session: Session,
-        args: CommandParser.Args,
+        _args: CommandParser.Args,
         opts: CommandParser.Opts,
         _message: dict[str, Any],
     ) -> AsyncGenerator[response_type, None]:
         user: ZulipUser
 
-        if args.user is not None:
-            user = args.user
+        if opts.u is not None:
+            user = opts.u
         else:
             user = sender
 

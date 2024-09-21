@@ -98,7 +98,6 @@ def arg(
     name: str,
     ty: arg_type,
     description: str | None = None,
-    privilege: Privilege | None = None,
     greedy: bool = False,
     optional: bool = False,
 ) -> command_decorator_type:
@@ -109,7 +108,7 @@ def arg(
 
         python_type = to_python_type(ty)
         meta.args.insert(
-            0, ArgConfig(name, python_type, description, privilege, greedy, optional)
+            0, ArgConfig(name, python_type, description, greedy, optional)
         )
 
         @wraps(func)
@@ -121,9 +120,6 @@ def arg(
             opts: CommandParser.Opts,
             message: dict[str, Any],
         ) -> AsyncGenerator[response_type, None]:
-            if privilege is not None:  # and todo: check if option is present
-                if not sender.isPrivileged:
-                    raise UserNotPrivilegedException()
 
             await process_arg(name, greedy, optional, ty, args, session)
 
@@ -438,8 +434,10 @@ class command:
                 )
             except DMError as e:
                 return Response.build_message(
-                    message,
-                    str(e),
+                    message=None,
+                    content=str(e),
+                    msg_type="private",
+                    to=[sender.id],
                 )
 
             if len(errors) > 0:

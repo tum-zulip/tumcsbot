@@ -21,7 +21,6 @@ from tumcsbot.lib.types import (
     CommandConfig,
 )
 from tumcsbot.lib.db import DB
-from tumcsbot.lib.types import DMError
 from tumcsbot.lib.utils import get_classes_from_path
 
 HELP_TEMPLATE = cleandoc(
@@ -104,7 +103,9 @@ class Help(PluginCommand, Plugin):
     ) -> Response | Iterable[Response]:
         result = Help._get_help_info(command)
         if len(result) == 0:
-            raise DMError(f"Command '{command}' not found.")
+            return Response.build_message(
+                message, content=f"Command '{command}' not found."
+            )
 
         cmd = result[0]
         name = cmd.name or command
@@ -118,7 +119,9 @@ class Help(PluginCommand, Plugin):
 
         msg += "\n" + cmd.short_help_msg
 
-        msg += f"\n```text\n{cmd.syntax_for(Privilege.ADMIN if privileged else Privilege.USER)}\n```\n\n"
+        syntax = cmd.syntax_for(Privilege.ADMIN if privileged else Privilege.USER)
+        if syntax.strip():
+            msg += f"\n```text\n{syntax}\n```\n\n"
 
         msg += "## Subcommands:\n" if cmd.subcommands else ""
         for sub in cmd.subcommands:
@@ -143,13 +146,8 @@ class Help(PluginCommand, Plugin):
 
     @staticmethod
     def _format_argument(argument: ArgConfig) -> str:
-        privilage = (
-            " " + PRIVILAGE_MSG
-            if argument.privilege is not None and argument.privilege > Privilege.USER
-            else ""
-        )
         greedy = " (greedy)" if argument.greedy else ""
-        return f"- `{argument.name}`\t{argument.description}{greedy}{privilage}"
+        return f"- `{argument.name}`\t{argument.description}{greedy}"
 
     @staticmethod
     def _format_subcommand(
