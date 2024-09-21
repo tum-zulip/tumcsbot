@@ -312,7 +312,7 @@ class GarbageCollector(Plugin):
                         None,
                         content=content,
                         to=channel.id,
-                        msg_type="channel",
+                        msg_type="stream",
                         subject="Keep Channel",
                     )
                 )

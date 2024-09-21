@@ -41,7 +41,7 @@ class ZulipLogHandler(logging.Handler):
                 "num_after": 0,
                 "narrow": [
                     {"operator": "sender", "operand": self.client.id},
-                    {"operator": "channel", "operand": self.channel_id},
+                    {"operator": "stream", "operand": self.channel_id},
                 ],
             }
         )
@@ -57,7 +57,7 @@ class ZulipLogHandler(logging.Handler):
 
         response = self.client.as_sync().send_message(
             Response.build_message(
-                None, content=msg, to=self.channel_id, subject="Log", msg_type="channel"
+                None, content=msg, to=self.channel_id, subject="Log", msg_type="stream"
             ).response
         )
         if response["result"] != "success":

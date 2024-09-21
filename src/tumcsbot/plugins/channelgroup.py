@@ -126,7 +126,7 @@ class Channelgroup(PluginCommand, Plugin):
         if data["type"] == "delete_message":
             self.logger.debug("User deleted (potentially claimed) a message")
             return await self.handle_delete_message(data)
-        if data["type"] == "channel":
+        if data["type"] == "stream":
             op = data["op"]
             if op == "create":
                 op = "created"
@@ -136,7 +136,7 @@ class Channelgroup(PluginCommand, Plugin):
                 op = "unknown operation (" + op + ")"
 
             self.logger.info(
-                "Channels %s %s", ', '.join([f'#**{s['name']}**' for s in data['channels']]), op
+                "Channels %s %s", ', '.join([f'#**{s['name']}**' for s in data['streams']]), op
             )
             self.logger.debug(data)
             return await self.handle_channel_event(data)
@@ -187,9 +187,9 @@ class Channelgroup(PluginCommand, Plugin):
     ) -> Response | Iterable[Response]:
 
         if event["op"] == "create":
-            for channel in event["channels"]:
+            for channel in event["streams"]:
                 name_c: str = channel["name"]
-                id_c: int = channel["channel_id"]
+                id_c: int = channel["stream_id"]
 
                 # Get all the groups this channel belongs to.
                 group_ids_c: list[str] = Channelgroup.get_group_ids_from_channel_id(
@@ -201,10 +201,10 @@ class Channelgroup(PluginCommand, Plugin):
                 await self.client.subscribe_users(user_ids_c, name_c)
 
         elif event["op"] == "delete":
-            for channel in event["channels"]:
+            for channel in event["streams"]:
                 # Channels
                 name_d: str = channel["name"]
-                id_d: int = channel["channel_id"]
+                id_d: int = channel["stream_id"]
 
                 group_ids_d: list[str] = Channelgroup.get_group_ids_from_channel_id(
                     id_d
@@ -232,7 +232,7 @@ class Channelgroup(PluginCommand, Plugin):
                     claims: list[GroupClaim] = session.query(GroupClaim).all()
                     for claim in claims:
                         msg = await self.client.get_message_by_id(int(claim.MessageId))
-                        if msg["type"] == "channel" and msg["channel_id"] == id_d:
+                        if msg["type"] == "stream" and msg["stream_id"] == id_d:
                             try:
                                 session.query(GroupClaim).filter(
                                     GroupClaim.MessageId == msg["id"]
@@ -244,7 +244,7 @@ class Channelgroup(PluginCommand, Plugin):
                     claimsAll: list[GroupClaimAll] = session.query(GroupClaimAll).all()
                     for claim in claimsAll:
                         msg = await self.client.get_message_by_id(int(claim.MessageId))
-                        if msg["type"] == "channel" and msg["channel_id"] == id_d:
+                        if msg["type"] == "stream" and msg["stream_id"] == id_d:
                             try:
                                 session.query(GroupClaimAll).filter(
                                     GroupClaimAll.MessageId == msg["id"]
@@ -267,12 +267,12 @@ class Channelgroup(PluginCommand, Plugin):
                 )
             )
             or (
-                event.data["type"] == "channel"
+                event.data["type"] == "stream"
                 and event.data["op"] in ["create", "delete"]
             )
             or (
                 event.data["type"] == "delete_message"
-                and event.data["message_type"] == "channel"
+                and event.data["message_type"] == "stream"
             )
         )
 
@@ -814,10 +814,10 @@ class Channelgroup(PluginCommand, Plugin):
                 "The argument `group_id` and flag `-a` are mutually exclusive, see `help channelgroup`."
             )
 
-        if message["type"] != "channel":
+        if message["type"] != "stream":
             raise DMError("Claim only channel messages.")
 
-        channel = await self.client.get_channel_by_id(message["channel_id"])
+        channel = await self.client.get_channel_by_id(message["stream_id"])
         if not channel:
             raise DMError("Stream not found")
         name = channel["name"]
@@ -888,10 +888,10 @@ class Channelgroup(PluginCommand, Plugin):
 
         msg = await self.client.get_message_by_id(msg_id)
 
-        if msg["type"] != "channel":
+        if msg["type"] != "stream":
             raise DMError("Claim only channel messages.")
 
-        channel = await self.client.get_channel_by_id(msg["channel_id"])
+        channel = await self.client.get_channel_by_id(msg["stream_id"])
         if not channel:
             raise DMError("Channel not found")
 
@@ -962,10 +962,10 @@ class Channelgroup(PluginCommand, Plugin):
 
         msg = await self.client.get_message_by_id(msg_id)
 
-        if msg["type"] != "channel":
+        if msg["type"] != "stream":
             raise DMError("Unclaim only channel messages.")
 
-        channel = await self.client.get_channel_by_id(msg["channel_id"])
+        channel = await self.client.get_channel_by_id(msg["stream_id"])
         if not channel:
             raise DMError("Channel not found")
         name = channel["name"]
@@ -1000,7 +1000,7 @@ class Channelgroup(PluginCommand, Plugin):
 
         await Channelgroup.announce_h(session, message, self.client)
 
-        channel = await self.client.get_channel_by_id(message["channel_id"])
+        channel = await self.client.get_channel_by_id(message["stream_id"])
         if not channel:
             raise DMError("Channel not found")
         name = channel["name"]
@@ -1026,7 +1026,7 @@ class Channelgroup(PluginCommand, Plugin):
         if not msg:
             raise DMError("Message not found")
 
-        channel = await self.client.get_channel_by_id(msg["channel_id"])
+        channel = await self.client.get_channel_by_id(msg["stream_id"])
         if not channel:
             raise DMError("Channel not found")
 
