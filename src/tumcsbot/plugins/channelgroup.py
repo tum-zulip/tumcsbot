@@ -995,7 +995,7 @@ class Channelgroup(PluginCommand, Plugin):
         By writing the message in a channel addressed to @**TUMCSBot**, a "special" message from the bot for all Channelgroups with a list of all existing groups is triggered.
         """
 
-        if message["type"] != "channel":
+        if message["type"] != "stream":
             raise DMError("Claim only channel messages.")
 
         await Channelgroup.announce_h(session, message, self.client)
