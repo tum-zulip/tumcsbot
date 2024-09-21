@@ -339,10 +339,8 @@ class ZulipChannel(
 
         return None
 
-    async def __await__(self) -> Coroutine[None, None, None]:
-        for e in self.__ainit__().__await__():
-            await e
-        return self
+    def __await__(self) -> Generator[Any, None, None]:
+        return self.__ainit__().__await__()
 
     def __yaml__(self) -> dict[str, Any]:
         return {"name": self.name}
@@ -484,15 +482,12 @@ class OptConfig:
 
     @property
     def syntax(self) -> str:
-        print(self)
-        if self.ty is None:
-            raise ValueError("Type of option not set.")
         try:
             type_name = self.ty.__name__
         except AttributeError:
             type_name = "arg"
         # Todo: (jr) -v option not formatted correctly
-        ty = " <" + type_name + ">" if self.ty is not None and type(self.ty) is not bool else ""
+        ty = " <" + type_name + ">" if self.ty is not None else ""
         return "[-" + self.opt + ty + "]"
 
     @staticmethod

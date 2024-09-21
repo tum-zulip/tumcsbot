@@ -173,8 +173,6 @@ class Help(PluginCommand, Plugin):
                 continue
             out += Help._format_option(opt) + "\n"
         for arg in subcommand.args:
-            if not privileged and arg.privilege and arg.privilege != Privilege.USER:
-                continue
             out += Help._format_argument(arg) + "\n"
         out += "```\n"
         return out

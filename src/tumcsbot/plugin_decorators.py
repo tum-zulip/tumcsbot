@@ -144,7 +144,7 @@ def opt(
         if ty is not None:
             python_type = to_python_type(ty)
         else:
-            python_type = bool
+            python_type = None
 
         meta.opts.insert(
             0, OptConfig(opt, long_opt, python_type, description, priv)
