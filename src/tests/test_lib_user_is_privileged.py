@@ -8,8 +8,6 @@ import unittest
 from unittest.mock import patch
 from typing import Any
 
-from zulip import Client as ZulipClient
-from tumcsbot.lib.client import AsyncClient
 from .test_client import asSync, Client
 
 

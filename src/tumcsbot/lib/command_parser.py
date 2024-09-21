@@ -285,8 +285,8 @@ class CommandParser:
 
         skip_next_token = False
 
-        logging.debug(f"Tokens: {tokens}")
-        for index in range(len(tokens)):
+        logging.debug("Tokens: %s", tokens)
+        for index, _ in enumerate(tokens):
             if skip_next_token:
                 skip_next_token = False
                 continue

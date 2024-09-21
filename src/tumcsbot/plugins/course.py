@@ -1286,7 +1286,7 @@ class Course(PluginCommand, Plugin):
 
         def exit_and_inform_on_error(client_response: dict[str, Any]) -> dict[str, Any]:
             if client_response["result"] != "success":
-                logging.error(f"Could not send message to user: {client_response}")
+                logging.error("Could not send message to user: %s", client_response)
                 raise DMError(
                     "Something went wrong. I am sorry :botsweat:. I already informed my creator about this issue."
                 )
