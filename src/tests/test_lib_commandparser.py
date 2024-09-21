@@ -275,7 +275,7 @@ class CommandParserTestOptsArgsCombined(CommandParserTest):
             ({"a": True, "b": "c"}, {"arg1": "d", "arg2": None}),
         )
         self.assertEqual(
-            self._do_parse("test -a -b c d"),
+            self._do_parse("test -a -b c d"), # Todo (ro-i): Should this not be parsed as {"a": True, "b": "c"}, {"arg1": "d", "arg2": None}?
             ({"a": True, "b": ""}, {"arg1": "c", "arg2": "d"}),
         )
         self.assertEqual(

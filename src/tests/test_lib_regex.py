@@ -51,7 +51,7 @@ class RegexTest(unittest.TestCase):
 
     def test_emoji_names(self) -> None:
         for string, emoji in self.emoji_names:
-            self.assertEqual(Regex.get_emoji_name(string), emoji)
+            self.assertEqual(Regex.get_emoji_name(string), emoji, msg=f"String '{string}' was parsed as '{Regex.get_emoji_name(string)}' but should be '{emoji}'.")
 
     def test_channel_names(self) -> None:
         for string, channel_name in self.channel_names:

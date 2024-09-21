@@ -10,12 +10,7 @@ from typing import Any
 
 from zulip import Client as ZulipClient
 from tumcsbot.lib.client import AsyncClient
-from .test_client import asSync
-
-
-class Client(AsyncClient):
-    def __init__(self) -> None:
-        super().__init__(0, "unused", ZulipClient())
+from .test_client import asSync, Client
 
 
 @patch.object(Client, "__init__", lambda _: None)

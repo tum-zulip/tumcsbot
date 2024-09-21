@@ -23,19 +23,21 @@ def asSync(func: Callable[[Any], Any]) -> Callable[[Any], Any]:
     return wrapper
 
 
-class ClientGetUserIdsFromAttributeTest(unittest.TestCase):
-    class Client(TUMCSBotClient):
-        def __init__(self) -> None:
-            super().__init__(0, "test", ZulipClient())
+class Client(TUMCSBotClient):
+    def __init__(self) -> None:
+        pass # Do not call the super constructor as it is a Mock.
 
-        async def get_users(self, _: dict[str, Any] | None = None) -> dict[str, Any]:
-            return await get_users()
+    async def get_users(self, _: dict[str, Any] | None = None) -> dict[str, Any]:
+        return await get_users()
+
+
+class ClientGetUserIdsFromAttributeTest(unittest.TestCase):
 
     _client: ClassVar[Client]
 
     @classmethod
     def setUpClass(cls) -> None:
-        cls._client = cls.Client()
+        cls._client = Client()
 
     @asSync
     async def test_get_user_ids_from_attribute(self) -> None:

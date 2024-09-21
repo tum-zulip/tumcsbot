@@ -2,7 +2,6 @@ from typing import Final, cast
 import re
 import regex
 
-
 class Regex:
     """Some widely used regex methods."""
 
@@ -28,7 +27,7 @@ class Regex:
     _OPT_ASTERISKS: Final[re.Pattern[str]] = re.compile(rf"(?:{_ASTERISKS.pattern}|)")
     _EMOJI: Final[re.Pattern[str]] = re.compile(r"[^:]+")
     _EMOJI_AUTOCOMPLETED_CAPTURE: Final[re.Pattern[str]] = re.compile(
-        rf":({_EMOJI.pattern}):"
+        rf"^:({_EMOJI.pattern}?):$"
     )
     _TOPIC: Final[re.Pattern[str]] = re.compile(r".+")
     # Note: Currently, there are no further restrictions on channel names posed
@@ -202,7 +201,5 @@ class Regex:
            Leading/trailing whitespace is discarded.
         Return None if no match could be found.
         """
-        result: re.Match[str] | None = Regex._EMOJI_AUTOCOMPLETED_CAPTURE.match(
-            string.strip()
-        )
-        return Regex.get_captured_string_from_match(result, 1)
+        # Todo: (jr) this function should be removed
+        return Regex.get_emoji_name(string)

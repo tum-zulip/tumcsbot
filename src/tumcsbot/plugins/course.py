@@ -1270,7 +1270,7 @@ class Course(PluginCommand, Plugin):
         courseInstructorChannel: ZulipChannel | None = None
 
         cleanup_opterations: list[
-            Callable[[], None] | Callable[[int], Coroutine[Any, Any, dict[str, Any]]]
+            Callable[[], None] | Callable[[], Coroutine[Any, Any, dict[str, Any]]]
         ] = []
 
         async def or_exit(coro: Coroutine[None, None, T]) -> T:
@@ -1894,7 +1894,7 @@ class Course(PluginCommand, Plugin):
             logging.exception(e)
             session.rollback()
             cleanup_result: None | Coroutine[Any, Any, dict[str, Any]]
-            op: Callable[[], None] | Callable[[int], Coroutine[Any, Any, dict[str, Any]]]
+            op: Callable[[], None] | Callable[[], Coroutine[Any, Any, dict[str, Any]]]
             for op in cleanup_opterations:
                 # TODO: too few arguments
                 cleanup_result = op()
