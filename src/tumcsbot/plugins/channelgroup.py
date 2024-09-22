@@ -303,7 +303,7 @@ class Channelgroup(PluginCommand, Plugin):
             group_id = group.ChannelGroupId
             emoji = group.ChannelGroupEmote
             channels: list[str] = await Channelgroup.get_channel_names(
-                session, self.client, [group]
+                session, [group]
             )
 
             channels_concat: str = ", ".join(f"`{s}`" for s in channels)
@@ -449,7 +449,7 @@ class Channelgroup(PluginCommand, Plugin):
         members: UserGroup = Channelgroup.get_usergroup(session, group)
         user_id: list[int] = [sender.id]
         channel_names: list[str] = await Channelgroup.get_channel_names(
-            session, self.client, [group]
+            session, [group]
         )
 
         channels: list[tuple[str, str | None]] = [
@@ -493,7 +493,7 @@ class Channelgroup(PluginCommand, Plugin):
         users: list[ZulipUser] = args.user
         user_ids: list[int] = [user.id for user in users]
         channel_names: list[str] = await Channelgroup.get_channel_names(
-            session, self.client, [group]
+            session, [group]
         )
 
         channels: list[tuple[str, str | None]] = [
@@ -538,7 +538,7 @@ class Channelgroup(PluginCommand, Plugin):
         users: list[ZulipUser] = Usergroup.get_users_for_group(session, ugroup)
         user_ids: list[int] = Usergroup.get_user_ids_for_group(session, ugroup)
         channel_names: list[str] = await Channelgroup.get_channel_names(
-            session, self.client, [group]
+            session, [group]
         )
 
         channels: list[tuple[str, str | None]] = [
@@ -586,7 +586,7 @@ class Channelgroup(PluginCommand, Plugin):
         members: UserGroup = Channelgroup.get_usergroup(session, group)
         user_id: int = sender.id
         channel_names: list[str] = await Channelgroup.get_unique_channel_names(
-            session, self.client, sender, group
+            session, sender, group
         )
 
         if opts.k and opts.t:
@@ -642,7 +642,7 @@ class Channelgroup(PluginCommand, Plugin):
         users: list[ZulipUser] = args.user
         user_ids: list[int] = [user.id for user in users]
         channel_names: list[str] = await Channelgroup.get_unique_channel_names(
-            session, self.client, sender, group
+            session, sender, group
         )
 
         if opts.k and opts.t:
@@ -700,7 +700,7 @@ class Channelgroup(PluginCommand, Plugin):
         users: list[ZulipUser] = Usergroup.get_users_for_group(session, ugroup)
         user_ids: list[int] = Usergroup.get_user_ids_for_group(session, ugroup)
         channel_names: list[str] = await Channelgroup.get_unique_channel_names(
-            session, self.client, sender, group
+            session, sender, group
         )
 
         if opts.k and opts.t:
@@ -1263,10 +1263,10 @@ class Channelgroup(PluginCommand, Plugin):
             )
             members: UserGroup = Channelgroup.get_usergroup(session, group)
             sender: ZulipUser = ZulipUser(user_id)
-            sender.set_client(client)
+            ZulipUser.set_client(client)
             await sender
             channel_names: list[str] = await Channelgroup.get_channel_names(
-                session, client, [group]
+                session, [group]
             )
 
             channels: list[tuple[str, str | None]] = [
@@ -1301,7 +1301,7 @@ class Channelgroup(PluginCommand, Plugin):
             sender.set_client(client)
             await sender
             channel_names: list[str] = await Channelgroup.get_unique_channel_names(
-                session, client, sender, group
+                session, sender, group
             )
 
             Usergroup.remove_user_from_group(session, sender, members)
@@ -1596,7 +1596,7 @@ class Channelgroup(PluginCommand, Plugin):
         ugroup: UserGroup = Channelgroup.get_usergroup(session, group)
         user_ids: list[int] = Usergroup.get_user_ids_for_group(session, ugroup)
         channel_names: list[str] = await Channelgroup.get_channel_names(
-            session, client, [group]
+            session, [group]
         )
 
         channels: list[tuple[str, str | None]] = [
@@ -1707,13 +1707,12 @@ class Channelgroup(PluginCommand, Plugin):
 
     @staticmethod
     async def get_channel_names(
-        session: Session, client: AsyncClient, groups: list[ChannelGroup]
+        session: Session, groups: list[ChannelGroup]
     ) -> list[str]:
         """
         Get a list of the names of all channels that are members at least one of the Channelgroups in a list of ChannelGroups.
         """
         channels: set[str] = set()
-        failed: set[str] = set()
 
         for group in groups:
             for s in (
@@ -1721,39 +1720,31 @@ class Channelgroup(PluginCommand, Plugin):
                 .filter(ChannelGroupMember.ChannelGroupId == group.ChannelGroupId)
                 .all()
             ):
-                result: dict[str, Any] | None = await client.get_channel_by_id(
-                    s.Channel.id
-                )
-                if not result:
-                    failed.add(f"`{s.Channel.id}`")
-                    continue
-                name: str = result["name"]
-                channels.add(name)
-
-        if failed:
-            f: str = " ".join(failed)
-            raise DMError(f"Channel(s) with id(s) {f} could be not found.")
+                chan : ZulipChannel = cast(ZulipChannel,s.Channel)
+                await chan
+                channels.add(chan.name)
         return list(channels)
 
     @staticmethod
-    def get_channels(session: Session, group: ChannelGroup) -> list[ZulipChannel]:
+    async def get_channels(session: Session, group: ChannelGroup) -> list[ZulipChannel]:
         """
         Get a list of all channels that are members of a given Channelgroup.
         """
-        channels: list[ZulipChannel] = []
+        channels: set[ZulipChannel] = set()
         for s in (
             session.query(ChannelGroupMember)
             .filter(ChannelGroupMember.ChannelGroupId == group.ChannelGroupId)
             .all()
         ):
-            if s.Channel:
-                channels.extend(s.Channels)
+            chan : ZulipChannel = cast(ZulipChannel,s.Channel)
+            await chan
+            channels.add(chan)
 
-        return channels
+        return list(channels)
 
     @staticmethod
     async def get_unique_channel_names(
-        session: Session, client: AsyncClient, user: ZulipUser, group: ChannelGroup
+        session: Session, user: ZulipUser, group: ChannelGroup
     ) -> list[str]:
         """
         Get a list of the names of all channels that are members only in a given ChannelGroup and not in any other ChannelGroup.
@@ -1762,7 +1753,7 @@ class Channelgroup(PluginCommand, Plugin):
         groups.remove(group)
 
         channelsToKeep: list[str] = await Channelgroup.get_channel_names(
-            session, client, groups
+            session, groups
         )
 
         channels: list[str] = []
@@ -1771,10 +1762,9 @@ class Channelgroup(PluginCommand, Plugin):
             .filter(ChannelGroupMember.ChannelGroupId == group.ChannelGroupId)
             .all()
         ):
-            result = await client.get_channel_by_id(s.Channel.id)
-            if result is None:
-                raise DMError()
-            name: str = result["name"]
+            result = cast(ZulipChannel,s.Channel)
+            await result
+            name: str = result.name
             channels.append(name)
         return [channel for channel in channels if channel not in channelsToKeep]
 

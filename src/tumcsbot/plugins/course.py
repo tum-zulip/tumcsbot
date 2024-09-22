@@ -125,7 +125,7 @@ class Course(PluginCommand, Plugin):
         for course in courses:
             course_name = course.CourseName
             channels: list[str] = await Course.get_channel_names(
-                session, self.client, course
+                session, course
             )
             emoji: str = Course.get_emoji(course, session)
 
@@ -1100,7 +1100,7 @@ class Course(PluginCommand, Plugin):
             )
 
             if sg is not None:
-                strm: list[ZulipChannel] = Channelgroup.get_channels(session, sg)
+                strm: list[ZulipChannel] = await Channelgroup.get_channels(session, sg)
                 await Channelgroup.remove_zulip_channels(session, strm, sg)
 
                 Channelgroup.delete_group_h(session, sg)
@@ -1227,7 +1227,7 @@ class Course(PluginCommand, Plugin):
                 .first()
             )
             if sg is not None:
-                channels: list[ZulipChannel] = Channelgroup.get_channels(session, sg)
+                channels: list[ZulipChannel] = await Channelgroup.get_channels(session, sg)
                 await Channelgroup.remove_zulip_channels(session, channels, sg)
 
         if opts.t:
@@ -2122,22 +2122,23 @@ class Course(PluginCommand, Plugin):
         return Usergroup.get_users_for_group(session, ug)
 
     @staticmethod
-    def get_channels(course: CourseDB, session: Session) -> list[ZulipChannel]:
+    async def get_channels(course: CourseDB, session: Session) -> list[ZulipChannel]:
         """
         Get the Channels of a Course as list of ZulipChannels.
         """
         sg: ChannelGroup = Course.get_channelgroup(course, session)
-        return Channelgroup.get_channels(session, sg)
+        res = await Channelgroup.get_channels(session, sg)
+        return res
 
     @staticmethod
     async def get_channel_names(
-        session: Session, client: AsyncClient, course: CourseDB
+        session: Session, course: CourseDB
     ) -> list[str]:
         """
         Get the Channel Names of a Course as list of strings.
         """
         sg: ChannelGroup = Course.get_channelgroup(course, session)
-        return await Channelgroup.get_channel_names(session, client, [sg])
+        return await Channelgroup.get_channel_names(session, [sg])
 
     @staticmethod
     def _update_channelgroup(
