@@ -1100,10 +1100,8 @@ class Course(PluginCommand, Plugin):
             )
 
             if sg is not None:
-                strm: list[str] = await Channelgroup.get_channel_names(
-                    session, self.client, [sg]
-                )
-                await Channelgroup.remove_channels_h(session, self.client, sg, strm)
+                strm: list[ZulipChannel] = Channelgroup.get_channels(session, sg)
+                await Channelgroup.remove_zulip_channels(session, strm, sg)
 
                 Channelgroup.delete_group_h(session, sg)
 
@@ -1229,10 +1227,8 @@ class Course(PluginCommand, Plugin):
                 .first()
             )
             if sg is not None:
-                channels: list[str] = await Channelgroup.get_channel_names(
-                    session, self.client, [sg]
-                )
-                await Channelgroup.remove_channels_h(session, self.client, sg, channels)
+                channels: list[ZulipChannel] = Channelgroup.get_channels(session, sg)
+                await Channelgroup.remove_zulip_channels(session, channels, sg)
 
         if opts.t:
             tutors: UserGroup | None = (
@@ -1473,10 +1469,10 @@ class Course(PluginCommand, Plugin):
                     # enter list of names
                     while True:
 
-                        sg_regex = await short_text_input(
-                            "Please enter a list of Channels in the format 'ChannelNameRegex1,ChannelNameRegex2, ..., ChannelNameRegexN'"
+                        sg_names = await short_text_input(
+                            "Please enter a list of Channels in the format 'ChannelName1,ChannelName2, ..., ChannelNameN'"
                         )
-                        if sg_regex is None:
+                        if sg_names is None:
                             continue
 
                         # parse Channel Names
@@ -1495,10 +1491,17 @@ class Course(PluginCommand, Plugin):
                                 "Could not create Channelgroup for course."
                             )
 
-                        channels = sg_regex.split(",")
-                        await Channelgroup.add_channels_h(
-                            self.client, session, sender, courseChannels, channels
-                        )
+                        channels: list[ZulipChannel] = []
+                        ch_id : int | None
+                        ch : ZulipChannel
+                        for name in sg_names.split(","):
+                            ch_id = await self.client.get_channel_id_by_name(name)
+                            if ch_id is not None:
+                                ch = ZulipChannel(name)
+                                await ch
+                                channels.append(ch)
+
+                        Channelgroup.add_zulip_channels(session, channels, courseChannels)
                         break
 
                 else:

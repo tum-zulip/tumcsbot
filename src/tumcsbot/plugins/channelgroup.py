@@ -185,73 +185,57 @@ class Channelgroup(PluginCommand, Plugin):
     async def handle_channel_event(
         self, event: dict[str, Any]
     ) -> Response | Iterable[Response]:
+        for channel in event["streams"]:
+            # Channels
+            name_d: str = channel["name"]
+            id_d: int = channel["stream_id"]
 
-        if event["op"] == "create":
-            for channel in event["streams"]:
-                name_c: str = channel["name"]
-                id_c: int = channel["stream_id"]
+            group_ids_d: list[str] = Channelgroup.get_group_ids_from_channel_id(
+                id_d
+            )
 
-                # Get all the groups this channel belongs to.
-                group_ids_c: list[str] = Channelgroup.get_group_ids_from_channel_id(
-                    id_c
-                )
-                # Get all user ids to subscribe to this new channel ...
-                user_ids_c: list[int] = Channelgroup.get_group_subscribers(group_ids_c)
-                # ... and subscribe them.
-                await self.client.subscribe_users(user_ids_c, name_c)
-
-        elif event["op"] == "delete":
-            for channel in event["streams"]:
-                # Channels
-                name_d: str = channel["name"]
-                id_d: int = channel["stream_id"]
-
-                group_ids_d: list[str] = Channelgroup.get_group_ids_from_channel_id(
-                    id_d
+            if group_ids_d:
+                self.logger.info(
+                    "Channel %s being deleted from groups %s", name_d, group_ids_d
                 )
 
-                if group_ids_d:
-                    self.logger.info(
-                        "Channel %s being deleted from groups %s", name_d, group_ids_d
-                    )
-
-                for group_id in group_ids_d:
-                    with DB.session() as session:
-                        s: ChannelGroup | None = (
-                            session.query(ChannelGroup)
-                            .filter(ChannelGroup.ChannelGroupId == group_id)
-                            .one()
-                        )
-                        if s is not None:
-                            await Channelgroup.remove_channels_by_id(
-                                session, s, [id_d]
-                            )
-
-                # messages
+            for group_id in group_ids_d:
                 with DB.session() as session:
-                    claims: list[GroupClaim] = session.query(GroupClaim).all()
-                    for claim in claims:
-                        msg = await self.client.get_message_by_id(int(claim.MessageId))
-                        if msg["type"] == "stream" and msg["stream_id"] == id_d:
-                            try:
-                                session.query(GroupClaim).filter(
-                                    GroupClaim.MessageId == msg["id"]
-                                ).delete()
-                                session.commit()
-                            except sqlalchemy.exc.IntegrityError:
-                                session.rollback()
+                    s: ChannelGroup | None = (
+                        session.query(ChannelGroup)
+                        .filter(ChannelGroup.ChannelGroupId == group_id)
+                        .one()
+                    )
+                    if s is not None:
+                        await Channelgroup.remove_channels_by_id(
+                            session, s, [id_d]
+                        )
 
-                    claimsAll: list[GroupClaimAll] = session.query(GroupClaimAll).all()
-                    for claim in claimsAll:
-                        msg = await self.client.get_message_by_id(int(claim.MessageId))
-                        if msg["type"] == "stream" and msg["stream_id"] == id_d:
-                            try:
-                                session.query(GroupClaimAll).filter(
-                                    GroupClaimAll.MessageId == msg["id"]
-                                ).delete()
-                                session.commit()
-                            except sqlalchemy.exc.IntegrityError:
-                                session.rollback()
+            # messages
+            with DB.session() as session:
+                claims: list[GroupClaim] = session.query(GroupClaim).all()
+                for claim in claims:
+                    msg = await self.client.get_message_by_id(int(claim.MessageId))
+                    if msg["type"] == "stream" and msg["stream_id"] == id_d:
+                        try:
+                            session.query(GroupClaim).filter(
+                                GroupClaim.MessageId == msg["id"]
+                            ).delete()
+                            session.commit()
+                        except sqlalchemy.exc.IntegrityError:
+                            session.rollback()
+
+                claimsAll: list[GroupClaimAll] = session.query(GroupClaimAll).all()
+                for claim in claimsAll:
+                    msg = await self.client.get_message_by_id(int(claim.MessageId))
+                    if msg["type"] == "stream" and msg["stream_id"] == id_d:
+                        try:
+                            session.query(GroupClaimAll).filter(
+                                GroupClaimAll.MessageId == msg["id"]
+                            ).delete()
+                            session.commit()
+                        except sqlalchemy.exc.IntegrityError:
+                            session.rollback()
 
         return Response.none()
 
@@ -267,8 +251,7 @@ class Channelgroup(PluginCommand, Plugin):
                 )
             )
             or (
-                event.data["type"] == "stream"
-                and event.data["op"] in ["create", "delete"]
+                event.data["type"] == "stream" and event.data["op"] == "delete"
             )
             or (
                 event.data["type"] == "delete_message"
@@ -399,10 +382,10 @@ class Channelgroup(PluginCommand, Plugin):
         ChannelGroup.ChannelGroupId,
         description="The identifier of a Channelgroup to add channels to.",
     )
-    @arg("channels", str, description="The channel patterns to add.", greedy=True)
+    @arg("channels", ZulipChannel, description="The channel names to add.", greedy=True)
     async def add_channels(
         self,
-        sender: ZulipUser,
+        _sender: ZulipUser,
         session: Session,
         args: CommandParser.Args,
         _opts: CommandParser.Opts,
@@ -412,11 +395,8 @@ class Channelgroup(PluginCommand, Plugin):
         Add channels to a Channelgroup.
         """
         group: ChannelGroup = args.group_id
-        channel_patterns: list[str] = args.channels
 
-        await Channelgroup.add_channels_h(
-            self.client, session, sender, group, channel_patterns
-        )
+        Channelgroup.add_zulip_channels(session, args.channels, group)
         yield DMResponse(f"Added channels to Channelgroup `{group.ChannelGroupId}`.")
 
     @command
@@ -426,7 +406,7 @@ class Channelgroup(PluginCommand, Plugin):
         ChannelGroup.ChannelGroupId,
         description="The identifier of a Channelgroup to remove channels from.",
     )
-    @arg("channels", str, description="The channel patterns to remove.", greedy=True)
+    @arg("channels", ZulipChannel, description="The channel names to remove.", greedy=True)
     async def remove_channels(
         self,
         _sender: ZulipUser,
@@ -439,10 +419,9 @@ class Channelgroup(PluginCommand, Plugin):
         Remove channels from a Channelgroup.
         """
         group: ChannelGroup = args.group_id
-        channel_patterns: list[str] = args.channels
 
-        await Channelgroup.remove_channels_h(
-            session, self.client, group, channel_patterns
+        await Channelgroup.remove_zulip_channels(
+            session, args.channels, group
         )
         yield DMResponse(
             f"Removed channels from Channelgroup `{group.ChannelGroupId}`."
@@ -1168,20 +1147,18 @@ class Channelgroup(PluginCommand, Plugin):
             ) from e
 
     @staticmethod
-    async def remove_channels_h(
+    async def remove_zulip_channels(
         session: Session,
-        client: AsyncClient,
+        channels: list[ZulipChannel],
         group: ChannelGroup,
-        channel_patterns: list[str],
     ) -> None:
         """
-        Remove the channels of a list of channel patterns from a ChannelGroup.
+        Remove the channels of a list of channels from a ChannelGroup.
 
         Args:
             session: The database session.
-            sender: The sender of the message.
+            channels: A list of channel names
             group: The group in which channels to delete.
-            channel_patterns: A list of channel-regexes
 
         Raises:
             DMError: If a channel deletion fails.
@@ -1189,40 +1166,25 @@ class Channelgroup(PluginCommand, Plugin):
         Returns:
             None
         """
-
-        failed: list[str] = []
-        for channel_reg in channel_patterns:
-            channels: list[str] = await client.get_channels_from_regex(channel_reg)
-
-            for s in channels:
-                channel: ZulipChannel = ZulipChannel(f"#**{s}**")
-                await channel
-
-                if (
-                    session.query(ChannelGroupMember)
-                    .filter(ChannelGroupMember.Channel == channel.id)
-                    .filter(ChannelGroupMember.ChannelGroupId == group.ChannelGroupId)
-                    .first()
-                    is None
-                ):
-                    continue
-                try:
-                    # search for the listed channels in the db and delete them
-                    session.query(ChannelGroupMember).filter(
-                        ChannelGroupMember.Channel == channel.id
-                    ).filter(
-                        ChannelGroupMember.ChannelGroupId == group.ChannelGroupId
-                    ).delete()
-                    session.commit()
-                except sqlalchemy.exc.IntegrityError:
-                    session.rollback()
-                    failed.append(f"#**{channel.name}**")
-
-        if failed:
-            sf: str = " ".join(failed)
-            raise DMError(
-                f"Could not delete channels(s) {sf} from Channelgroup `{group.ChannelGroupId}`."
-            )
+        for channel in channels:
+            if (
+                session.query(ChannelGroupMember)
+                .filter(ChannelGroupMember.Channel == channel.id)
+                .filter(ChannelGroupMember.ChannelGroupId == group.ChannelGroupId)
+                .first()
+                is None
+            ):
+                continue
+            try:
+                # search for the listed channels in the db and delete them
+                session.query(ChannelGroupMember).filter(
+                    ChannelGroupMember.Channel == channel.id
+                ).filter(
+                    ChannelGroupMember.ChannelGroupId == group.ChannelGroupId
+                ).delete()
+                session.commit()
+            except sqlalchemy.exc.IntegrityError:
+                session.rollback()
 
     @staticmethod
     async def remove_channels_by_id(
@@ -1249,73 +1211,6 @@ class Channelgroup(PluginCommand, Plugin):
                 session.commit()
             except sqlalchemy.exc.IntegrityError:
                 session.rollback()
-
-    @staticmethod
-    async def add_channels_h(
-        client: AsyncClient,
-        session: Session,
-        _sender: ZulipUser,
-        group: ChannelGroup,
-        channel_patterns: list[str],
-    ) -> None:
-        """
-        Add the channels of a list of channel patterns to a ChannelGroup.
-
-        Args:
-            session: The database session.
-            sender: The sender of the message.
-            group: The group in which channels to add.
-            channel_patterns: A list of channel-regexes.
-
-        Raises:
-            DMError: If a channel addition fails.
-
-        Returns:
-            None
-        """
-
-        failed: list[str] = []
-        channels: list[str] = []
-        for channel_reg in channel_patterns:
-            s: list[str] = await client.get_channels_from_regex(channel_reg)
-            channels.extend(s)
-
-        if not channels:
-            channel_patterns_output: list[str] = list(
-                map(lambda s: f"`{s}`", channel_patterns)
-            )
-            out: str = ", ".join(channel_patterns_output)
-            raise DMError(
-                f"Could not find any (public) channels associated with { out }."
-            )
-
-        for st in channels:
-            channel: ZulipChannel = ZulipChannel(f"#**{st}**")
-            await channel
-
-            if (
-                session.query(ChannelGroupMember)
-                .filter(ChannelGroupMember.ChannelGroupId == group.ChannelGroupId)
-                .filter(ChannelGroupMember.Channel == channel)  # type: ignore
-                .first()
-            ):
-                continue
-            try:
-                session.add(
-                    ChannelGroupMember(
-                        ChannelGroupId=group.ChannelGroupId, Channel=channel
-                    )
-                )
-                session.commit()
-            except sqlalchemy.exc.IntegrityError:
-                session.rollback()
-                failed.append(f"#**{channel.name}**")
-
-        if failed:
-            sf: str = " ".join(failed)
-            raise DMError(
-                f"Could not add channel(s) {sf} to Channelgroup `{group.ChannelGroupId}`."
-            )
 
     @staticmethod
     def add_zulip_channels(
@@ -1852,7 +1747,7 @@ class Channelgroup(PluginCommand, Plugin):
             .all()
         ):
             if s.Channel:
-                channels.append(s.Channels)
+                channels.extend(s.Channels)
 
         return channels
 
