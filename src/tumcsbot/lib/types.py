@@ -482,11 +482,8 @@ class OptConfig:
 
     @property
     def syntax(self) -> str:
-        try:
-            type_name = self.ty.__name__
-        except AttributeError:
-            type_name = "arg"
-        # Todo: (jr) -v option not formatted correctly
+        type_name = getattr(self.ty, "__name__", "arg")
+
         ty = " <" + type_name + ">" if self.ty is not None else ""
         return "[-" + self.opt + ty + "]"
 
