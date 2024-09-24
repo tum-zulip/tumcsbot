@@ -539,18 +539,17 @@ class Course(PluginCommand, Plugin):
         "tuts",
         long_opt="tutor_channel",
         ty=ZulipChannel,
-        description="The course has an additional Channel for tutors.",
+        description="The name of the additional Channel for tutors.",
     )
     @opt(
         "ins",
         long_opt="instructor_channel",
         ty=ZulipChannel,
-        description="The course has an additional Channel for Instructors.",
+        description="The name of the additional Channel for Instructors.",
     )
     @opt(
         "fb",
         long_opt="feedback",
-        ty=ZulipChannel,
         description="The course has an ANONYMOUS Feedback-Channel.",
     )
     async def create(
@@ -651,8 +650,8 @@ class Course(PluginCommand, Plugin):
         try:
             # get corresponding Channelgroup
             if channels is None:
-                if opts.s:
-                    channels = opts.s
+                if opts.c:
+                    channels = opts.c
                 else:
                     channelgroup_name: str = "channels_" + name
                     channels = Channelgroup.create_and_get_group(
@@ -1077,11 +1076,13 @@ class Course(PluginCommand, Plugin):
         tut_ug_id = int(course.TutorsUserGroup)
         ins_ug_id = int(course.InstructorsUserGroup)
 
-        tut_s = cast(ZulipChannel, course.TutorChannel)
+        tut_s: ZulipChannel = cast(ZulipChannel, course.TutorChannel)
         await tut_s
 
-        ins_s = cast(ZulipChannel, course.InstructorChannel)
-        await ins_s
+        ins_s: ZulipChannel | None = None
+        if course.InstructorChannel is not None:
+            ins_s = cast(ZulipChannel, course.InstructorChannel)
+            await ins_s
 
         try:
             session.query(CourseDB).filter(
@@ -1102,6 +1103,10 @@ class Course(PluginCommand, Plugin):
             if sg is not None:
                 strm: list[ZulipChannel] = await Channelgroup.get_channels(session, sg)
                 await Channelgroup.remove_zulip_channels(session, strm, sg)
+                
+                for s in strm:
+                    await self.client.delete_channel(s.id)
+                    
 
                 Channelgroup.delete_group_h(session, sg)
 
@@ -1178,7 +1183,7 @@ class Course(PluginCommand, Plugin):
         """
         course: CourseDB = args.course
 
-        if opts.s:
+        if opts.c:
             channels: ChannelGroup = opts.s
             Course._update_channelgroup(course, session, channels)
 
@@ -1205,8 +1210,8 @@ class Course(PluginCommand, Plugin):
         ty=CourseDB.CourseName,
         description="The name of the Course to delete.",
     )
-    @opt("c", long_opt="channels", description="Remove the Channels from the Course.")
-    @opt("t", long_opt="tutors", description="Remove the tutors from the Course")
+    @opt("c", long_opt="channels", description="Remove the Channels from the Course, but keep the ChannelGroup.")
+    @opt("t", long_opt="tutors", description="Remove the tutors from the Course but keep the UserGroup.")
     async def clear(
         self,
         _sender: ZulipUser,
@@ -1220,7 +1225,7 @@ class Course(PluginCommand, Plugin):
         """
         course: CourseDB = args.course
 
-        if opts.s:
+        if opts.c:
             sg: ChannelGroup | None = (
                 session.query(ChannelGroup)
                 .filter(ChannelGroup.ChannelGroupId == course.Channels)
@@ -1229,6 +1234,9 @@ class Course(PluginCommand, Plugin):
             if sg is not None:
                 channels: list[ZulipChannel] = await Channelgroup.get_channels(session, sg)
                 await Channelgroup.remove_zulip_channels(session, channels, sg)
+
+                for s in channels:
+                    await self.client.delete_channel(s.id)
 
         if opts.t:
             tutors: UserGroup | None = (
@@ -1242,6 +1250,81 @@ class Course(PluginCommand, Plugin):
                     Usergroup.remove_user_from_group(session, user, tutors)
 
         yield DMResponse(f"Course `{course.CourseName}` cleared.")
+
+    @command
+    @privilege(Privilege.ADMIN)
+    @arg(
+        "course",
+        ty=CourseDB.CourseName,
+        description="The name of the Course to mute.",
+    )
+    async def mute(
+        self,
+        _sender: ZulipUser,
+        session: Session,
+        args: CommandParser.Args,
+        _opts: CommandParser.Opts,
+        _message: dict[str, Any],
+    ) -> AsyncGenerator[response_type, None]:
+        """
+        Mute all the channels of a course, for example during the time of an exam. Thus only moderators can send messages to the channels.
+        """
+        course: CourseDB = args.course
+        channels: list[ZulipChannel] = await Course.get_channels(course=course, session=session)
+        failed_channels: list[str] = []
+
+        for channel in channels:
+            request = {
+                "stream_id": channel.id,
+                "stream_post_policy": 4,
+            }
+            response = await self.client.update_channel(request)
+
+            if response["result"] != "success":
+                failed_channels.append(channel.name)
+        
+        if failed_channels:
+            raise DMError(f"Failed to mute the following channels: {', '.join(failed_channels)}")
+
+        yield DMResponse(f"The channels of your course `{course.CourseName}` are now muted.")
+
+    @command
+    @privilege(Privilege.ADMIN)
+    @arg(
+        "course",
+        ty=CourseDB.CourseName,
+        description="The name of the Course to unmute.",
+    )
+    async def unmute(
+        self,
+        _sender: ZulipUser,
+        session: Session,
+        args: CommandParser.Args,
+        opts: CommandParser.Opts,
+        _message: dict[str, Any],
+    ) -> AsyncGenerator[response_type, None]:
+        """
+        Unmute all the channels of a course, for example during the time of an exam. Thus all users can send messages to the channels.
+        """
+        course: CourseDB = args.course
+        channels: list[ZulipChannel] = await Course.get_channels(course=course, session=session)
+        failed_channels: list[str] = []
+
+        for channel in channels:
+            request = {
+                "stream_id": channel.id,
+                "stream_post_policy": 1,
+            }
+            response = await self.client.update_channel(request)
+            
+            if response["result"] != "success":
+                failed_channels.append(channel.name)
+        
+        if failed_channels:
+            raise DMError(f"Failed to unmute the following channels: {', '.join(failed_channels)}")
+
+        yield DMResponse(f"The channels of your course `{course.CourseName}` are now unmuted.")
+
 
     @command
     @privilege(Privilege.ADMIN)
@@ -1463,7 +1546,7 @@ class Course(PluginCommand, Plugin):
                     )
 
                 sg_emoji_conf = await confirm_input(
-                    f"Do you want to create the Channelgroup {courseEmoji} from a list of Channel-Name-Regexes?"
+                    f"Do you want to create the Channelgroup {courseEmoji} from a list of Channel Names?"
                 )
                 if sg_emoji_conf:
                     # enter list of names
@@ -1538,7 +1621,7 @@ class Course(PluginCommand, Plugin):
                 raise DMError("Could not determine the language of the course.")
 
             # wizard adds Feedback and Announcement per default to improve the communication between instructors and students (they have to be removed manually)
-            await Course.add_standard_channels(
+            stand_chan_ids: list[int] = await Course.add_standard_channels(
                 client=self.client,
                 session=session,
                 name=courseName,
@@ -1553,6 +1636,12 @@ class Course(PluginCommand, Plugin):
                 m=resultM,
                 t=resultT,
             )
+
+            for chan_id in stand_chan_ids:
+                cleanup_opterations.append(
+                    lambda id=chan_id: self.client.delete_channel(id)
+                )
+
 
             result1t = await confirm_input(
                 cleandoc(
@@ -1939,7 +2028,9 @@ class Course(PluginCommand, Plugin):
         n: bool = True,
         m: bool = True,
         t: bool = True,
-    ) -> None:
+    ) -> list[int]:
+        
+        result: list[int] = []
 
         if principals is None:
             principals = [client.id]
@@ -2021,6 +2112,8 @@ class Course(PluginCommand, Plugin):
                 await s
 
             Channelgroup.add_zulip_channels(session, to_add, sg)
+        
+            result = [s.id for s in to_add]
 
             if fa:
                 fb = next(s for s in to_add if f"{name} - Feedback" in s.name)
@@ -2028,6 +2121,7 @@ class Course(PluginCommand, Plugin):
                     {"FeedbackChannel": fb}
                 )
                 session.commit()
+            return result
 
         except Exception as e:
             session.rollback()
@@ -2076,7 +2170,7 @@ class Course(PluginCommand, Plugin):
         """
         Get the ChannelGroup of a given Course.
         """
-        ID = int(course.Channels)
+        ID = str(course.Channels)
         return (
             session.query(ChannelGroup).filter(ChannelGroup.ChannelGroupId == ID).one()
         )
@@ -2253,8 +2347,12 @@ class Course(PluginCommand, Plugin):
         """
         Set the Instructor-Channel of a given Course.
         """
-        oldIS: ZulipChannel = cast(ZulipChannel, course.InstructorChannel)
-        await oldIS
+        oldIS : ZulipChannel | None = None
+
+        if course.InstructorChannel is not None:
+            oldIS: ZulipChannel = cast(ZulipChannel, course.InstructorChannel)
+            await oldIS
+
         if oldIS == channel:
             raise DMError(
                 "The given Channel is already set as Instructor-Channel for this course."
@@ -2271,5 +2369,7 @@ class Course(PluginCommand, Plugin):
         except sqlalchemy.exc.IntegrityError as e:
             session.rollback()
             raise DMError("Could not update Instructor-Channel :botsad:") from e
+    
+        if oldIS is not None:
+            await client.delete_channel(oldIS.id)
 
-        await client.delete_channel(oldIS.id)
