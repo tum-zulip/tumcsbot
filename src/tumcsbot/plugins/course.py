@@ -136,6 +136,33 @@ class Course(PluginCommand, Plugin):
 
     @command
     @privilege(Privilege.ADMIN)
+    @arg(
+        "course",
+        ty=CourseDB.CourseName,
+        description="The name of the Course.",
+    )
+    async def show(
+        self,
+        _sender: ZulipUser,
+        session: Session,
+        args: CommandParser.Args,
+        opts: CommandParser.Opts,
+        _message: dict[str, Any],
+    ) -> AsyncGenerator[response_type, None]:
+        """
+        For a given course show all the details of the course: \n
+        Name and Channels of Channelgroup
+        Name and Users of Tutor-Usergroup
+        Name and Users of Instructor-Usergroup
+        Name of Tutor-Channel
+        Name of Instructor-Channel
+        Anonymous Feedback enabled
+        """
+        msg = await Course._build_info_message(args.course, session)
+        yield DMResponse(msg)
+
+    @command
+    @privilege(Privilege.ADMIN)
     @arg("name", str, description="The name of the Course.")
     @arg("emoji", Regex.get_emoji_name, description="The emoji to use for the Course.")
     @opt(
@@ -963,544 +990,6 @@ class Course(PluginCommand, Plugin):
 
         yield DMResponse(f"Course `{name}` created :bothappy:")
 
-    @command
-    @privilege(Privilege.ADMIN)
-    @arg(
-        "course",
-        ty=CourseDB.CourseName,
-        description="The name of the Course to add the Channels to.",
-    )
-    @opt(
-        "a",
-        long_opt="all",
-        description="Add all standard steams to the course (Allgemein, Organisation, normal Feedback, Ankündigungen, Technik, Memes).",
-    )
-    @opt("g", long_opt="general", description="Add a general channel.")
-    @opt("o", long_opt="orga", description="Add a Channel for Organization.")
-    @opt(
-        "fn",
-        long_opt="feedbackbnorm",
-        description="Add a normal  Channel for Feedback.",
-    )
-    @opt(
-        "fa",
-        long_opt="feedbackanon",
-        description="Add an anonymous Channel for Feedback.",
-    )
-    @opt("n", long_opt="announcements", description="Add a Channel for Announcements.")
-    @opt("m", long_opt="memes", description="Add a Channel for Memes.")
-    @opt("t", long_opt="tech", description="Add a Channel for Tech-Support.")
-    async def add_default_channels(
-        self,
-        sender: ZulipUser,
-        session: Session,
-        args: CommandParser.Args,
-        opts: CommandParser.Opts,
-        _message: dict[str, Any],
-    ) -> AsyncGenerator[response_type, None]:
-        """
-        Add standard Channels to a given course. If Channels with the same names already exist, they will be transferred and not replaced with new ones.
-        """
-        course: CourseDB = args.course
-        lan: Literal["en", "de"] = cast(Literal["en", "de"], str(course.CourseLanguage))
-        channels_id: str = str(course.Channels)
-        stremgroup: ChannelGroup | None = (
-            session.query(ChannelGroup)
-            .filter(ChannelGroup.ChannelGroupId == channels_id)
-            .first()
-        )
-
-        if stremgroup is None:
-            raise DMError(
-                f"Could not find Channelgroup for Course `{course.CourseName}`."
-            )
-
-        if opts.a:
-            await Course.add_standard_channels(
-                client=self.client,
-                session=session,
-                name=str(course.CourseName),
-                sg=stremgroup,
-                lan=lan,
-                principals=[sender.id, self.client.id],
-            )
-
-        else:
-            if opts.fn and opts.fa:
-                raise DMError(
-                    "You can only add one (normal OR anonymous) feedback channel at a time."
-                )
-
-            await Course.add_standard_channels(
-                client=self.client,
-                session=session,
-                name=str(course.CourseName),
-                sg=stremgroup,
-                lan=lan,
-                principals=[sender.id, self.client.id],
-                g=opts.g,
-                o=opts.o,
-                fn=opts.fn,
-                fa=opts.fa,
-                n=opts.n,
-                m=opts.m,
-                t=opts.t,
-            )
-
-        yield DMResponse(f"Standard Channels added to Course `{course.CourseName}` :bothappy:")
-
-    @command
-    @privilege(Privilege.ADMIN)
-    @arg(
-        "course",
-        ty=CourseDB.CourseName,
-        description="The name of the Course to delete.",
-    )
-    @opt(
-        "a",
-        long_opt="all",
-        description="Delete the whole course (Channelgroup, Usergroups, Channels).",
-    )
-    @opt(
-        "c",
-        long_opt="channelgroup",
-        description="Delete also Channelgroup",
-    )
-    @opt(
-        "t",
-        long_opt="tutors",
-        description="Delete also Usergroup of Tutors.",
-    )
-    @opt(
-        "i",
-        long_opt="instructors",
-        description="Delete also Usergroup of Instructors.",
-    )
-    @opt(
-        "tuts",
-        long_opt="tutorial_channel",
-        description="Delete also Channel for Tutors.",
-    )
-    @opt(
-        "ins",
-        long_opt="instructor_channel",
-        description="Delete also Channel for Instructors.",
-    )
-    async def delete(
-        self,
-        _sender: ZulipUser,
-        session: Session,
-        args: CommandParser.Args,
-        opts: CommandParser.Opts,
-        _message: dict[str, Any],
-    ) -> AsyncGenerator[response_type, None]:
-
-        course: CourseDB = args.course
-        c_name = str(course.CourseName)
-        channels_id = str(course.Channels)
-        tut_ug_id = int(course.TutorsUserGroup)
-        ins_ug_id = int(course.InstructorsUserGroup)
-
-        tut_s: ZulipChannel = cast(ZulipChannel, course.TutorChannel)
-        await tut_s
-
-        ins_s: ZulipChannel | None = None
-        if course.InstructorChannel is not None:
-            ins_s = cast(ZulipChannel, course.InstructorChannel)
-            await ins_s
-
-        try:
-            session.query(CourseDB).filter(
-                CourseDB.CourseId == course.CourseId
-            ).delete()
-            session.commit()
-        except sqlalchemy.exc.IntegrityError as e:
-            session.rollback()
-            raise DMError(f"Could not delete Course `{c_name}`.") from e
-
-        if opts.c or opts.a:
-            sg: ChannelGroup | None = (
-                session.query(ChannelGroup)
-                .filter(ChannelGroup.ChannelGroupId == channels_id)
-                .first()
-            )
-
-            if sg is not None:
-                strm: list[ZulipChannel] = await Channelgroup.get_channels(session, sg)
-                await Channelgroup.remove_zulip_channels(session, strm, sg)
-                
-                Channelgroup.delete_group_h(session, sg)
-
-                failed : list[str] = []
-                for s in strm:
-                    resp = await self.client.delete_channel(s.id)
-                    if resp["result"] != "success":
-                        failed.append(s.name)
-                
-                yield DMResponse(f"Channels {', '.join(failed)} could not be deleted.")
-
-        if opts.t or opts.a:
-            ugt: UserGroup | None = (
-                session.query(UserGroup).filter(UserGroup.GroupId == tut_ug_id).first()
-            )
-
-            if ugt is not None:
-                Usergroup.delete_group(session, ugt)
-
-        if opts.i or opts.a:
-            ugi: UserGroup | None = (
-                session.query(UserGroup).filter(UserGroup.GroupId == ins_ug_id).first()
-            )
-
-            if ugi is not None:
-                Usergroup.delete_group(session, ugi)
-
-        if opts.tuts or opts.a:
-            await self.client.delete_channel(tut_s.id)
-
-        if (opts.ins or opts.a) and ins_s is not None:
-            await self.client.delete_channel(ins_s.id)
-
-        yield DMResponse(f"Course `{c_name}` deleted :bothappy:")
-
-    @command
-    @privilege(Privilege.ADMIN)
-    @arg(
-        "course",
-        ty=CourseDB.CourseName,
-        description="The name of the Course to delete.",
-    )
-    @opt(
-        "c",
-        long_opt="channelgroup",
-        ty=ChannelGroup.ChannelGroupId,
-        description="The id of an existing Channelgroup containing the Channels for this course.",
-    )
-    @opt(
-        "t",
-        long_opt="tutors",
-        ty=UserGroup.GroupName,
-        description="The name of an existing Usergroup containing the tutors for this course.",
-    )
-    @opt(
-        "tuts",
-        long_opt="tutorial_channel",
-        ty=ZulipChannel,
-        description="The name of an existing Channel for Instructors.",
-    )
-    @opt(
-        "ins",
-        long_opt="instructor_channel",
-        ty=ZulipChannel,
-        description="The name of an existing Channel for Instructors.",
-    )
-    async def update(
-        self,
-        _sender: ZulipUser,
-        session: Session,
-        args: CommandParser.Args,
-        opts: CommandParser.Opts,
-        _message: dict[str, Any],
-    ) -> AsyncGenerator[response_type, None]:
-        """
-        Update a course with corresponding contents
-        """
-        course: CourseDB = args.course
-
-        if opts.c:
-            channels: ChannelGroup = opts.s
-            Course._update_channelgroup(course, session, channels)
-
-        if opts.t:
-            tutors: UserGroup = opts.t
-            Course._update_tutorgroup(course, session, tutors)
-
-        if opts.tuts:
-            tutchannel: ZulipChannel = opts.tuts
-            await Course._update_tutorchannel(course, session, self.client, tutchannel)
-
-        if opts.ins:
-            inschannel: ZulipChannel = opts.ins
-            await Course._update_instructorchannel(
-                course, session, self.client, inschannel
-            )
-
-        yield DMResponse(f"Course `{course.CourseName}` updated :bothappy:")
-
-    @command
-    @privilege(Privilege.ADMIN)
-    @arg(
-        "course",
-        ty=CourseDB.CourseName,
-        description="The name of the Course to delete.",
-    )
-    @opt("c", long_opt="channels", description="Remove the Channels from the Course, but keep the ChannelGroup.")
-    @opt("t", long_opt="tutors", description="Remove the tutors from the Course but keep the UserGroup.")
-    async def clear(
-        self,
-        _sender: ZulipUser,
-        session: Session,
-        args: CommandParser.Args,
-        opts: CommandParser.Opts,
-        _message: dict[str, Any],
-    ) -> AsyncGenerator[response_type, None]:
-        """
-        Clear a course (Channels/Tutors), but keep the underlying components (Channelgroup/UserGroup).
-        """
-        course: CourseDB = args.course
-
-        if opts.c:
-            sg: ChannelGroup | None = (
-                session.query(ChannelGroup)
-                .filter(ChannelGroup.ChannelGroupId == course.Channels)
-                .first()
-            )
-            if sg is not None:
-                channels: list[ZulipChannel] = await Channelgroup.get_channels(session, sg)
-                await Channelgroup.remove_zulip_channels(session, channels, sg)
-
-                for s in channels:
-                    await self.client.delete_channel(s.id)
-
-        if opts.t:
-            tutors: UserGroup | None = (
-                session.query(UserGroup)
-                .filter(UserGroup.GroupId == course.TutorsUserGroup)
-                .first()
-            )
-            if tutors is not None:
-                users: list[ZulipUser] = await Usergroup.get_users_for_group(session, tutors)
-                for user in users:
-                    Usergroup.remove_user_from_group(session, user, tutors)
-
-        yield DMResponse(f"Course `{course.CourseName}` cleared :bothappy:")
-
-    @command
-    @privilege(Privilege.ADMIN)
-    @arg(
-        "course",
-        ty=CourseDB.CourseName,
-        description="The name of the Course to mute.",
-    )
-    async def mute(
-        self,
-        _sender: ZulipUser,
-        session: Session,
-        args: CommandParser.Args,
-        _opts: CommandParser.Opts,
-        _message: dict[str, Any],
-    ) -> AsyncGenerator[response_type, None]:
-        """
-        Mute all the channels of a course, for example during the time of an exam. Thus only moderators can send messages to the channels.
-        """
-        course: CourseDB = args.course
-        channels: list[ZulipChannel] = await Course.get_channels(course=course, session=session)
-        failed_channels: list[str] = []
-
-        for channel in channels:
-            request = {
-                "stream_id": channel.id,
-                "stream_post_policy": 4,
-            }
-            response = await self.client.update_channel(request)
-
-            if response["result"] != "success":
-                failed_channels.append(channel.name)
-        
-        if failed_channels:
-            raise DMError(f"Failed to mute the following channels: {', '.join(failed_channels)}")
-
-        yield DMResponse(f"The channels of your course `{course.CourseName}` are now muted :bothappy:")
-
-    @command
-    @privilege(Privilege.ADMIN)
-    @arg(
-        "course",
-        ty=CourseDB.CourseName,
-        description="The name of the Course to unmute.",
-    )
-    async def unmute(
-        self,
-        _sender: ZulipUser,
-        session: Session,
-        args: CommandParser.Args,
-        opts: CommandParser.Opts,
-        _message: dict[str, Any],
-    ) -> AsyncGenerator[response_type, None]:
-        """
-        Unmute all the channels of a course, for example during the time of an exam. Thus all users can send messages to the channels.
-        """
-        course: CourseDB = args.course
-        channels: list[ZulipChannel] = await Course.get_channels(course=course, session=session)
-        failed_channels: list[str] = []
-
-        for channel in channels:
-            request = {
-                "stream_id": channel.id,
-                "stream_post_policy": 1,
-            }
-            response = await self.client.update_channel(request)
-            
-            if response["result"] != "success":
-                failed_channels.append(channel.name)
-        
-        if failed_channels:
-            raise DMError(f"Failed to unmute the following channels: {', '.join(failed_channels)}")
-
-        yield DMResponse(f"The channels of your course `{course.CourseName}` are now unmuted :bothappy:")
-
-    @command
-    @privilege(Privilege.ADMIN)
-    @arg(
-        "course",
-        ty=CourseDB.CourseName,
-        description="The name of the Course to add the channel to.",
-    )
-    @arg(
-        "channel",
-        ty=str,
-        description="The name of the new Channel.",
-    )
-    async def add_channel(
-        self,
-        sender: ZulipUser,
-        session: Session,
-        args: CommandParser.Args,
-        _opts: CommandParser.Opts,
-        _message: dict[str, Any],
-    ) -> AsyncGenerator[response_type, None]:
-        """
-        Take a channel with the given name or create it if it does not existe and then add it to the course's Channelgroup.
-        """
-        course : CourseDB = args.course
-        chan_group : ChannelGroup = Course.get_channelgroup(course, session)
-        channel_name : str = args.channel
-
-        ex: int | None = await  self.client.get_channel_id_by_name(
-                    channel_name
-        )
-
-        if ex is None:
-            result_channel = await self.client.add_subscriptions(
-                    channels=[
-                        {
-                            "name": channel_name,
-                            "description": "",
-                        }
-                    ],
-                    principals=[sender.id, self.client.id], 
-            )
-
-            if result_channel["result"] != "success":
-                raise DMError(result_channel["msg"])
-            
-
-        channel : ZulipChannel = ZulipChannel(f"#**{channel_name}**")
-        await channel
-  
-        Channelgroup.add_zulip_channels(session, [channel], chan_group)
-        yield DMResponse(f"Added Channel `{channel_name}` to the course `{course.CourseName}` :bothappy:")
-
-
-    @command
-    @privilege(Privilege.ADMIN)
-    @arg(
-        "course",
-        ty=CourseDB.CourseName,
-        description="The name of the Course to add the Tutor to.",
-    )
-    @arg(
-        "tutors",
-        ty=ZulipUser,
-        description="A list of names of the new Tutors.",
-        greedy=True,
-    )
-    async def add_tutors(
-        self,
-        _sender: ZulipUser,
-        session: Session,
-        args: CommandParser.Args,
-        _opts: CommandParser.Opts,
-        _message: dict[str, Any],
-    ) -> AsyncGenerator[response_type, None]:
-        """
-        Take a channel with the given name or create it if it does not existe and then add it to the course's Channelgroup.
-        """
-        course : CourseDB = args.course
-        u_group : ChannelGroup = Course.get_tutorgroup(course, session)
-        tutors : list[ZulipUser] = await Usergroup.get_users_for_group(session, u_group)
-
-        new_tutors : list[ZulipUser] = args.tutors
-
-        for tutor in new_tutors:
-            if tutor not in tutors:
-                Usergroup.add_user_to_group(session, tutor, u_group)
-
-        yield DMResponse(f"Added {', '.join([t.name for t in new_tutors])} to the Tutors of the course `{course.CourseName}` :bothappy:")
-
-
-    @command
-    @privilege(Privilege.ADMIN)
-    @arg(
-        "course",
-        ty=CourseDB.CourseName,
-        description="The name of the Course to add the Tutor to.",
-    )
-    @arg(
-        "instructors",
-        ty=ZulipUser,
-        description="A list of names of the new Instructors.",
-        greedy=True,
-    )
-    async def add_instructors(
-        self,
-        sender: ZulipUser,
-        session: Session,
-        args: CommandParser.Args,
-        _opts: CommandParser.Opts,
-        _message: dict[str, Any],
-    ) -> AsyncGenerator[response_type, None]:
-        """
-        Take a channel with the given name or create it if it does not existe and then add it to the course's Channelgroup.
-        """
-        course : CourseDB = args.course
-        u_group : ChannelGroup = Course.get_instructorgroup(course, session)
-        insts : list[ZulipUser] = await Usergroup.get_users_for_group(session, u_group)
-
-        new_insts : list[ZulipUser] = args.instructors
-
-        for ins in new_insts:
-            if ins not in insts:
-                Usergroup.add_user_to_group(session, ins, u_group)
-
-        yield DMResponse(f"Added {', '.join([i.name for i in new_insts])} to the Instructors of the course `{course.CourseName}` :bothappy:")
-
-    @command
-    @privilege(Privilege.ADMIN)
-    @arg(
-        "course",
-        ty=CourseDB.CourseName,
-        description="The name of the Course.",
-    )
-    async def show(
-        self,
-        _sender: ZulipUser,
-        session: Session,
-        args: CommandParser.Args,
-        opts: CommandParser.Opts,
-        _message: dict[str, Any],
-    ) -> AsyncGenerator[response_type, None]:
-        """
-        For a given course show all the details of the course: \n
-        Name and Channels of Channelgroup
-        Name and Users of Tutor-Usergroup
-        Name and Users of Instructor-Usergroup
-        Name of Tutor-Channel
-        Name of Instructor-Channel
-        Anonymous Feedback enabled
-        """
-        msg = await Course._build_info_message(args.course, session)
-        yield DMResponse(msg)
 
     @command
     @privilege(Privilege.ADMIN)
@@ -2185,6 +1674,518 @@ class Course(PluginCommand, Plugin):
             ) from e
 
         yield DMResponse(f"Course `{courseName}` created :bothappy:")
+
+
+    @command
+    @privilege(Privilege.ADMIN)
+    @arg(
+        "course",
+        ty=CourseDB.CourseName,
+        description="The name of the Course to add the Channels to.",
+    )
+    @opt(
+        "a",
+        long_opt="all",
+        description="Add all standard steams to the course (Allgemein, Organisation, normal Feedback, Ankündigungen, Technik, Memes).",
+    )
+    @opt("g", long_opt="general", description="Add a general channel.")
+    @opt("o", long_opt="orga", description="Add a Channel for Organization.")
+    @opt(
+        "fn",
+        long_opt="feedbackbnorm",
+        description="Add a normal  Channel for Feedback.",
+    )
+    @opt(
+        "fa",
+        long_opt="feedbackanon",
+        description="Add an anonymous Channel for Feedback.",
+    )
+    @opt("n", long_opt="announcements", description="Add a Channel for Announcements.")
+    @opt("m", long_opt="memes", description="Add a Channel for Memes.")
+    @opt("t", long_opt="tech", description="Add a Channel for Tech-Support.")
+    async def add_default_channels(
+        self,
+        sender: ZulipUser,
+        session: Session,
+        args: CommandParser.Args,
+        opts: CommandParser.Opts,
+        _message: dict[str, Any],
+    ) -> AsyncGenerator[response_type, None]:
+        """
+        Add standard Channels to a given course. If Channels with the same names already exist, they will be transferred and not replaced with new ones.
+        """
+        course: CourseDB = args.course
+        lan: Literal["en", "de"] = cast(Literal["en", "de"], str(course.CourseLanguage))
+        channels_id: str = str(course.Channels)
+        stremgroup: ChannelGroup | None = (
+            session.query(ChannelGroup)
+            .filter(ChannelGroup.ChannelGroupId == channels_id)
+            .first()
+        )
+
+        if stremgroup is None:
+            raise DMError(
+                f"Could not find Channelgroup for Course `{course.CourseName}`."
+            )
+
+        if opts.a:
+            await Course.add_standard_channels(
+                client=self.client,
+                session=session,
+                name=str(course.CourseName),
+                sg=stremgroup,
+                lan=lan,
+                principals=[sender.id, self.client.id],
+            )
+
+        else:
+            if opts.fn and opts.fa:
+                raise DMError(
+                    "You can only add one (normal OR anonymous) feedback channel at a time."
+                )
+
+            await Course.add_standard_channels(
+                client=self.client,
+                session=session,
+                name=str(course.CourseName),
+                sg=stremgroup,
+                lan=lan,
+                principals=[sender.id, self.client.id],
+                g=opts.g,
+                o=opts.o,
+                fn=opts.fn,
+                fa=opts.fa,
+                n=opts.n,
+                m=opts.m,
+                t=opts.t,
+            )
+
+        yield DMResponse(f"Standard Channels added to Course `{course.CourseName}` :bothappy:")
+
+    @command
+    @privilege(Privilege.ADMIN)
+    @arg(
+        "course",
+        ty=CourseDB.CourseName,
+        description="The name of the Course to add the channel to.",
+    )
+    @arg(
+        "channel",
+        ty=str,
+        description="The name of the new Channel.",
+    )
+    async def add_channel(
+        self,
+        sender: ZulipUser,
+        session: Session,
+        args: CommandParser.Args,
+        _opts: CommandParser.Opts,
+        _message: dict[str, Any],
+    ) -> AsyncGenerator[response_type, None]:
+        """
+        Take a channel with the given name or create it if it does not existe and then add it to the course's Channelgroup.
+        """
+        course : CourseDB = args.course
+        chan_group : ChannelGroup = Course.get_channelgroup(course, session)
+        channel_name : str = args.channel
+
+        ex: int | None = await  self.client.get_channel_id_by_name(
+                    channel_name
+        )
+
+        if ex is None:
+            result_channel = await self.client.add_subscriptions(
+                    channels=[
+                        {
+                            "name": channel_name,
+                            "description": "",
+                        }
+                    ],
+                    principals=[sender.id, self.client.id], 
+            )
+
+            if result_channel["result"] != "success":
+                raise DMError(result_channel["msg"])
+            
+
+        channel : ZulipChannel = ZulipChannel(f"#**{channel_name}**")
+        await channel
+  
+        Channelgroup.add_zulip_channels(session, [channel], chan_group)
+        yield DMResponse(f"Added Channel `{channel_name}` to the course `{course.CourseName}` :bothappy:")
+
+
+    @command
+    @privilege(Privilege.ADMIN)
+    @arg(
+        "course",
+        ty=CourseDB.CourseName,
+        description="The name of the Course to add the Tutor to.",
+    )
+    @arg(
+        "tutors",
+        ty=ZulipUser,
+        description="A list of names of the new Tutors.",
+        greedy=True,
+    )
+    async def add_tutors(
+        self,
+        _sender: ZulipUser,
+        session: Session,
+        args: CommandParser.Args,
+        _opts: CommandParser.Opts,
+        _message: dict[str, Any],
+    ) -> AsyncGenerator[response_type, None]:
+        """
+        Take a channel with the given name or create it if it does not existe and then add it to the course's Channelgroup.
+        """
+        course : CourseDB = args.course
+        u_group : ChannelGroup = Course.get_tutorgroup(course, session)
+        tutors : list[ZulipUser] = await Usergroup.get_users_for_group(session, u_group)
+
+        new_tutors : list[ZulipUser] = args.tutors
+
+        for tutor in new_tutors:
+            if tutor not in tutors:
+                Usergroup.add_user_to_group(session, tutor, u_group)
+
+        yield DMResponse(f"Added {', '.join([t.name for t in new_tutors])} to the Tutors of the course `{course.CourseName}` :bothappy:")
+
+    @command
+    @privilege(Privilege.ADMIN)
+    @arg(
+        "course",
+        ty=CourseDB.CourseName,
+        description="The name of the Course to add the Tutor to.",
+    )
+    @arg(
+        "instructors",
+        ty=ZulipUser,
+        description="A list of names of the new Instructors.",
+        greedy=True,
+    )
+    async def add_instructors(
+        self,
+        sender: ZulipUser,
+        session: Session,
+        args: CommandParser.Args,
+        _opts: CommandParser.Opts,
+        _message: dict[str, Any],
+    ) -> AsyncGenerator[response_type, None]:
+        """
+        Take a channel with the given name or create it if it does not existe and then add it to the course's Channelgroup.
+        """
+        course : CourseDB = args.course
+        u_group : ChannelGroup = Course.get_instructorgroup(course, session)
+        insts : list[ZulipUser] = await Usergroup.get_users_for_group(session, u_group)
+
+        new_insts : list[ZulipUser] = args.instructors
+
+        for ins in new_insts:
+            if ins not in insts:
+                Usergroup.add_user_to_group(session, ins, u_group)
+
+        yield DMResponse(f"Added {', '.join([i.name for i in new_insts])} to the Instructors of the course `{course.CourseName}` :bothappy:")
+
+    @command
+    @privilege(Privilege.ADMIN)
+    @arg(
+        "course",
+        ty=CourseDB.CourseName,
+        description="The name of the Course to delete.",
+    )
+    @opt(
+        "c",
+        long_opt="channelgroup",
+        ty=ChannelGroup.ChannelGroupId,
+        description="The id of an existing Channelgroup containing the Channels for this course.",
+    )
+    @opt(
+        "t",
+        long_opt="tutors",
+        ty=UserGroup.GroupName,
+        description="The name of an existing Usergroup containing the tutors for this course.",
+    )
+    @opt(
+        "tuts",
+        long_opt="tutorial_channel",
+        ty=ZulipChannel,
+        description="The name of an existing Channel for Instructors.",
+    )
+    @opt(
+        "ins",
+        long_opt="instructor_channel",
+        ty=ZulipChannel,
+        description="The name of an existing Channel for Instructors.",
+    )
+    async def update(
+        self,
+        _sender: ZulipUser,
+        session: Session,
+        args: CommandParser.Args,
+        opts: CommandParser.Opts,
+        _message: dict[str, Any],
+    ) -> AsyncGenerator[response_type, None]:
+        """
+        Update a course with corresponding contents
+        """
+        course: CourseDB = args.course
+
+        if opts.c:
+            channels: ChannelGroup = opts.s
+            Course._update_channelgroup(course, session, channels)
+
+        if opts.t:
+            tutors: UserGroup = opts.t
+            Course._update_tutorgroup(course, session, tutors)
+
+        if opts.tuts:
+            tutchannel: ZulipChannel = opts.tuts
+            await Course._update_tutorchannel(course, session, self.client, tutchannel)
+
+        if opts.ins:
+            inschannel: ZulipChannel = opts.ins
+            await Course._update_instructorchannel(
+                course, session, self.client, inschannel
+            )
+
+        yield DMResponse(f"Course `{course.CourseName}` updated :bothappy:")
+
+    @command
+    @privilege(Privilege.ADMIN)
+    @arg(
+        "course",
+        ty=CourseDB.CourseName,
+        description="The name of the Course to delete.",
+    )
+    @opt("c", long_opt="channels", description="Remove the Channels from the Course, but keep the ChannelGroup.")
+    @opt("t", long_opt="tutors", description="Remove the tutors from the Course but keep the UserGroup.")
+    async def clear(
+        self,
+        _sender: ZulipUser,
+        session: Session,
+        args: CommandParser.Args,
+        opts: CommandParser.Opts,
+        _message: dict[str, Any],
+    ) -> AsyncGenerator[response_type, None]:
+        """
+        Clear a course (Channels/Tutors), but keep the underlying components (Channelgroup/UserGroup).
+        """
+        course: CourseDB = args.course
+
+        if opts.c:
+            sg: ChannelGroup | None = (
+                session.query(ChannelGroup)
+                .filter(ChannelGroup.ChannelGroupId == course.Channels)
+                .first()
+            )
+            if sg is not None:
+                channels: list[ZulipChannel] = await Channelgroup.get_channels(session, sg)
+                await Channelgroup.remove_zulip_channels(session, channels, sg)
+
+                for s in channels:
+                    await self.client.delete_channel(s.id)
+
+        if opts.t:
+            tutors: UserGroup | None = (
+                session.query(UserGroup)
+                .filter(UserGroup.GroupId == course.TutorsUserGroup)
+                .first()
+            )
+            if tutors is not None:
+                users: list[ZulipUser] = await Usergroup.get_users_for_group(session, tutors)
+                for user in users:
+                    Usergroup.remove_user_from_group(session, user, tutors)
+
+        yield DMResponse(f"Course `{course.CourseName}` cleared :bothappy:")
+
+    @command
+    @privilege(Privilege.ADMIN)
+    @arg(
+        "course",
+        ty=CourseDB.CourseName,
+        description="The name of the Course to delete.",
+    )
+    @opt(
+        "a",
+        long_opt="all",
+        description="Delete the whole course (Channelgroup, Usergroups, Channels).",
+    )
+    @opt(
+        "c",
+        long_opt="channelgroup",
+        description="Delete also Channelgroup",
+    )
+    @opt(
+        "t",
+        long_opt="tutors",
+        description="Delete also Usergroup of Tutors.",
+    )
+    @opt(
+        "i",
+        long_opt="instructors",
+        description="Delete also Usergroup of Instructors.",
+    )
+    @opt(
+        "tuts",
+        long_opt="tutorial_channel",
+        description="Delete also Channel for Tutors.",
+    )
+    @opt(
+        "ins",
+        long_opt="instructor_channel",
+        description="Delete also Channel for Instructors.",
+    )
+    async def delete(
+        self,
+        _sender: ZulipUser,
+        session: Session,
+        args: CommandParser.Args,
+        opts: CommandParser.Opts,
+        _message: dict[str, Any],
+    ) -> AsyncGenerator[response_type, None]:
+
+        course: CourseDB = args.course
+        c_name = str(course.CourseName)
+        channels_id = str(course.Channels)
+        tut_ug_id = int(course.TutorsUserGroup)
+        ins_ug_id = int(course.InstructorsUserGroup)
+
+        tut_s: ZulipChannel = cast(ZulipChannel, course.TutorChannel)
+        await tut_s
+
+        ins_s: ZulipChannel | None = None
+        if course.InstructorChannel is not None:
+            ins_s = cast(ZulipChannel, course.InstructorChannel)
+            await ins_s
+
+        try:
+            session.query(CourseDB).filter(
+                CourseDB.CourseId == course.CourseId
+            ).delete()
+            session.commit()
+        except sqlalchemy.exc.IntegrityError as e:
+            session.rollback()
+            raise DMError(f"Could not delete Course `{c_name}`.") from e
+
+        if opts.c or opts.a:
+            sg: ChannelGroup | None = (
+                session.query(ChannelGroup)
+                .filter(ChannelGroup.ChannelGroupId == channels_id)
+                .first()
+            )
+
+            if sg is not None:
+                strm: list[ZulipChannel] = await Channelgroup.get_channels(session, sg)
+                await Channelgroup.remove_zulip_channels(session, strm, sg)
+                
+                Channelgroup.delete_group_h(session, sg)
+
+                failed : list[str] = []
+                for s in strm:
+                    resp = await self.client.delete_channel(s.id)
+                    if resp["result"] != "success":
+                        failed.append(s.name)
+                
+                yield DMResponse(f"Channels {', '.join(failed)} could not be deleted.")
+
+        if opts.t or opts.a:
+            ugt: UserGroup | None = (
+                session.query(UserGroup).filter(UserGroup.GroupId == tut_ug_id).first()
+            )
+
+            if ugt is not None:
+                Usergroup.delete_group(session, ugt)
+
+        if opts.i or opts.a:
+            ugi: UserGroup | None = (
+                session.query(UserGroup).filter(UserGroup.GroupId == ins_ug_id).first()
+            )
+
+            if ugi is not None:
+                Usergroup.delete_group(session, ugi)
+
+        if opts.tuts or opts.a:
+            await self.client.delete_channel(tut_s.id)
+
+        if (opts.ins or opts.a) and ins_s is not None:
+            await self.client.delete_channel(ins_s.id)
+
+        yield DMResponse(f"Course `{c_name}` deleted :bothappy:")
+
+    @command
+    @privilege(Privilege.ADMIN)
+    @arg(
+        "course",
+        ty=CourseDB.CourseName,
+        description="The name of the Course to mute.",
+    )
+    async def mute(
+        self,
+        _sender: ZulipUser,
+        session: Session,
+        args: CommandParser.Args,
+        _opts: CommandParser.Opts,
+        _message: dict[str, Any],
+    ) -> AsyncGenerator[response_type, None]:
+        """
+        Mute all the channels of a course, for example during the time of an exam. Thus only moderators can send messages to the channels.
+        """
+        course: CourseDB = args.course
+        channels: list[ZulipChannel] = await Course.get_channels(course=course, session=session)
+        failed_channels: list[str] = []
+
+        for channel in channels:
+            request = {
+                "stream_id": channel.id,
+                "stream_post_policy": 4,
+            }
+            response = await self.client.update_channel(request)
+
+            if response["result"] != "success":
+                failed_channels.append(channel.name)
+        
+        if failed_channels:
+            raise DMError(f"Failed to mute the following channels: {', '.join(failed_channels)}")
+
+        yield DMResponse(f"The channels of your course `{course.CourseName}` are now muted :bothappy:")
+
+    @command
+    @privilege(Privilege.ADMIN)
+    @arg(
+        "course",
+        ty=CourseDB.CourseName,
+        description="The name of the Course to unmute.",
+    )
+    async def unmute(
+        self,
+        _sender: ZulipUser,
+        session: Session,
+        args: CommandParser.Args,
+        opts: CommandParser.Opts,
+        _message: dict[str, Any],
+    ) -> AsyncGenerator[response_type, None]:
+        """
+        Unmute all the channels of a course, for example during the time of an exam. Thus all users can send messages to the channels.
+        """
+        course: CourseDB = args.course
+        channels: list[ZulipChannel] = await Course.get_channels(course=course, session=session)
+        failed_channels: list[str] = []
+
+        for channel in channels:
+            request = {
+                "stream_id": channel.id,
+                "stream_post_policy": 1,
+            }
+            response = await self.client.update_channel(request)
+            
+            if response["result"] != "success":
+                failed_channels.append(channel.name)
+        
+        if failed_channels:
+            raise DMError(f"Failed to unmute the following channels: {', '.join(failed_channels)}")
+
+        yield DMResponse(f"The channels of your course `{course.CourseName}` are now unmuted :bothappy:")
 
     # ========================================================================================================================
     #       CLASS METHODS
