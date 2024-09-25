@@ -1269,7 +1269,7 @@ class Course(PluginCommand, Plugin):
                 .first()
             )
             if tutors is not None:
-                users: list[ZulipUser] = Usergroup.get_users_for_group(session, tutors)
+                users: list[ZulipUser] = await Usergroup.get_users_for_group(session, tutors)
                 for user in users:
                     Usergroup.remove_user_from_group(session, user, tutors)
 
@@ -1349,6 +1349,158 @@ class Course(PluginCommand, Plugin):
 
         yield DMResponse(f"The channels of your course `{course.CourseName}` are now unmuted :bothappy:")
 
+    @command
+    @privilege(Privilege.ADMIN)
+    @arg(
+        "course",
+        ty=CourseDB.CourseName,
+        description="The name of the Course to add the channel to.",
+    )
+    @arg(
+        "channel",
+        ty=str,
+        description="The name of the new Channel.",
+    )
+    async def add_channel(
+        self,
+        sender: ZulipUser,
+        session: Session,
+        args: CommandParser.Args,
+        _opts: CommandParser.Opts,
+        _message: dict[str, Any],
+    ) -> AsyncGenerator[response_type, None]:
+        """
+        Take a channel with the given name or create it if it does not existe and then add it to the course's Channelgroup.
+        """
+        course : CourseDB = args.course
+        chan_group : ChannelGroup = Course.get_channelgroup(course, session)
+        channel_name : str = args.channel
+
+        ex: int | None = await  self.client.get_channel_id_by_name(
+                    channel_name
+        )
+
+        if ex is None:
+            result_channel = await self.client.add_subscriptions(
+                    channels=[
+                        {
+                            "name": channel_name,
+                            "description": "",
+                        }
+                    ],
+                    principals=[sender.id, self.client.id], 
+            )
+
+            if result_channel["result"] != "success":
+                raise DMError(result_channel["msg"])
+            
+
+        channel : ZulipChannel = ZulipChannel(f"#**{channel_name}**")
+        await channel
+  
+        Channelgroup.add_zulip_channels(session, [channel], chan_group)
+        yield DMResponse(f"Added Channel `{channel_name}` to the course `{course.CourseName}` :bothappy:")
+
+
+    @command
+    @privilege(Privilege.ADMIN)
+    @arg(
+        "course",
+        ty=CourseDB.CourseName,
+        description="The name of the Course to add the Tutor to.",
+    )
+    @arg(
+        "tutors",
+        ty=ZulipUser,
+        description="A list of names of the new Tutors.",
+        greedy=True,
+    )
+    async def add_tutors(
+        self,
+        _sender: ZulipUser,
+        session: Session,
+        args: CommandParser.Args,
+        _opts: CommandParser.Opts,
+        _message: dict[str, Any],
+    ) -> AsyncGenerator[response_type, None]:
+        """
+        Take a channel with the given name or create it if it does not existe and then add it to the course's Channelgroup.
+        """
+        course : CourseDB = args.course
+        u_group : ChannelGroup = Course.get_tutorgroup(course, session)
+        tutors : list[ZulipUser] = await Usergroup.get_users_for_group(session, u_group)
+
+        new_tutors : list[ZulipUser] = args.tutors
+
+        for tutor in new_tutors:
+            if tutor not in tutors:
+                Usergroup.add_user_to_group(session, tutor, u_group)
+
+        yield DMResponse(f"Added {', '.join([t.name for t in new_tutors])} to the Tutors of the course `{course.CourseName}` :bothappy:")
+
+
+    @command
+    @privilege(Privilege.ADMIN)
+    @arg(
+        "course",
+        ty=CourseDB.CourseName,
+        description="The name of the Course to add the Tutor to.",
+    )
+    @arg(
+        "instructors",
+        ty=ZulipUser,
+        description="A list of names of the new Instructors.",
+        greedy=True,
+    )
+    async def add_instructors(
+        self,
+        sender: ZulipUser,
+        session: Session,
+        args: CommandParser.Args,
+        _opts: CommandParser.Opts,
+        _message: dict[str, Any],
+    ) -> AsyncGenerator[response_type, None]:
+        """
+        Take a channel with the given name or create it if it does not existe and then add it to the course's Channelgroup.
+        """
+        course : CourseDB = args.course
+        u_group : ChannelGroup = Course.get_instructorgroup(course, session)
+        insts : list[ZulipUser] = await Usergroup.get_users_for_group(session, u_group)
+
+        new_insts : list[ZulipUser] = args.instructors
+
+        for ins in new_insts:
+            if ins not in insts:
+                Usergroup.add_user_to_group(session, ins, u_group)
+
+        yield DMResponse(f"Added {', '.join([i.name for i in new_insts])} to the Instructors of the course `{course.CourseName}` :bothappy:")
+
+    @command
+    @privilege(Privilege.ADMIN)
+    @arg(
+        "course",
+        ty=CourseDB.CourseName,
+        description="The name of the Course.",
+    )
+    async def show(
+        self,
+        _sender: ZulipUser,
+        session: Session,
+        args: CommandParser.Args,
+        opts: CommandParser.Opts,
+        _message: dict[str, Any],
+    ) -> AsyncGenerator[response_type, None]:
+        """
+        For a given course show all the details of the course: \n
+        Name and Channels of Channelgroup
+        Name and Users of Tutor-Usergroup
+        Name and Users of Instructor-Usergroup
+        Name of Tutor-Channel
+        Name of Instructor-Channel
+        Anonymous Feedback enabled
+        """
+        msg = await Course._build_info_message(args.course, session)
+        yield DMResponse(msg)
 
     @command
     @privilege(Privilege.ADMIN)
@@ -2216,12 +2368,12 @@ class Course(PluginCommand, Plugin):
         return session.query(UserGroup).filter(UserGroup.GroupId == ID).one()
 
     @staticmethod
-    def get_tutors(course: CourseDB, session: Session) -> list[ZulipUser]:
+    async def get_tutors(course: CourseDB, session: Session) -> list[ZulipUser]:
         """
         Get the Tutors of a Course a list of ZulipUsers.
         """
         ug: UserGroup = Course.get_tutorgroup(course, session)
-        return Usergroup.get_users_for_group(session, ug)
+        return await Usergroup.get_users_for_group(session, ug)
 
     @staticmethod
     def get_instructorgroup(course: CourseDB, session: Session) -> UserGroup:
@@ -2232,12 +2384,12 @@ class Course(PluginCommand, Plugin):
         return session.query(UserGroup).filter(UserGroup.GroupId == ID).one()
 
     @staticmethod
-    def get_instructors(course: CourseDB, session: Session) -> list[ZulipUser]:
+    async def get_instructors(course: CourseDB, session: Session) -> list[ZulipUser]:
         """
         Get the Tutors of a Course a list of ZulipUsers.
         """
         ug: UserGroup = Course.get_instructorgroup(course, session)
-        return Usergroup.get_users_for_group(session, ug)
+        return await Usergroup.get_users_for_group(session, ug)
 
     @staticmethod
     async def get_channels(course: CourseDB, session: Session) -> list[ZulipChannel]:
@@ -2396,4 +2548,70 @@ class Course(PluginCommand, Plugin):
     
         if oldIS is not None:
             await client.delete_channel(oldIS.id)
+
+
+    @staticmethod
+    async def _build_info_message(
+        course: CourseDB, session, 
+    ) -> str:
+        """
+        Build a string with all the information about a course.
+        """
+        chan_group: ChannelGroup = Course.get_channelgroup(course, session)
+        chan_group_name: str = str(chan_group.ChannelGroupId)
+        channels: list[ZulipChannel] =  await Course.get_channels(session=session, course=course) 
+        channel_names: list[str] = [c.mention for c in channels]
+        emoji: str = Course.get_emoji(course, session)
+
+        tutors_ug : UserGroup = Course.get_tutorgroup(course, session)
+        tutors: list[ZulipUser] = await Course.get_tutors(course, session)
+        tutor_channel: ZulipChannel = cast(ZulipChannel, course.TutorChannel)
+        await tutor_channel
+
+        instructors_ug : UserGroup = Course.get_instructorgroup(course, session)
+        instructors: list[ZulipUser] = await Course.get_instructors(course, session)
+
+        instructor_channel_name = "-"
+        if course.InstructorChannel is not None:
+            instructor_channel = cast(ZulipChannel, course.InstructorChannel)
+            await instructor_channel
+            instructor_channel_name = instructor_channel.mention
+
+        feedback_channel_name = "-"
+        if course.FeedbackChannel is not None:
+            feedback_chan = cast(ZulipChannel, course.FeedbackChannel)
+            await feedback_chan
+            feedback_channel_name = feedback_chan.mention
+
+
+
+
+        return cleandoc(
+            f"""
+            # **Course Information**
+            **Name**: {str(course.CourseName)}
+            **Language**: {str(course.CourseLanguage)}
+
+            ## **Channels**:
+
+            | Id ChannelGroup | Emoji | Channels |
+            | ---- | ---- | ---- |
+            | {chan_group_name} | :{emoji}: | {", ".join(channel_names)} |
+
+            ## **Tutors**: 
+
+            | Name Usergroup | Tutors | TutorChannel |
+            | ---- | ---- | ---- |
+            | {str(tutors_ug.GroupName)} | {", ".join([t.mention_silent for t in tutors])} | {tutor_channel.mention} |
+
+            ## **Instructors**: 
+            
+            | Name Usergroup | Instructors | InstructorChannel |
+            | ---- | ---- | ---- |
+            | {str(instructors_ug.GroupName)} | {", ".join([i.mention_silent for i in instructors])} | {instructor_channel_name} |
+
+            ## **Anonymous FeedbackChannel**: 
+            {feedback_channel_name}
+            """
+        )
 

@@ -466,12 +466,14 @@ class Usergroup(PluginCommand, Plugin):
         return users
 
     @staticmethod
-    def get_users_for_group(session: Session, group: UserGroup) -> list[ZulipUser]:
+    async def get_users_for_group(session: Session, group: UserGroup) -> list[ZulipUser]:
         users: list[ZulipUser] = []
         for s in (
             session.query(UserGroupMember)
             .filter(UserGroupMember.GroupId == group.GroupId)
             .all()
         ):
-            users.append(cast(ZulipUser, s.User))
+            u = cast(ZulipUser, s.User)
+            await u
+            users.append(u)
         return users

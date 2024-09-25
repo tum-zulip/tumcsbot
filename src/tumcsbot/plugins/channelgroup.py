@@ -535,7 +535,7 @@ class Channelgroup(PluginCommand, Plugin):
         group: ChannelGroup = args.channelgroup_id
         members: UserGroup = Channelgroup.get_usergroup(session, group)
         ugroup: UserGroup = args.usergroup
-        users: list[ZulipUser] = Usergroup.get_users_for_group(session, ugroup)
+        users: list[ZulipUser] = await Usergroup.get_users_for_group(session, ugroup)
         user_ids: list[int] = Usergroup.get_user_ids_for_group(session, ugroup)
         channel_names: list[str] = await Channelgroup.get_channel_names(
             session, [group]
@@ -697,7 +697,7 @@ class Channelgroup(PluginCommand, Plugin):
         group: ChannelGroup = args.channelgroup_id
         members: UserGroup = Channelgroup.get_usergroup(session, group)
         ugroup: UserGroup = args.usergroup
-        users: list[ZulipUser] = Usergroup.get_users_for_group(session, ugroup)
+        users: list[ZulipUser] = await Usergroup.get_users_for_group(session, ugroup)
         user_ids: list[int] = Usergroup.get_user_ids_for_group(session, ugroup)
         channel_names: list[str] = await Channelgroup.get_unique_channel_names(
             session, sender, group
