@@ -168,12 +168,12 @@ class Course(PluginCommand, Plugin):
     @opt(
         "i",
         long_opt="instructors",
-        description="The course has an additional Channel for Instructors.",
+        description="The Course has an additional Channel for Instructors.",
     )
     @opt(
         "f",
         long_opt="feedback",
-        description="The course has an ANONYMOUS Feedback-Channel.",
+        description="The Course has an ANONYMOUS Feedback-Channel.",
     )
     async def create_empty(
         self,
@@ -184,7 +184,7 @@ class Course(PluginCommand, Plugin):
         message: dict[str, Any],
     ) -> AsyncGenerator[response_type, None]:
         """
-        Create a new empty course
+        Create a new empty Course
         """
         name: str = args.name
         channelgroup_emoji: str = args.emoji
@@ -201,7 +201,7 @@ class Course(PluginCommand, Plugin):
             result1 = await self.client.send_response(
                 Response.build_message(
                     message,
-                    content=f"Course `{name}` already exists. Dou you want to replace it with an empty course?",
+                    content=f"Course `{name}` already exists. Dou you want to replace it with an empty Course?",
                 )
             )
             if result1["result"] != "success":
@@ -210,7 +210,7 @@ class Course(PluginCommand, Plugin):
             resp1, _ = await UserInput.confirm(self.client, result1["id"], timeout=60)
             if not resp1:
                 yield DMResponse(
-                    "Ok, I will not create a new course. Please choose another name."
+                    "Ok, I will not create a new Course. Please choose another name."
                 )
                 return
 
@@ -223,7 +223,7 @@ class Course(PluginCommand, Plugin):
             result2 = await self.client.send_response(
                 Response.build_message(
                     message,
-                    content=f"A Channelgroup with :{channelgroup_emoji}: already exists. Dou you want to replace it with an empty Channelgroup for your course?",
+                    content=f"A Channelgroup with :{channelgroup_emoji}: already exists. Dou you want to replace it with an empty Channelgroup for your Course?",
                 )
             )
             if result2["result"] != "success":
@@ -234,7 +234,7 @@ class Course(PluginCommand, Plugin):
                 res = await self.client.send_response(
                     Response.build_message(
                         message,
-                        content=f"Do you want to use the existing Channelgroup with :{channelgroup_emoji}: for your course?",
+                        content=f"Do you want to use the existing Channelgroup with :{channelgroup_emoji}: for your Course?",
                     )
                 )
                 if res["result"] != "success":
@@ -243,7 +243,7 @@ class Course(PluginCommand, Plugin):
                 rep, _ = await UserInput.confirm(self.client, res["id"], timeout=60)
                 if not rep:
                     yield DMResponse(
-                        f"Ok, I will not create a new course then. Please choose another emote because :{channelgroup_emoji}: is already in use :botsad:"
+                        f"Ok, I will not create a new Course then. Please choose another emote because :{channelgroup_emoji}: is already in use :botsad:"
                     )
                     return
                 channels = (
@@ -262,7 +262,7 @@ class Course(PluginCommand, Plugin):
 
         resLan = await self.client.send_response(
             Response.build_message(
-                message, content="Is your course held in English or German?"
+                message, content="Is your Course held in English or German?"
             )
         )
         lan, _ = await UserInput.i8n_german_or_english(
@@ -302,7 +302,7 @@ class Course(PluginCommand, Plugin):
                 result3 = await self.client.send_response(
                     Response.build_message(
                         message,
-                        content="Usergroup for Tutors of this course already exists. Dou you want to replace it with a new empty Usergroup for your course?",
+                        content="Usergroup for Tutors of this Course already exists. Dou you want to replace it with a new empty Usergroup for your Course?",
                     )
                 )
                 if result3["result"] != "success":
@@ -313,7 +313,7 @@ class Course(PluginCommand, Plugin):
                 )
                 if not resp3:
                     raise DMError(
-                        f"Ok, I will not create a new empty course then. You can use the command `course create -t {usergroup_name_tut}` to use the existing Usergroup for Tutors."
+                        f"Ok, I will not create a new empty Course then. You can use the command `course create -t {usergroup_name_tut}` to use the existing Usergroup for Tutors."
                     )
 
                 ugt: UserGroup | None = (
@@ -339,7 +339,7 @@ class Course(PluginCommand, Plugin):
                 result4 = await self.client.send_response(
                     Response.build_message(
                         message,
-                        content="Usergroup for Instructors of this course already exists. Dou you want to replace it with a new empty Usergroup for your course?",
+                        content="Usergroup for Instructors of this Course already exists. Dou you want to replace it with a new empty Usergroup for your Course?",
                     )
                 )
                 if result4["result"] != "success":
@@ -350,7 +350,7 @@ class Course(PluginCommand, Plugin):
                 )
                 if not resp4:
                     raise DMError(
-                        f"Ok, I will not create a new empty course then. You can use the command `course create -i {usergroup_name_ins}` to use the existing Usergroup for Instructors."
+                        f"Ok, I will not create a new empty Course then. You can use the command `course create -i {usergroup_name_ins}` to use the existing Usergroup for Instructors."
                     )
 
                 ugi: UserGroup | None = (
@@ -379,7 +379,7 @@ class Course(PluginCommand, Plugin):
                 result5 = await self.client.send_response(
                     Response.build_message(
                         message,
-                        content="Channel for Tutors of this course already exists. Dou you want to replace it with a new empty Channel for your course?",
+                        content="Channel for Tutors of this Course already exists. Dou you want to replace it with a new empty Channel for your Course?",
                     )
                 )
                 if result5["result"] != "success":
@@ -390,7 +390,7 @@ class Course(PluginCommand, Plugin):
                 )
                 if not resp5:
                     raise DMError(
-                        f"Ok, I will not create a new empty course then. You can use the command `course create -tuts \"{tutors_channel_name}\"` to use the existing Stream for Tutors."
+                        f"Ok, I will not create a new empty Course then. You can use the command `course create -tuts \"{tutors_channel_name}\"` to use the existing Channel for Tutors."
                     )
 
                 await self.client.delete_channel(tut_ex)
@@ -437,7 +437,7 @@ class Course(PluginCommand, Plugin):
                     result6 = await self.client.send_response(
                         Response.build_message(
                             message,
-                            content="Channel for Instructors of this course already exists. Dou you want to replace it with a new empty Channel for your course?",
+                            content="Channel for Instructors of this Course already exists. Dou you want to replace it with a new empty Channel for your Course?",
                         )
                     )
                     if result6["result"] != "success":
@@ -448,7 +448,7 @@ class Course(PluginCommand, Plugin):
                     )
                     if not resp6:
                         raise DMError(
-                            f"Ok, I will not create a new empty course then. You can use the command `course create -ins \"{instructor_channel_name}\"` to use the existing Stream for Instructors."
+                            f"Ok, I will not create a new empty Course then. You can use the command `course create -ins \"{instructor_channel_name}\"` to use the existing Channel for Instructors."
                         )
 
                     await self.client.delete_channel(ins_ex)
@@ -489,7 +489,7 @@ class Course(PluginCommand, Plugin):
                 f_ex = await self.client.get_channel_id_by_name(feedback_channel_name)
                 if f_ex is None:
                     raise DMError(
-                        "Uuups, i cannot get the channel id for the feedback channel"
+                        "Uuups, I cannot get the Channel id for the Feedback-Channel"
                     )
 
                 if ins_ex is not None:
@@ -541,7 +541,7 @@ class Course(PluginCommand, Plugin):
                 raise e
 
             raise DMError(
-                f"Something went wrong when creating the course `{name}` :botsweat:"
+                f"Something went wrong when creating the Course `{name}` :botsweat:"
             ) from e
 
         yield DMResponse(f"Course `{name}` created :bothappy:")
@@ -553,19 +553,19 @@ class Course(PluginCommand, Plugin):
         "c",
         long_opt="channelgroup",
         ty=ChannelGroup.ChannelGroupId,
-        description="The id of a Channelgroup containing the Channels for this course.",
+        description="The id of a Channelgroup containing the Channels for this Course.",
     )
     @opt(
         "t",
         long_opt="tutors",
         ty=UserGroup.GroupName,
-        description="The name of a Usergroup containing the Tutors for this course.",
+        description="The name of a Usergroup containing the Tutors for this Course.",
     )
     @opt(
         "i",
         long_opt="instructors",
         ty=UserGroup.GroupName,
-        description="The name of a Usergroup containing the Instructors for this course.",
+        description="The name of a Usergroup containing the Instructors for this Course.",
     )
     @opt(
         "tuts",
@@ -582,7 +582,7 @@ class Course(PluginCommand, Plugin):
     @opt(
         "fb",
         long_opt="feedback",
-        description="The course has an ANONYMOUS Feedback-Channel.",
+        description="The Course has an ANONYMOUS Feedback-Channel.",
     )
     async def create(
         self,
@@ -593,7 +593,7 @@ class Course(PluginCommand, Plugin):
         message: dict[str, Any],
     ) -> AsyncGenerator[response_type, None]:
         """
-        Create a new course with corresponding contents
+        Create a new Course with corresponding contents
         """
         name: str = args.name
 
@@ -608,7 +608,7 @@ class Course(PluginCommand, Plugin):
             result1 = await self.client.send_response(
                 Response.build_message(
                     message,
-                    content=f"Course `{name}` already exists. Dou you want to replace it with the new course?",
+                    content=f"Course `{name}` already exists. Dou you want to replace it with the new Course?",
                 )
             )
             if result1["result"] != "success":
@@ -617,7 +617,7 @@ class Course(PluginCommand, Plugin):
             resp1, _ = await UserInput.confirm(self.client, result1["id"], timeout=60)
             if not resp1:
                 yield DMResponse(
-                    "Ok, I will not create a new course. Please choose another name."
+                    "Ok, I will not create a new Course. Please choose another name."
                 )
                 return
 
@@ -667,7 +667,7 @@ class Course(PluginCommand, Plugin):
                     result2 = await self.client.send_response(
                         Response.build_message(
                             message,
-                            content=f"A Channelgroup with :{channelgroup_emoji}: already exists. Dou you want to replace it with a new Channelgroup for your course?",
+                            content=f"A Channelgroup with :{channelgroup_emoji}: already exists. Dou you want to replace it with a new Channelgroup for your Course?",
                         )
                     )
                     if result2["result"] != "success":
@@ -687,7 +687,7 @@ class Course(PluginCommand, Plugin):
                         resp3, _ = await UserInput.confirm(self.client, res3["id"], timeout=60)
                         if not resp3:
                             yield DMResponse(
-                                f"Ok, I will not create a new course then. Please choose another emote because :{channelgroup_emoji}: is already in use :botsad:"
+                                f"Ok, I will not create a new Course then. Please choose another emote because :{channelgroup_emoji}: is already in use :botsad:"
                             )
                             return
 
@@ -731,7 +731,7 @@ class Course(PluginCommand, Plugin):
                     result4 = await self.client.send_response(
                         Response.build_message(
                             message,
-                            content="Usergroup for Tutors of this course already exists. Dou you want to replace it with a new empty Usergroup for your course?",
+                            content="Usergroup for Tutors of this Course already exists. Dou you want to replace it with a new empty Usergroup for your Course?",
                         )
                     )
                     if result4["result"] != "success":
@@ -742,7 +742,7 @@ class Course(PluginCommand, Plugin):
                     )
                     if not resp4:
                         raise DMError(
-                            "Ok, I will not create a new course then. Please choose another name."
+                            "Ok, I will not create a new Course then. Please choose another name."
                         )
 
                     ugt: UserGroup | None = (
@@ -775,7 +775,7 @@ class Course(PluginCommand, Plugin):
                     result5 = await self.client.send_response(
                         Response.build_message(
                             message,
-                            content="Usergroup for Instructors of this course already exists. Dou you want to replace it with a new empty Usergroup for your course?",
+                            content="Usergroup for Instructors of this Course already exists. Dou you want to replace it with a new empty Usergroup for your Course?",
                         )
                     )
                     if result5["result"] != "success":
@@ -786,7 +786,7 @@ class Course(PluginCommand, Plugin):
                     )
                     if not resp5:
                         raise DMError(
-                            "Ok, I will not create a new course then. Please choose another name."
+                            "Ok, I will not create a new Course then. Please choose another name."
                         )
 
                     ugi = (
@@ -820,7 +820,7 @@ class Course(PluginCommand, Plugin):
                     result_tut = await self.client.send_response(
                         Response.build_message(
                             message,
-                            content="Channel for Tutors of this course already exists. Dou you want to replace it with a new empty Channel for your course?",
+                            content="Channel for Tutors of this Course already exists. Dou you want to replace it with a new empty Channel for your Course?",
                         )
                     )
                     if result_tut["result"] != "success":
@@ -831,7 +831,7 @@ class Course(PluginCommand, Plugin):
                     )
                     if not resp_tut_s:
                         raise DMError(
-                            "Ok, I will not create a new course then. Please choose another name."
+                            "Ok, I will not create a new Course then. Please choose another name."
                         )
 
                     await self.client.delete_channel(tut_ex)
@@ -882,7 +882,7 @@ class Course(PluginCommand, Plugin):
                     result_ins = await self.client.send_response(
                         Response.build_message(
                             message,
-                            content="Channel for Instructors of this course already exists. Dou you want to replace it with a new empty Channel for your course?",
+                            content="Channel for Instructors of this Course already exists. Dou you want to replace it with a new empty Channel for your Course?",
                         )
                     )
                     if result_ins["result"] != "success":
@@ -893,7 +893,7 @@ class Course(PluginCommand, Plugin):
                     )
                     if not resp_ins:
                         raise DMError(
-                            "Ok, I will not create a new course then. Please choose another name."
+                            "Ok, I will not create a new Course then. Please choose another name."
                         )
 
                     await self.client.delete_channel(ins_ex)
@@ -985,7 +985,7 @@ class Course(PluginCommand, Plugin):
                 raise e
 
             raise DMError(
-                f"Something went wrong when creating the course `{name}` :botsweat: : {str(e)}"
+                f"Something went wrong when creating the Course `{name}` :botsweat: : {str(e)}"
             ) from e
 
         yield DMResponse(f"Course `{name}` created :bothappy:")
@@ -1002,7 +1002,7 @@ class Course(PluginCommand, Plugin):
         message: dict[str, Any],
     ) -> AsyncGenerator[response_type, None]:
         """
-        Guides you through the process of creating a new course.
+        Guides you through the process of creating a new Course.
         """
         courseName: str | None = None
         courseEmoji: str | None = None
@@ -1066,15 +1066,15 @@ class Course(PluginCommand, Plugin):
         responses = [
             await dm("Welcome to the Course Creation Wizard :bothappy:"),
             await dm(
-                "You can always exit the wizard by reacting with :cross_mark: to this message. You can answer my questions by replying to me with the response or reacting to my questions. I will do my best to guide you through the process of configuring your course."
+                "You can always exit the wizard by reacting with :cross_mark: to this message. You can answer my questions by replying to me with the response or reacting to my questions. I will do my best to guide you through the process of configuring your Course."
             ),
             await dm(
                 cleandoc(
                     """
-                                                                 Let's start by choosing a name for your new course :bothappy:
+                                                                 Let's start by choosing a name for your new Course :bothappy:
                                                                  
-                                                                 ```spoiler What is a short name of a course?
-                                                                 The short name is a unique identifier for the course without spaces or special characters.
+                                                                 ```spoiler What is a short name of a Course?
+                                                                 The short name is a unique identifier for the Course without spaces or special characters.
                                                                  This name will be used to associate Channels with the course. For example, if the course is called "Introduction to Computer Science", the short name could be `ICS` and the Announcements Channel would have the name `ICS - Announcements`.
                                                                  ```
                                                                  """
@@ -1099,10 +1099,10 @@ class Course(PluginCommand, Plugin):
 
             while True:
 
-                result = await short_text_input("What is the short name of the course?")
+                result = await short_text_input("What is the short name of the Course?")
 
                 if result is None:
-                    await dm("Please provide a valid short name for the course.")
+                    await dm("Please provide a valid short name for the Course.")
                 else:
                     c: CourseDB | None = (
                         session.query(CourseDB)
@@ -1135,7 +1135,7 @@ class Course(PluginCommand, Plugin):
             user_response = await confirm_input(
                 cleandoc(
                     """
-                                                         Now we will add a Channelgroup for your course.
+                                                         Now we will add a Channelgroup for your Course.
                                                          We can do this by using an already existing Channelgroup, creating a new Channelgroup with already existing Channels or creating a completely new empty Channelgroup.
                                                          In every case, you can update the Channelgroup later.
 
@@ -1180,13 +1180,13 @@ class Course(PluginCommand, Plugin):
                     break
             else:
                 await dm(
-                    "Great, so let's create a new Channelgroup by choosing an emoji for the course :bothappy:"
+                    "Great, so let's create a new Channelgroup by choosing an emoji for the Course :bothappy:"
                 )
 
                 while True:
 
                     sg_emoji = await short_text_input(
-                        "What is the emoji representing the course?"
+                        "What is the emoji representing the Course?"
                     )
 
                     if sg_emoji is None:
@@ -1207,7 +1207,7 @@ class Course(PluginCommand, Plugin):
                         break
 
                     await dm(
-                        f"A course with the emote :{emote}: already exists. Please choose another emoji."
+                        f"A Course with the emote :{emote}: already exists. Please choose another emoji."
                     )
 
                 sg_emoji_conf = await confirm_input(
@@ -1236,7 +1236,7 @@ class Course(PluginCommand, Plugin):
 
                         if courseChannels is None:
                             raise DMError(
-                                "Could not create Channelgroup for course."
+                                "Could not create Channelgroup for Course."
                             )
 
                         channels: list[ZulipChannel] = []
@@ -1264,26 +1264,26 @@ class Course(PluginCommand, Plugin):
 
             # add default Channels
             resultG = await confirm_input(
-                "Now you can add the default Channels to your course.\nDo you want to add a general Channel to your course?"
+                "Now you can add the default Channels to your course.\nDo you want to add a general Channel to your Course?"
             )
             resultO = await confirm_input(
-                "Do you want to add a Organization-Channel to your course?"
+                "Do you want to add a Organization-Channel to your Course?"
             )
             resultM = await confirm_input(
-                "Do you want to add a Memes-Channel to your course?"
+                "Do you want to add a Memes-Channel to your Course?"
             )
             resultT = await confirm_input(
-                "Do you want to add a Channel for Tech-Support to your course?"
+                "Do you want to add a Channel for Tech-Support to your Course?"
             )
             resultF = await confirm_input(
-                "Do you want the Feedback-Channel of your course to allow anonymous Feedback?"
+                "Do you want the Feedback-Channel of your Course to allow anonymous Feedback?"
             )
 
             if courseChannels is None:
-                raise DMError("Could not create Channelgroup for course.")
+                raise DMError("Could not create Channelgroup for Course.")
 
             if courseLan is None:
-                raise DMError("Could not determine the language of the course.")
+                raise DMError("Could not determine the language of the Course.")
 
             # wizard adds Feedback and Announcement per default to improve the communication between instructors and students (they have to be removed manually)
             stand_chan_ids: list[int] = await Course.add_standard_channels(
@@ -1311,7 +1311,7 @@ class Course(PluginCommand, Plugin):
             result1t = await confirm_input(
                 cleandoc(
                     """
-                              Now we will add a Usergroup for the Tutors of your course.
+                              Now we will add a Usergroup for the Tutors of your Course.
                               We can do this by using an already existing Usergroup, creating a new Usergroup with certain people or creating a completely new empty Usergroup.
                               In every case, you can update the Usergroup later.
 
@@ -1402,11 +1402,11 @@ class Course(PluginCommand, Plugin):
                         break
 
             await dm(
-                "Now we will add a Usergroup for the Instructors of your course. \nSame procedure as for the Tutors."
+                "Now we will add a Usergroup for the Instructors of your Course. \nSame procedure as for the Tutors."
             )
 
             result1i = await confirm_input(
-                "Do you want to use an existing Usergroup for your course?"
+                "Do you want to use an existing Usergroup for your Course?"
             )
             if result1i:
                 # use existing usergroup
@@ -1503,7 +1503,7 @@ class Course(PluginCommand, Plugin):
 
             if tut_ex is not None:
                 resultts = await confirm_input(
-                    "Channel for Tutors of this course already exists. Dou you want to replace it with a new Channel for your course?"
+                    "Channel for Tutors of this Course already exists. Dou you want to replace it with a new Channel for your Course?"
                 )
                 if not resultts:
                     while True:
@@ -1552,7 +1552,7 @@ class Course(PluginCommand, Plugin):
 
             # get a corresponding Channel for Instructors or None
             resultis = await confirm_input(
-                "Do you want a Instructor-Channel for your course?"
+                "Do you want a Instructor-Channel for your Course?"
             )
             if resultis is not None:
 
@@ -1572,7 +1572,7 @@ class Course(PluginCommand, Plugin):
 
                 if ins_ex is not None:
                     result1 = await confirm_input(
-                        "Channel for Instructor of this course already exists. Dou you want to replace it with a new Channel for your course?"
+                        "Channel for Instructor of this Course already exists. Dou you want to replace it with a new Channel for your Course?"
                     )
                     if not result1:
                         while True:
@@ -1666,11 +1666,11 @@ class Course(PluginCommand, Plugin):
 
             if courseName is None:
                 raise DMError(
-                    "Something went wrong when creating your course :botsweat:"
+                    "Something went wrong when creating your Course :botsweat:"
                 ) from e
 
             raise DMError(
-                f"Something went wrong when creating the course `{courseName}` :botsweat:"
+                f"Something went wrong when creating the Course `{courseName}` :botsweat:"
             ) from e
 
         yield DMResponse(f"Course `{courseName}` created :bothappy:")
@@ -1686,9 +1686,9 @@ class Course(PluginCommand, Plugin):
     @opt(
         "a",
         long_opt="all",
-        description="Add all standard steams to the course (General, Organization, normal Feedback, Announcements, TechSupport, Memes).",
+        description="Add all standard steams to the Course (General, Organization, normal Feedback, Announcements, TechSupport, Memes).",
     )
-    @opt("g", long_opt="general", description="Add a general channel.")
+    @opt("g", long_opt="general", description="Add a general Channel.")
     @opt("o", long_opt="orga", description="Add a Channel for Organization.")
     @opt(
         "fn",
@@ -1712,7 +1712,7 @@ class Course(PluginCommand, Plugin):
         _message: dict[str, Any],
     ) -> AsyncGenerator[response_type, None]:
         """
-        Add standard Channels to a given course. If Channels with the same names already exist, they will be transferred and not replaced with new ones.
+        Add standard Channels to a given Course. If Channels with the same names already exist, they will be transferred and not replaced with new ones.
         """
         course: CourseDB = args.course
         lan: Literal["en", "de"] = cast(Literal["en", "de"], str(course.CourseLanguage))
@@ -1741,7 +1741,7 @@ class Course(PluginCommand, Plugin):
         else:
             if opts.fn and opts.fa:
                 raise DMError(
-                    "You can only add one (normal OR anonymous) feedback channel at a time."
+                    "You can only add one (normal OR anonymous) Feedback Channel at a time."
                 )
 
             await Course.add_standard_channels(
@@ -1767,7 +1767,7 @@ class Course(PluginCommand, Plugin):
     @arg(
         "course",
         ty=CourseDB.CourseName,
-        description="The name of the Course to add the channel to.",
+        description="The name of the Course to add the Channel to.",
     )
     @arg(
         "channel",
@@ -1783,7 +1783,7 @@ class Course(PluginCommand, Plugin):
         _message: dict[str, Any],
     ) -> AsyncGenerator[response_type, None]:
         """
-        Take a channel with the given name (or create it if it does not exist yet) and then add it to the course's Channelgroup.
+        Take a channel with the given name (or create it if it does not exist yet) and then add it to the Course's Channelgroup.
         """
         course : CourseDB = args.course
         chan_group : ChannelGroup = Course.get_channelgroup(course, session)
@@ -1812,7 +1812,7 @@ class Course(PluginCommand, Plugin):
         await channel
   
         Channelgroup.add_zulip_channels(session, [channel], chan_group)
-        yield DMResponse(f"Added Channel `{channel_name}` to the course `{course.CourseName}` :bothappy:")
+        yield DMResponse(f"Added Channel {channel.mention} to the Course `{course.CourseName}` :bothappy:")
 
 
     @command
@@ -1837,7 +1837,7 @@ class Course(PluginCommand, Plugin):
         _message: dict[str, Any],
     ) -> AsyncGenerator[response_type, None]:
         """
-        Add a list of Zulip-Users to the course's Tutors.
+        Add a list of Zulip-Users to the Course's Tutors.
         """
         course : CourseDB = args.course
         u_group : ChannelGroup = Course.get_tutorgroup(course, session)
@@ -1861,14 +1861,14 @@ class Course(PluginCommand, Plugin):
         if resp["result"] != "success":
             raise DMError("Could not add Tutors to the Tutor-Channel.")
 
-        yield DMResponse(f"Added {', '.join([t.name for t in new_tutors])} to the Tutors of the course `{course.CourseName}` :bothappy:")
+        yield DMResponse(f"Added {', '.join([t.mention_silent for t in new_tutors])} to the Tutors of the Course `{course.CourseName}` :bothappy:")
 
     @command
     @privilege(Privilege.ADMIN)
     @arg(
         "course",
         ty=CourseDB.CourseName,
-        description="The name of the Course to add the Tutor to.",
+        description="The name of the Course to add the Instructor to.",
     )
     @arg(
         "instructors",
@@ -1885,7 +1885,7 @@ class Course(PluginCommand, Plugin):
         _message: dict[str, Any],
     ) -> AsyncGenerator[response_type, None]:
         """
-        Take a channel with the given name or create it if it does not existe and then add it to the course's Channelgroup.
+        Add a list of Zulip-Users to the Course's Instructors.
         """
         course : CourseDB = args.course
         u_group : ChannelGroup = Course.get_instructorgroup(course, session)
@@ -1911,7 +1911,7 @@ class Course(PluginCommand, Plugin):
             if resp["result"] != "success":
                 raise DMError("Could not add Instructors to the Instructor-Channel")
 
-        yield DMResponse(f"Added {', '.join([i.name for i in new_insts])} to the Instructors of the course `{course.CourseName}` :bothappy:")
+        yield DMResponse(f"Added {', '.join([i.mention_silent for i in new_insts])} to the Instructors of the Course `{course.CourseName}` :bothappy:")
 
     @command
     @privilege(Privilege.ADMIN)
@@ -1924,13 +1924,13 @@ class Course(PluginCommand, Plugin):
         "c",
         long_opt="channelgroup",
         ty=ChannelGroup.ChannelGroupId,
-        description="The id of an existing Channelgroup containing the Channels for this course.",
+        description="The id of an existing Channelgroup containing the Channels for this Course.",
     )
     @opt(
         "t",
         long_opt="tutors",
         ty=UserGroup.GroupName,
-        description="The name of an existing Usergroup containing the Tutors for this course.",
+        description="The name of an existing Usergroup containing the Tutors for this Course.",
     )
     @opt(
         "tuts",
@@ -1984,7 +1984,7 @@ class Course(PluginCommand, Plugin):
         ty=CourseDB.CourseName,
         description="The name of the Course to delete.",
     )
-    @opt("c", long_opt="channels", description="Remove the Channels from the Course, but keep the ChannelGroup.")
+    @opt("c", long_opt="channels", description="Remove the Channels from the Course, but keep the Channelgroup.")
     @opt("t", long_opt="tutors", description="Remove the Tutors from the Course but keep the UserGroup.")
     async def clear(
         self,
@@ -1995,7 +1995,7 @@ class Course(PluginCommand, Plugin):
         _message: dict[str, Any],
     ) -> AsyncGenerator[response_type, None]:
         """
-        Clear a course (Channels/Tutors), but keep the underlying components (Channelgroup/UserGroup).
+        Clear a Course (Channels/Tutors), but keep the underlying components (Channelgroup/UserGroup).
         """
         course: CourseDB = args.course
 
@@ -2035,7 +2035,7 @@ class Course(PluginCommand, Plugin):
     @opt(
         "a",
         long_opt="all",
-        description="Delete the whole course (Channelgroup, Usergroups, Channels).",
+        description="Delete the whole Course (Channelgroup, Usergroups, Channels).",
     )
     @opt(
         "c",
@@ -2155,7 +2155,7 @@ class Course(PluginCommand, Plugin):
         _message: dict[str, Any],
     ) -> AsyncGenerator[response_type, None]:
         """
-        Mute all the channels of a course, for example during the time of an exam. Thus only moderators can send messages to the channels.
+        Mute all the channels of a Course, for example during the time of an exam. Thus only moderators can send messages to the Channels.
         """
         course: CourseDB = args.course
         channels: list[ZulipChannel] = await Course.get_channels(course=course, session=session)
@@ -2172,9 +2172,9 @@ class Course(PluginCommand, Plugin):
                 failed_channels.append(channel.name)
         
         if failed_channels:
-            raise DMError(f"Failed to mute the following channels: {', '.join(failed_channels)}")
+            raise DMError(f"Failed to mute the following Channels: {', '.join(failed_channels)}")
 
-        yield DMResponse(f"The channels of your course `{course.CourseName}` are now muted :bothappy:")
+        yield DMResponse(f"The Channels of your Course `{course.CourseName}` are now muted :bothappy:")
 
     @command
     @privilege(Privilege.ADMIN)
@@ -2192,7 +2192,7 @@ class Course(PluginCommand, Plugin):
         _message: dict[str, Any],
     ) -> AsyncGenerator[response_type, None]:
         """
-        Unmute all the channels of a course, for example during the time of an exam. Thus all users can send messages to the channels.
+        Unmute all the Channels of a Course, for example during the time of an exam. Thus all users can send messages to the Channels.
         """
         course: CourseDB = args.course
         channels: list[ZulipChannel] = await Course.get_channels(course=course, session=session)
@@ -2209,9 +2209,9 @@ class Course(PluginCommand, Plugin):
                 failed_channels.append(channel.name)
         
         if failed_channels:
-            raise DMError(f"Failed to unmute the following channels: {', '.join(failed_channels)}")
+            raise DMError(f"Failed to unmute the following Channels: {', '.join(failed_channels)}")
 
-        yield DMResponse(f"The channels of your course `{course.CourseName}` are now unmuted :bothappy:")
+        yield DMResponse(f"The Channels of your Course `{course.CourseName}` are now unmuted :bothappy:")
 
     # ========================================================================================================================
     #       CLASS METHODS
@@ -2621,23 +2621,23 @@ class Course(PluginCommand, Plugin):
 
             ## **Channels**:
 
-            | Id ChannelGroup | Emoji | Channels |
+            | Id Channelgroup | Emoji | Channels |
             | ---- | ---- | ---- |
             | {chan_group_name} | :{emoji}: | {", ".join(channel_names)} |
 
             ## **Tutors**: 
 
-            | Name Usergroup | Tutors | TutorChannel |
+            | Name Usergroup | Tutors | Tutor-Channel |
             | ---- | ---- | ---- |
             | {str(tutors_ug.GroupName)} | {", ".join([t.mention_silent for t in tutors])} | {tutor_channel.mention} |
 
             ## **Instructors**: 
             
-            | Name Usergroup | Instructors | InstructorChannel |
+            | Name Usergroup | Instructors | Instructor-Channel |
             | ---- | ---- | ---- |
             | {str(instructors_ug.GroupName)} | {", ".join([i.mention_silent for i in instructors])} | {instructor_channel_name} |
 
-            ## **Anonymous FeedbackChannel**: 
+            ## **Anonymous Feedback-Channel**: 
             {feedback_channel_name}
             """
         )
