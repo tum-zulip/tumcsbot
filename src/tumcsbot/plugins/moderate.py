@@ -542,7 +542,7 @@ class Moderate(PluginCommand, Plugin):
     )
     @arg(
         "emote",
-        Regex.get_reaction_emoji,
+        Regex.get_emoji_name,
         description="The emote that should trigger the reaction",
     )
     @arg(
@@ -625,7 +625,7 @@ class Moderate(PluginCommand, Plugin):
     )
     @arg(
         "emote",
-        Regex.get_reaction_emoji,
+        Regex.get_emoji_name,
         description="The emote that should trigger the reaction",
     )
     async def remove(

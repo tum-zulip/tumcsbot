@@ -68,7 +68,7 @@ class Feedback(PluginCommand, Plugin):
         fbc = cast(ZulipChannel, course.FeedbackChannel)
         await fbc
 
-        # TODO: @Janez Rotman
+        # TODO: (Joshy-R)
         max_topic_length = 60
         topic: str = "New Feedback"
 

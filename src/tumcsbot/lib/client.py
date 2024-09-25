@@ -32,8 +32,6 @@ from tumcsbot.lib.utils import channel_names_equal
 
 @final
 class EventType(StrEnum):
-    # todo: GET_USAGE = "get_usage"
-    # todo: RET_USAGE = "ret_usage"
     START = "start"
     STOP = "stop"
     RESTART = "restart"

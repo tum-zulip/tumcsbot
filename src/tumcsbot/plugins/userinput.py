@@ -33,11 +33,6 @@ class UserInput(Plugin):
             return {}
 
         msg = cast(dict[str, Any], response["messages"][0])
-
-        print(msg["display_recipient"], message["display_recipient"])
-
-        # todo: not not compare dict directly
-
         if msg["display_recipient"] != message["display_recipient"]:
             return {}
 
@@ -134,7 +129,6 @@ class UserInput(Plugin):
                 logging.error(result)
                 raise Exception(f"Could not send reaction to user: {emote}")
 
-        # todo: handle if message_nak or message_ack was not successful
         try:
             reaction = await cls._wait_for_queue(q, timeout)
             q.task_done()

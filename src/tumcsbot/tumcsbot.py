@@ -67,12 +67,14 @@ class TumCSBot:
         if debug:
             logging_level = logging.DEBUG
 
-        logging.basicConfig(
-            # todo: change sys.stdout
-            format=LOGGING_FORMAT,
-            level=logging_level,
-            stream=sys.stdout,  # filename=logfile if logfile else sys.stdout
-        )
+        if logfile is not None:
+            logging.basicConfig(
+                format=LOGGING_FORMAT,
+                level=logging_level,
+                filename=logfile,
+            )
+        else:
+            logging.basicConfig(format=LOGGING_FORMAT, level=logging_level, stream=sys.stdout)
 
         threading.current_thread().name = "Main"
 
@@ -208,7 +210,6 @@ class TumCSBot:
                 if self.stopped or event.type == EventType.STOP:
                     raise asyncio.CancelledError()
 
-                # todo: handle other event types
                 if event.type == EventType.ZULIP:
                     try:
                         event.data = self.zulip_event_preprocess(event.data)
@@ -254,6 +255,9 @@ class TumCSBot:
                                     )
                                 )
 
+                elif event.type not in [EventType.RESTART, EventType.STOP]:
+                    logging.warn("unknown event type %s", event.type)
+                
         except asyncio.exceptions.CancelledError:
             pass
 

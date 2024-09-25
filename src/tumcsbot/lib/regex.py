@@ -190,16 +190,3 @@ class Regex:
             # We wanted the user ID, but did not find it.
             return (result[0], None)
         return (result[0], int(result[1]))
-
-    @staticmethod
-    def get_reaction_emoji(string: str) -> str | None:
-        """Extract the reaction emoji from a string.
-
-        Match the whole string.
-        There are two cases handled here:
-           :<name>: -> <name>
-           Leading/trailing whitespace is discarded.
-        Return None if no match could be found.
-        """
-        # Todo: (jr) this function should be removed
-        return Regex.get_emoji_name(string)

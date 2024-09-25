@@ -88,18 +88,8 @@ async def serialize_model(
     # Determine which foreign keys to skip because they are handled by relationships
     skip_keys = set()
 
-    logging.debug(
-        len(exclude_tables) * "        " + f"mapper.columns: {mapper.columns}"
-    )
-    logging.debug(
-        len(exclude_tables) * "        " + f"exclude_tables: {exclude_tables}"
-    )
     for c in mapper.columns:
         if c.foreign_keys:
-            logging.debug(
-                (len(exclude_tables) + 1) * "        "
-                + f"foreign_keys: {c.foreign_keys}"
-            )
             for fk in c.foreign_keys:
                 if fk.column.table in exclude_tables:
                     skip_keys.add(c.key)
@@ -110,7 +100,6 @@ async def serialize_model(
             and isinstance(c.type, sqlalchemy.Integer)
         ):
             skip_keys.add(c.key)
-    logging.debug(len(exclude_tables) * "        " + f"skip_keys: {skip_keys}")
 
     # Serialize columns except the skipped foreign keys
     attributes = {

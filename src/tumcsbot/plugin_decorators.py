@@ -123,7 +123,6 @@ def arg(
 
             await process_arg(name, greedy, optional, ty, args, session)
 
-            # todo: does yield from work here?
             async for response in func(self, sender, session, args, opts, message):
                 yield response
 
