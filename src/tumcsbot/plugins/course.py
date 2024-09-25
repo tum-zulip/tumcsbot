@@ -150,13 +150,13 @@ class Course(PluginCommand, Plugin):
         _message: dict[str, Any],
     ) -> AsyncGenerator[response_type, None]:
         """
-        For a given course show all the details of the course: \n
-        Name and Channels of Channelgroup
-        Name and Users of Tutor-Usergroup
-        Name and Users of Instructor-Usergroup
-        Name of Tutor-Channel
-        Name of Instructor-Channel
-        Anonymous Feedback enabled
+        For a given course show all its details: \n
+        - Name and Channels of Channelgroup
+        - Name and Users of Tutor-Usergroup
+        - Name and Users of Instructor-Usergroup
+        - Name of Tutor-Channel
+        - Name of Instructor-Channel
+        - Anonymous Feedback enabled
         """
         msg = await Course._build_info_message(args.course, session)
         yield DMResponse(msg)
@@ -559,19 +559,19 @@ class Course(PluginCommand, Plugin):
         "t",
         long_opt="tutors",
         ty=UserGroup.GroupName,
-        description="The name of a Usergroup containing the tutors for this course.",
+        description="The name of a Usergroup containing the Tutors for this course.",
     )
     @opt(
         "i",
         long_opt="instructors",
         ty=UserGroup.GroupName,
-        description="The name of a Usergroup containing the instructors for this course.",
+        description="The name of a Usergroup containing the Instructors for this course.",
     )
     @opt(
         "tuts",
         long_opt="tutor_channel",
         ty=ZulipChannel,
-        description="The name of the additional Channel for tutors.",
+        description="The name of the additional Channel for Tutors.",
     )
     @opt(
         "ins",
@@ -1686,7 +1686,7 @@ class Course(PluginCommand, Plugin):
     @opt(
         "a",
         long_opt="all",
-        description="Add all standard steams to the course (Allgemein, Organisation, normal Feedback, Ankündigungen, Technik, Memes).",
+        description="Add all standard steams to the course (General, Organization, normal Feedback, Announcements, TechSupport, Memes).",
     )
     @opt("g", long_opt="general", description="Add a general channel.")
     @opt("o", long_opt="orga", description="Add a Channel for Organization.")
@@ -1783,7 +1783,7 @@ class Course(PluginCommand, Plugin):
         _message: dict[str, Any],
     ) -> AsyncGenerator[response_type, None]:
         """
-        Take a channel with the given name or create it if it does not existe and then add it to the course's Channelgroup.
+        Take a channel with the given name (or create it if it does not exist yet) and then add it to the course's Channelgroup.
         """
         course : CourseDB = args.course
         chan_group : ChannelGroup = Course.get_channelgroup(course, session)
@@ -1837,17 +1837,29 @@ class Course(PluginCommand, Plugin):
         _message: dict[str, Any],
     ) -> AsyncGenerator[response_type, None]:
         """
-        Take a channel with the given name or create it if it does not existe and then add it to the course's Channelgroup.
+        Add a list of Zulip-Users to the course's Tutors.
         """
         course : CourseDB = args.course
         u_group : ChannelGroup = Course.get_tutorgroup(course, session)
         tutors : list[ZulipUser] = await Usergroup.get_users_for_group(session, u_group)
+        t_chan : ZulipChannel = cast(ZulipChannel,course.TutorChannel)
+        await t_chan
 
         new_tutors : list[ZulipUser] = args.tutors
+        to_add : list[int] = []
 
         for tutor in new_tutors:
             if tutor not in tutors:
                 Usergroup.add_user_to_group(session, tutor, u_group)
+                to_add.append(tutor.id)
+        
+        resp = await self.client.add_subscriptions(
+            channels=[{"name": t_chan.name}],
+            principals=to_add,
+        )
+
+        if resp["result"] != "success":
+            raise DMError("Could not add Tutors to the Tutor-Channel.")
 
         yield DMResponse(f"Added {', '.join([t.name for t in new_tutors])} to the Tutors of the course `{course.CourseName}` :bothappy:")
 
@@ -1880,10 +1892,24 @@ class Course(PluginCommand, Plugin):
         insts : list[ZulipUser] = await Usergroup.get_users_for_group(session, u_group)
 
         new_insts : list[ZulipUser] = args.instructors
+        to_add : list[int] = []
 
         for ins in new_insts:
             if ins not in insts:
                 Usergroup.add_user_to_group(session, ins, u_group)
+                to_add.append(ins.id)
+        
+        if course.InstructorChannel is not None:
+            ins_chan : ZulipChannel = cast(ZulipChannel, course.InstructorChannel)
+            await ins_chan
+
+            resp = await self.client.add_subscriptions(
+                channels=[{"name": ins_chan.name}],
+                principals=to_add,
+            )
+
+            if resp["result"] != "success":
+                raise DMError("Could not add Instructors to the Instructor-Channel")
 
         yield DMResponse(f"Added {', '.join([i.name for i in new_insts])} to the Instructors of the course `{course.CourseName}` :bothappy:")
 
@@ -1904,7 +1930,7 @@ class Course(PluginCommand, Plugin):
         "t",
         long_opt="tutors",
         ty=UserGroup.GroupName,
-        description="The name of an existing Usergroup containing the tutors for this course.",
+        description="The name of an existing Usergroup containing the Tutors for this course.",
     )
     @opt(
         "tuts",
@@ -1959,7 +1985,7 @@ class Course(PluginCommand, Plugin):
         description="The name of the Course to delete.",
     )
     @opt("c", long_opt="channels", description="Remove the Channels from the Course, but keep the ChannelGroup.")
-    @opt("t", long_opt="tutors", description="Remove the tutors from the Course but keep the UserGroup.")
+    @opt("t", long_opt="tutors", description="Remove the Tutors from the Course but keep the UserGroup.")
     async def clear(
         self,
         _sender: ZulipUser,
