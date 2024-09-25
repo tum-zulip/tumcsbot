@@ -264,7 +264,7 @@ class PluginCommand(Plugin):
         except CommandParser.IllegalCommandParserState as e:
             self.logger.exception(e)
             cause = (": " + str(e.__cause__)) if e.__cause__ else ""
-            return Response.build_message(message, str(e) + cause)
+            return Response.build_message(message=None, content=str(e) + cause, msg_type="private", to=message["sender_id"])
 
         if result is None:
             return Response.command_not_found(message)
