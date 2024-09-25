@@ -802,7 +802,7 @@ class Channelgroup(PluginCommand, Plugin):
         name = channel["name"]
 
         await Channelgroup.claim_h(
-            group=group, session=session, message_id=msg_id, All=opts.a
+            group=group, session=session, client=self.client, message=message, All=opts.a
         )
 
         if not opts.a:
@@ -877,7 +877,7 @@ class Channelgroup(PluginCommand, Plugin):
         name = channel["name"]
 
         await Channelgroup.claim_h(
-            group=group, session=session, message_id=msg_id, All=opts.a
+            group=group, session=session, client=self.client, message=msg, All=opts.a
         )
 
         if group is not None:
@@ -1310,7 +1310,7 @@ class Channelgroup(PluginCommand, Plugin):
 
     @staticmethod
     async def claim_h(
-        group: ChannelGroup | None, session: Session, message_id: int, All: bool = False
+        group: ChannelGroup | None, session: Session, client: AsyncClient,  message: dict[str, Any], All: bool = False
     ) -> None:
         """
         Make a message "special" for a given group or for all ChannelGroups.
@@ -1327,6 +1327,7 @@ class Channelgroup(PluginCommand, Plugin):
         Returns:
             None
         """
+        message_id : int = message["id"]
 
         if not All:
             if group is None:
@@ -1351,6 +1352,13 @@ class Channelgroup(PluginCommand, Plugin):
                 raise DMError(
                     f"Could not claim message '{message_id}' for Channelgroup `{group.ChannelGroupId}`."
                 ) from e
+            
+            # React with the emoji on the claimed message
+            emoji: str = str(group.ChannelGroupEmote)
+
+            await client.send_response(Response.build_reaction(message, emoji=emoji))
+            
+
         else:
             if (
                 session.query(GroupClaimAll)
@@ -1364,6 +1372,14 @@ class Channelgroup(PluginCommand, Plugin):
             except sqlalchemy.exc.IntegrityError as e:
                 session.rollback()
                 raise DMError(f"Could not claim message '{message_id}'.") from e
+            
+            # React with all the emojis on the claimed message
+            all_emojis: list[str] = [
+            str(group.ChannelGroupEmote) for group in session.query(ChannelGroup).all()
+            ]
+
+            for emoji in all_emojis:
+                await client.send_response(Response.build_reaction(message, emoji=emoji))
 
     @staticmethod
     async def unclaim_h(
