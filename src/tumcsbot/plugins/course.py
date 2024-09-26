@@ -146,7 +146,7 @@ class Course(PluginCommand, Plugin):
         _sender: ZulipUser,
         session: Session,
         args: CommandParser.Args,
-        opts: CommandParser.Opts,
+        _opts: CommandParser.Opts,
         _message: dict[str, Any],
     ) -> AsyncGenerator[response_type, None]:
         """
@@ -645,11 +645,11 @@ class Course(PluginCommand, Plugin):
                 )
                 if resultem1["result"] != "success":
                     raise DMError("Could not send message to user")
-                
+
                 respem1, _ = await UserInput.short_text_response(self.client, resultem1["id"], timeout=120)
                 if not respem1:
                     raise DMError("You need to provide an emoji for the Channelgroup :botsad:")
-                
+
                 channelgroup_emoji = respem1
 
                 existing_group : ChannelGroup | None = (
@@ -658,7 +658,7 @@ class Course(PluginCommand, Plugin):
                         .first()
                 )
 
-                if existing_group is not None: # emoji already in use 
+                if existing_group is not None: # emoji already in use
                     result2 = await self.client.send_response(
                         Response.build_message(
                             message,
@@ -953,7 +953,7 @@ class Course(PluginCommand, Plugin):
                 cleanup_opterations.append(
                     lambda: self.client.delete_channel(feedback_channel.id)
                 )
-            
+
             channels = cast(ChannelGroup, channels)
 
             # create and add a Course to the DB
@@ -1798,16 +1798,16 @@ class Course(PluginCommand, Plugin):
                             "description": "",
                         }
                     ],
-                    principals=[sender.id, self.client.id], 
+                    principals=[sender.id, self.client.id],
             )
 
             if result_channel["result"] != "success":
                 raise DMError(result_channel["msg"])
-            
+
 
         channel : ZulipChannel = ZulipChannel(f"#**{channel_name}**")
         await channel
-  
+
         Channelgroup.add_zulip_channels(session, [channel], chan_group)
         yield DMResponse(f"Added Channel {channel.mention} to the Course `{course.CourseName}` :bothappy:")
 
@@ -1849,7 +1849,7 @@ class Course(PluginCommand, Plugin):
             if tutor not in tutors:
                 Usergroup.add_user_to_group(session, tutor, u_group)
                 to_add.append(tutor.id)
-        
+
         resp = await self.client.add_subscriptions(
             channels=[{"name": t_chan.name}],
             principals=to_add,
@@ -1875,7 +1875,7 @@ class Course(PluginCommand, Plugin):
     )
     async def add_instructors(
         self,
-        sender: ZulipUser,
+        _sender: ZulipUser,
         session: Session,
         args: CommandParser.Args,
         _opts: CommandParser.Opts,
@@ -2101,7 +2101,7 @@ class Course(PluginCommand, Plugin):
             if sg is not None:
                 strm: list[ZulipChannel] = await Channelgroup.get_channels(session, sg)
                 await Channelgroup.remove_zulip_channels(session, strm, sg)
-                
+
                 Channelgroup.delete_group_h(session, sg)
 
                 failed : list[str] = []
@@ -2109,7 +2109,7 @@ class Course(PluginCommand, Plugin):
                     resp = await self.client.delete_channel(s.id)
                     if resp["result"] != "success":
                         failed.append(s.name)
-                
+
                 yield DMResponse(f"Channels {', '.join(failed)} could not be deleted.")
 
         if opts.t or opts.a:
@@ -2167,7 +2167,7 @@ class Course(PluginCommand, Plugin):
 
             if response["result"] != "success":
                 failed_channels.append(channel.name)
-        
+
         if failed_channels:
             raise DMError(f"Failed to mute the following Channels: {', '.join(failed_channels)}")
 
@@ -2185,7 +2185,7 @@ class Course(PluginCommand, Plugin):
         _sender: ZulipUser,
         session: Session,
         args: CommandParser.Args,
-        opts: CommandParser.Opts,
+        _opts: CommandParser.Opts,
         _message: dict[str, Any],
     ) -> AsyncGenerator[response_type, None]:
         """
@@ -2201,10 +2201,10 @@ class Course(PluginCommand, Plugin):
                 "stream_post_policy": 1,
             }
             response = await self.client.update_channel(request)
-            
+
             if response["result"] != "success":
                 failed_channels.append(channel.name)
-        
+
         if failed_channels:
             raise DMError(f"Failed to unmute the following Channels: {', '.join(failed_channels)}")
 
@@ -2229,7 +2229,6 @@ class Course(PluginCommand, Plugin):
         m: bool = True,
         t: bool = True,
     ) -> list[int]:
-        
         result: list[int] = []
 
         if principals is None:
@@ -2312,7 +2311,7 @@ class Course(PluginCommand, Plugin):
                 await s
 
             Channelgroup.add_zulip_channels(session, to_add, sg)
-        
+
             result = [s.id for s in to_add]
 
             if fa:
@@ -2567,21 +2566,21 @@ class Course(PluginCommand, Plugin):
         except sqlalchemy.exc.IntegrityError as e:
             session.rollback()
             raise DMError("Could not update Instructor-Channel :botsad:") from e
-    
+
         if oldIS is not None:
             await client.delete_channel(oldIS.id)
 
 
     @staticmethod
     async def _build_info_message(
-        course: CourseDB, session: Session, 
+        course: CourseDB, session: Session,
     ) -> str:
         """
         Build a string with all the information about a course.
         """
         chan_group: ChannelGroup = Course.get_channelgroup(course, session)
         chan_group_name: str = str(chan_group.ChannelGroupId)
-        channels: list[ZulipChannel] =  await Course.get_channels(session=session, course=course) 
+        channels: list[ZulipChannel] =  await Course.get_channels(session=session, course=course)
         channel_names: list[str] = [c.mention for c in channels]
         emoji: str = Course.get_emoji(course, session)
 
@@ -2637,4 +2636,3 @@ class Course(PluginCommand, Plugin):
             {feedback_channel_name}
             """
         )
-

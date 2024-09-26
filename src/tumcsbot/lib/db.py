@@ -1,5 +1,3 @@
-import logging
-
 from os.path import isabs
 from contextlib import contextmanager
 from typing import Generator, Any

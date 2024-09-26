@@ -1352,12 +1352,12 @@ class Channelgroup(PluginCommand, Plugin):
                 raise DMError(
                     f"Could not claim message '{message_id}' for Channelgroup `{group.ChannelGroupId}`."
                 ) from e
-            
+
             # React with the emoji on the claimed message
             emoji: str = str(group.ChannelGroupEmote)
 
             await client.send_response(Response.build_reaction(message, emoji=emoji))
-            
+
 
         else:
             if (
@@ -1372,7 +1372,7 @@ class Channelgroup(PluginCommand, Plugin):
             except sqlalchemy.exc.IntegrityError as e:
                 session.rollback()
                 raise DMError(f"Could not claim message '{message_id}'.") from e
-            
+
             # React with all the emojis on the claimed message
             all_emojis: list[str] = [
             str(group.ChannelGroupEmote) for group in session.query(ChannelGroup).all()
