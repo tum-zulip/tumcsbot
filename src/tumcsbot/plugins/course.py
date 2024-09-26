@@ -124,9 +124,7 @@ class Course(PluginCommand, Plugin):
 
         for course in courses:
             course_name = course.CourseName
-            channels: list[str] = await Course.get_channel_names(
-                session, course
-            )
+            channels: list[str] = await Course.get_channel_names(session, course)
             emoji: str = Course.get_emoji(course, session)
 
             channels_concat: str = ", ".join(f"`{s}`" for s in channels)
@@ -274,14 +272,13 @@ class Course(PluginCommand, Plugin):
             if not channels:
                 channelgroup_name: str = "channels_" + name
 
-                c_g_same_name : ChannelGroup | None = (
-                        session.query(ChannelGroup)
-                        .filter(ChannelGroup.ChannelGroupId == channelgroup_name)
-                        .first()
+                c_g_same_name: ChannelGroup | None = (
+                    session.query(ChannelGroup)
+                    .filter(ChannelGroup.ChannelGroupId == channelgroup_name)
+                    .first()
                 )
                 if c_g_same_name is not None:
                     Channelgroup.delete_group_h(session, c_g_same_name)
-
 
                 channels = Channelgroup.create_and_get_group(
                     session, channelgroup_name, channelgroup_emoji
@@ -390,7 +387,7 @@ class Course(PluginCommand, Plugin):
                 )
                 if not resp5:
                     raise DMError(
-                        f"Ok, I will not create a new empty Course then. You can use the command `course create -tuts \"{tutors_channel_name}\"` to use the existing Channel for Tutors."
+                        f'Ok, I will not create a new empty Course then. You can use the command `course create -tuts "{tutors_channel_name}"` to use the existing Channel for Tutors.'
                     )
 
                 await self.client.delete_channel(tut_ex)
@@ -448,7 +445,7 @@ class Course(PluginCommand, Plugin):
                     )
                     if not resp6:
                         raise DMError(
-                            f"Ok, I will not create a new empty Course then. You can use the command `course create -ins \"{instructor_channel_name}\"` to use the existing Channel for Instructors."
+                            f'Ok, I will not create a new empty Course then. You can use the command `course create -ins "{instructor_channel_name}"` to use the existing Channel for Instructors.'
                         )
 
                     await self.client.delete_channel(ins_ex)
@@ -646,19 +643,23 @@ class Course(PluginCommand, Plugin):
                 if resultem1["result"] != "success":
                     raise DMError("Could not send message to user")
 
-                respem1, _ = await UserInput.short_text_response(self.client, resultem1["id"], timeout=120)
+                respem1, _ = await UserInput.short_text_response(
+                    self.client, resultem1["id"], timeout=120
+                )
                 if not respem1:
-                    raise DMError("You need to provide an emoji for the Channelgroup :botsad:")
+                    raise DMError(
+                        "You need to provide an emoji for the Channelgroup :botsad:"
+                    )
 
                 channelgroup_emoji = respem1
 
-                existing_group : ChannelGroup | None = (
-                        session.query(ChannelGroup)
-                        .filter(ChannelGroup.ChannelGroupEmote == channelgroup_emoji)
-                        .first()
+                existing_group: ChannelGroup | None = (
+                    session.query(ChannelGroup)
+                    .filter(ChannelGroup.ChannelGroupEmote == channelgroup_emoji)
+                    .first()
                 )
 
-                if existing_group is not None: # emoji already in use
+                if existing_group is not None:  # emoji already in use
                     result2 = await self.client.send_response(
                         Response.build_message(
                             message,
@@ -668,8 +669,10 @@ class Course(PluginCommand, Plugin):
                     if result2["result"] != "success":
                         raise DMError("Could not send message to user")
 
-                    resp2, _ = await UserInput.confirm(self.client, result2["id"], timeout=60)
-                    if not resp2: # use existing channelgroup or stop
+                    resp2, _ = await UserInput.confirm(
+                        self.client, result2["id"], timeout=60
+                    )
+                    if not resp2:  # use existing channelgroup or stop
                         res3 = await self.client.send_response(
                             Response.build_message(
                                 message,
@@ -679,7 +682,9 @@ class Course(PluginCommand, Plugin):
                         if res3["result"] != "success":
                             raise DMError("Could not send message to user")
 
-                        resp3, _ = await UserInput.confirm(self.client, res3["id"], timeout=60)
+                        resp3, _ = await UserInput.confirm(
+                            self.client, res3["id"], timeout=60
+                        )
                         if not resp3:
                             yield DMResponse(
                                 f"Ok, I will not create a new Course then. Please choose another emote because :{channelgroup_emoji}: is already in use :botsad:"
@@ -687,13 +692,13 @@ class Course(PluginCommand, Plugin):
                             return
 
                         channels = existing_group
-                    else: # replace existing channelgroup
+                    else:  # replace existing channelgroup
                         Channelgroup.delete_group_h(session, existing_group)
 
                 if channels is None:
                     channelgroup_name: str = "channels_" + name
 
-                    c_g_same_name : ChannelGroup | None = (
+                    c_g_same_name: ChannelGroup | None = (
                         session.query(ChannelGroup)
                         .filter(ChannelGroup.ChannelGroupId == channelgroup_name)
                         .first()
@@ -987,7 +992,6 @@ class Course(PluginCommand, Plugin):
 
         yield DMResponse(f"Course `{name}` created :bothappy:")
 
-
     @command
     @privilege(Privilege.ADMIN)
     async def wizard(
@@ -1020,9 +1024,7 @@ class Course(PluginCommand, Plugin):
                 [task, exit_task], return_when=asyncio.FIRST_COMPLETED
             )
             if exit_task in done:
-                raise DMError(
-                    "You have exited the wizard. Have a nice day :bothappy:"
-                )
+                raise DMError("You have exited the wizard. Have a nice day :bothappy:")
             return cast(T, done.pop().result())
 
         def exit_and_inform_on_error(client_response: dict[str, Any]) -> dict[str, Any]:
@@ -1053,10 +1055,10 @@ class Course(PluginCommand, Plugin):
             )
             return user_response
 
-        async def confirm_input(msg: str, timeput: int = 60) -> bool:
+        async def confirm_input(msg: str, timeout: int = 60) -> bool:
             server_response = await dm(msg)
             user_response, _ = await or_exit(
-                UserInput.confirm(self.client, server_response["id"], timeout=timeput)
+                UserInput.confirm(self.client, server_response["id"], timeout=timeout)
             )
             return user_response
 
@@ -1106,18 +1108,41 @@ class Course(PluginCommand, Plugin):
                         .filter(CourseDB.CourseName == result)
                         .one_or_none()
                     )
-                    sgName: str = "channels_" + result
-                    sg: ChannelGroup | None = (
-                        session.query(ChannelGroup)
-                        .filter(ChannelGroup.ChannelGroupId == sgName)
-                        .one_or_none()
-                    )
-                    if c is None and sg is None:
+                    if c is None:
                         courseName = result
+                        cg = (
+                            session.query(ChannelGroup)
+                            .filter(ChannelGroup.ChannelGroupId.like("%" + courseName + "%"))
+                            .all()
+                        )
+                        if cg:
+                            if await confirm_input(
+                                cleandoc(
+                                    f"""
+                                    At least one Channelgroup with the name `{courseName}` already exists.
+                                    Existing channel groups are:
+                                    {'\n'.join([' - ' + str(c.ChannelGroupId) for c in cg])}
+                                    
+                                    Should I delete them?
+                                    """
+                                )
+                            ):
+                                for existing_channelgroup in cg:
+                                    Channelgroup.delete_group_h(
+                                        session,
+                                        session.query(ChannelGroup)
+                                        .filter(
+                                            ChannelGroup.ChannelGroupId
+                                            == existing_channelgroup.ChannelGroupId
+                                        )
+                                        .one(),
+                                    )
+                            else:
+                                continue
                         break
 
                     await dm(
-                        f"A Course or Channelgroup with the name `{result}` already exists. Please choose another name."
+                        f"A Course with the name `{result}` already exists. Please choose another name."
                     )
 
             promptLan = await dm(
@@ -1129,142 +1154,79 @@ class Course(PluginCommand, Plugin):
                 )
             )
 
-            user_response = await confirm_input(
-                cleandoc(
-                    """
-                                                         Now we will add a Channelgroup for your Course.
-                                                         We can do this by using an already existing Channelgroup, creating a new Channelgroup with already existing Channels or creating a completely new empty Channelgroup.
-                                                         In every case, you can update the Channelgroup later.
-
-                                                         Do you want to use an existing Channelgroup for your course?
-                                                         """
+            chgs: list[str] = [
+                str(cg_id) for cg_id in session.query(ChannelGroup.ChannelGroupId).all()
+            ]
+            closest = difflib.get_close_matches(courseName, chgs)
+            if closest:
+                server_response = await dm(
+                    "It looks like there is already at least one Channelgroup with the name of your Course :botsceptical:. Should i delete them?"
                 )
+                user_response, _ = await or_exit(
+                    UserInput.choose(
+                        self.client,
+                        server_response["id"],
+                        ["trashcan", "floppy_disc"],
+                        timeout=60,
+                    )
+                )
+                if user_response == "trashcan":
+                    for existing_channelgroup_name in closest:
+                        Channelgroup.delete_group_h(
+                            session,
+                            session.query(ChannelGroup)
+                            .filter(
+                                ChannelGroup.ChannelGroupId.like(existing_channelgroup_name)
+                            )
+                            .one(),
+                        )
+
+            await dm(
+                "Great, so let's create a new Channelgroup by choosing an emoji for the Course :bothappy:"
             )
 
-            if user_response:
-                # use existing channelgroup
-                while True:
-                    sg_name = await short_text_input(
-                        "Please provide the name of the Channelgroup."
-                    )
-                    if sg_name is None:
-                        continue
+            while True:
 
-                    sg = (
-                        session.query(ChannelGroup)
-                        .filter(ChannelGroup.ChannelGroupId == sg_name)
-                        .one_or_none()
-                    )
-                    if sg is None:
-                        sgs: list[str] = [
-                            str(id)
-                            for id in session.query(ChannelGroup.ChannelGroupId).all()
-                        ]
-                        closest = difflib.get_close_matches(sg_name, sgs, n=1)
+                sg_emoji = await short_text_input(
+                    "What is the emoji representing the Course?"
+                )
 
-                        if closest:
-                            await dm(
-                                f"A Channelgroup with the name `{sg_name}` does not exist. Did you mean `{closest[0]}`?"
-                            )
-                        else:
-                            await dm(
-                                f"A Channelgroup with the name `{sg_name}` does not exist."
-                            )
+                if sg_emoji is None:
+                    continue
 
-                        continue
+                emote = Regex.get_emoji_name(sg_emoji)
+                if emote is None:
+                    await dm("Please provide a valid emoji.")
+                    continue
 
-                    courseChannels = sg
+                sg = (
+                    session.query(ChannelGroup)
+                    .filter(ChannelGroup.ChannelGroupEmote == emote)
+                    .one_or_none()
+                )
+                if sg is None:
+                    courseEmoji = emote
                     break
-            else:
+
                 await dm(
-                    "Great, so let's create a new Channelgroup by choosing an emoji for the Course :bothappy:"
+                    f"A Course with the emote :{emote}: already exists. Please choose another emoji."
                 )
 
-                while True:
-
-                    sg_emoji = await short_text_input(
-                        "What is the emoji representing the Course?"
-                    )
-
-                    if sg_emoji is None:
-                        continue
-
-                    emote = Regex.get_emoji_name(sg_emoji)
-                    if emote is None:
-                        await dm("Please provide a valid emoji.")
-                        continue
-
-                    sg = (
-                        session.query(ChannelGroup)
-                        .filter(ChannelGroup.ChannelGroupEmote == emote)
-                        .one_or_none()
-                    )
-                    if sg is None:
-                        courseEmoji = emote
-                        break
-
-                    await dm(
-                        f"A Course with the emote :{emote}: already exists. Please choose another emoji."
-                    )
-
-                sg_emoji_conf = await confirm_input(
-                    f"Do you want to create the Channelgroup {courseEmoji} from a list of Channel Names?"
-                )
-                if sg_emoji_conf:
-                    # enter list of names
-                    while True:
-
-                        sg_names = await short_text_input(
-                            "Please enter a list of Channels in the format 'ChannelName1,ChannelName2, ..., ChannelNameN'"
-                        )
-                        if sg_names is None:
-                            continue
-
-                        # parse Channel Names
-                        channelgroup_name = "channels_" + courseName
-                        courseChannels = Channelgroup.create_and_get_group(
-                            session, channelgroup_name, courseEmoji
-                        )
-                        cleanup_opterations.append(
-                            lambda s=courseChannels: Channelgroup.delete_group_h(
-                                session, s
-                            )
-                        )
-
-                        if courseChannels is None:
-                            raise DMError(
-                                "Could not create Channelgroup for Course."
-                            )
-
-                        channels: list[ZulipChannel] = []
-                        ch_id : int | None
-                        ch : ZulipChannel
-                        for name in sg_names.split(","):
-                            ch_id = await self.client.get_channel_id_by_name(name)
-                            if ch_id is not None:
-                                ch = ZulipChannel(name)
-                                await ch
-                                channels.append(ch)
-
-                        Channelgroup.add_zulip_channels(session, channels, courseChannels)
-                        break
-
-                else:
-                    # create empty Channelgroup
-                    channelgroup_name = "channels_" + courseName
-                    courseChannels = Channelgroup.create_and_get_group(
-                        session, channelgroup_name, courseEmoji
-                    )
-                    cleanup_opterations.append(
-                        lambda s=courseChannels: Channelgroup.delete_group_h(session, s)
-                    )
+            # create empty Channelgroup
+            channelgroup_name = "channels_" + courseName
+            courseChannels = Channelgroup.create_and_get_group(
+                session, channelgroup_name, courseEmoji
+            )
+            cleanup_opterations.append(
+                lambda s=courseChannels: Channelgroup.delete_group_h(session, s)
+            )
 
             # add default Channels
             resultG = await confirm_input(
-                "Now you can add the default Channels to your course.\nDo you want to add a general Channel to your Course?"
+                "Now you can add the default Channels to your course. Every course will have an Announcement-Channel, a Feedback-Channel and a channel for tutors either way. However, are might be a view other channels that could be benefitial for your course.\nDo you want to add a general Channel to your Course?"
             )
             resultO = await confirm_input(
-                "Do you want to add a Organization-Channel to your Course?"
+                "Do you want to add a Organization-Channel (in addition to the Announcement-Channel) to your Course?"
             )
             resultM = await confirm_input(
                 "Do you want to add a Memes-Channel to your Course?"
@@ -1273,7 +1235,15 @@ class Course(PluginCommand, Plugin):
                 "Do you want to add a Channel for Tech-Support to your Course?"
             )
             resultF = await confirm_input(
-                "Do you want the Feedback-Channel of your Course to allow anonymous Feedback?"
+                cleandoc(
+                    """Do you want the Feedback-Channel of your Course to allow anonymous Feedback?
+                ```spoiler What is anonymous Feedback?
+                Anonymous Feedback allows students to send messages to the Feedback-Channel via the bot, so thier name is not shown in the message.
+                Students will be informed, that the message is anonymous for fellow students and the instructors, but is still visible to the bot and the administrators if the message is inappropriate or harmful.
+                This feature is intended to allow students to give feedback without the fear of being judged by their peers but prohibits the use of this feature for harmful or inappropriate messages.
+                ```
+                """
+                )
             )
 
             if courseChannels is None:
@@ -1304,73 +1274,32 @@ class Course(PluginCommand, Plugin):
                     lambda id=chan_id: self.client.delete_channel(id)
                 )
 
+            async def wizard_create_usergroup(
+                group_type: str, group_type_de: str
+            ) -> UserGroup:
+                usergroup_name: str = f"{group_type}_{courseName}"
 
-            result1t = await confirm_input(
-                cleandoc(
-                    """
-                              Now we will add a Usergroup for the Tutors of your Course.
-                              We can do this by using an already existing Usergroup, creating a new Usergroup with certain people or creating a completely new empty Usergroup.
-                              In every case, you can update the Usergroup later.
-
-                              Do you want to use an existing Usergroup for your course?
-                              """
+                ug = (
+                    session.query(UserGroup)
+                    .filter(UserGroup.GroupName == usergroup_name)
+                    .all()
                 )
-            )
+                if ug:
+                    # todo: delete existing Usergroup
+                    pass
 
-            if result1t:
-                # use existing usergroup
-                while True:
-                    result1at = await short_text_input(
-                        "Please provide the name of the Usergroup."
-                    )
-                    if result1at is None:
-                        continue
-
-                    ug: UserGroup | None = (
-                        session.query(UserGroup)
-                        .filter(UserGroup.GroupName == result1at)
-                        .one_or_none()
-                    )
-                    if ug is None:
-                        await dm(
-                            f"A Usergroup with the name `{result1at}` does not exist."
-                        )
-                        continue
-
-                    courseTutors = ug
-                    break
-            else:
-                await dm("Great, so let's create a new Usergroup for your Tutors")
-
-                while True:
-                    usergroup_name_tut: str = "tutors_" + courseName + "_1"
-                    vers = 1
-
-                    ug = (
-                        session.query(UserGroup)
-                        .filter(UserGroup.GroupName == usergroup_name_tut)
-                        .one_or_none()
-                    )
-                    if ug is None:
-                        courseTutors = Usergroup.create_and_get_group(
-                            session, usergroup_name_tut
-                        )
-                        cleanup_opterations.append(
-                            lambda: Usergroup.delete_group(session, courseTutors)
-                        )
-                        break
-
-                    vers += 1
-                    usergroup_name_tut = usergroup_name_tut[:-1] + str(vers)
-
-                result2bt = await confirm_input(
-                    "Do you want to create the Usergroup from a list of Tutor-Names?"
+                ugdb = Usergroup.create_and_get_group(session, usergroup_name)
+                cleanup_opterations.append(
+                    lambda ug=ugdb: Usergroup.delete_group(session, ugdb)
                 )
-                if result2bt:
+
+                if await confirm_input(
+                    f"Do you already have a list of {group_type.capitalize()} for your Course? If not, you can add them later with the command `course add_{group_type} {courseName} <{group_type.capitalize()}...>`."
+                ):
                     # enter list of names
                     while True:
                         result2ct = await short_text_input(
-                            "Please enter a list of Names in the format 'Name1,Name2, ..., NameN'"
+                            "Please enter a list of Names in the format 'Name1,Name2, ..., NameN' The names should be in the format that Zulip uses to mention users (e.g. @name)."
                         )
                         if result2ct is None:
                             continue
@@ -1381,268 +1310,113 @@ class Course(PluginCommand, Plugin):
                         for name in names:
                             real_name = Regex.get_user_name(name)
                             if real_name is None:
-                                await dm(
-                                    f"Could not find a user with the name {name}."
-                                )
+                                await dm(f"Could not find a user with the name {name}.")
                                 continue
                             try:
                                 user = ZulipUser(cast(str, real_name))
                                 await user
-                                Usergroup.add_user_to_group(
-                                    session, user, courseTutors
-                                )
+                                Usergroup.add_user_to_group(session, user, ugdb)
                             except Exception:
-                                await dm(
-                                    f"Could not add a user with the name {name}."
-                                )
+                                await dm(f"Could not add a user with the name {name}.")
                                 continue
                         break
 
-            await dm(
-                "Now we will add a Usergroup for the Instructors of your Course. \nSame procedure as for the Tutors."
-            )
+                Usergroup.add_user_to_group(session, sender, ugdb)
 
-            result1i = await confirm_input(
-                "Do you want to use an existing Usergroup for your Course?"
-            )
-            if result1i:
-                # use existing usergroup
-                while True:
-                    result1ai = await short_text_input(
-                        "Please provide the name of the Usergroup."
+                # get a corresponding Channel
+                if courseLan == "en":
+                    channel_name = f"{courseName} - {group_type.capitalize()}"
+                    channel_desc = (
+                        f"Internal Channel for {courseName}-{group_type.capitalize()}"
                     )
-                    if result1ai is None:
-                        continue
-
-                    ug = (
-                        session.query(UserGroup)
-                        .filter(UserGroup.GroupName == result1ai)
-                        .one_or_none()
+                if courseLan == "de":
+                    channel_name = f"{courseName} - {group_type_de.capitalize()}"
+                    channel_desc = (
+                        f"Interner Kanal für {courseName}-{group_type_de.capitalize()}"
                     )
-                    if ug is None:
-                        await dm(
-                            f"A Usergroup with the name `{result1i}` does not exist."
-                        )
-                        continue
 
-                    courseInstructors = ug
-                    break
-            else:
-
-                await dm("Great, so let's create a new Usergroup for your Instructors.")
-
-                while True:
-                    usergroup_name_ins: str = "instructors_" + courseName + "_1"
-                    vers = 1
-
-                    ug = (
-                        session.query(UserGroup)
-                        .filter(UserGroup.GroupName == usergroup_name_ins)
-                        .one_or_none()
+                chan_ex = await self.client.get_channel_id_by_name(channel_name)
+                while chan_ex is not None:
+                    new_name = await short_text_input(
+                        f"A Channel with the name {channel_name} already exists. I will rename the Channel for you. Please choose the name for the *old* Channel. What should the *old* Channel be renamed to?"
                     )
-                    if ug is None:
-                        courseInstructors = Usergroup.create_and_get_group(
-                            session, usergroup_name_ins
+                    if new_name is not None:
+                        old_new_name = await self.client.get_channel_id_by_name(
+                            new_name
                         )
-                        cleanup_opterations.append(
-                            lambda: Usergroup.delete_group(session, courseInstructors)
-                        )
-                        break
-
-                    vers += 1
-                    usergroup_name_ins = usergroup_name_ins[:-1] + str(vers)
-
-                result2bi = await confirm_input(
-                    "Do you want to create the Usergroup from a list of Instructor-Names?"
-                )
-                if result2bi:
-                    # enter list of names
-                    while True:
-                        result2ci = await short_text_input(
-                            "Please enter a list of Names in the format 'Name1,Name2, ..., NameN'"
-                        )
-                        if result2ci is None:
-                            continue
-
-                        # parse Channel Names
-                        names = result2ci.split(",")
-
-                        for name in names:
-                            real_name = str(Regex.get_user_name(name))
-                            if real_name is None:
-                                await dm(
-                                    f"Could not find a user with the name {name}."
-                                )
-                                continue
-                            try:
-                                user = ZulipUser(real_name)
-                                await user
-                                Usergroup.add_user_to_group(
-                                    session, user, courseTutors
-                                )
-                            except Exception:
-                                await dm(
-                                    f"Could not add a user with the name {name}."
-                                )
-                                continue
-                        break
-
-            Usergroup.add_user_to_group(session, sender, courseInstructors)
-
-            # get a corresponding Channel for Tutors
-            tutors_channel_name = courseName + " - Tutors"
-            tutors_channel_desc = [f"Internal Channel for {courseName}-Tutors"]
-            if courseLan == "de":
-                tutors_channel_name = courseName + " - Tutoren"
-                tutors_channel_desc = [f"Interner Kanal für {courseName}-Tutoren"]
-
-            tut_ex = await self.client.get_channel_id_by_name(tutors_channel_name)
-
-            if tut_ex is not None:
-                resultts = await confirm_input(
-                    "Channel for Tutors of this Course already exists. Dou you want to replace it with a new Channel for your Course?"
-                )
-                if not resultts:
-                    while True:
-                        res = await short_text_input(
-                            "Please choose another name for the Tutor-Channel."
-                        )
-                        if res is None:
-                            await dm("Please provide a name for the Channel.")
-                        else:
-                            tut_ex = await self.client.get_channel_id_by_name(res)
-                            if tut_ex is None:
-                                tutors_channel_name = res
-                                break
-
+                        if old_new_name is not None:
                             await dm(
-                                f"A Channel with the name {res} already exists."
+                                f"A Channel with the name {new_name} already exists."
                             )
+                            continue
+                        await self.client.update_channel(
+                            {
+                                "stream_id": chan_ex,
+                                "name": new_name,
+                            }
+                        )
 
-                else:
-                    await self.client.delete_channel(tut_ex)
+                    chan_ex = await self.client.get_channel_id_by_name(channel_name)
 
-            tutor_ids = Usergroup.get_user_ids_for_group(session, courseTutors)
-            tutor_ids.append(sender.id)
-            tutor_ids.append(self.client.id)
+                    user_ids = Usergroup.get_user_ids_for_group(session, ugdb)
 
-            exit_and_inform_on_error(
-                await self.client.add_subscriptions(
-                    channels=[
-                        {
-                            "name": tutors_channel_name,
-                            "description": " ".join(tutors_channel_desc),
-                        }
-                    ],
-                    principals=tutor_ids,
-                    invite_only=True,
-                    history_public_to_subscribers=True,
-                )
-            )
+                    exit_and_inform_on_error(
+                        await self.client.add_subscriptions(
+                            channels=[
+                                {
+                                    "name": channel_name,
+                                    "description": channel_desc,
+                                }
+                            ],
+                            principals=user_ids,
+                            invite_only=True,
+                            history_public_to_subscribers=True,
+                        )
+                    )
 
-            courseTutorChannel = ZulipChannel(f"#**{tutors_channel_name}**")
-            await courseTutorChannel
+                    chan = ZulipChannel(f"#**{channel_name}**")
+                    await chan
+                    cleanup_opterations.append(
+                        lambda chan=chan: self.client.delete_channel(chan.id)
+                    )
 
-            cleanup_opterations.append(
-                lambda id=courseTutorChannel.id: self.client.delete_channel(id)
-            )
+                return ugdb
 
-            # get a corresponding Channel for Instructors or None
+            courseTutors = await wizard_create_usergroup("tutors", "tutoren")
+
             resultis = await confirm_input(
                 "Do you want a Instructor-Channel for your Course?"
             )
             if resultis is not None:
-
-                instructor_channel_name = courseName + " - Instructors"
-                instructor_channel_desc = [
-                    f"Internal Channel for Instructors of {courseName}"
-                ]
-                if courseLan == "de":
-                    instructor_channel_name = courseName + " - Instructors"
-                    instructor_channel_desc = [
-                        f"Interner Kanal für {courseName}-Instructors"
-                    ]
-
-                ins_ex = await self.client.get_channel_id_by_name(
-                    instructor_channel_name
+                courseInstructors = await wizard_create_usergroup(
+                    "instructors", "übungsleiter"
                 )
 
-                if ins_ex is not None:
-                    result1 = await confirm_input(
-                        "Channel for Instructor of this Course already exists. Dou you want to replace it with a new Channel for your Course?"
-                    )
-                    if not result1:
-                        while True:
-                            res = await short_text_input(
-                                "Please choose another name for the Instructor-Channel."
-                            )
-                            if res is None:
-                                await dm("Please provide a name for the Channel.")
+            courseFeedbackChannel: ZulipChannel | None = None
+            if resultF:
+                courseFeedbackChannel = ZulipChannel(f"#**{courseName} - Feedback**")
+                await courseFeedbackChannel
 
-                            else:
-                                ins_ex = await self.client.get_channel_id_by_name(res)
-                                if ins_ex is None:
-                                    instructor_channel_name = res
-                                    break
+            # find any channels that contain the course name but are not part of the course, so they can be deleted
+            chans = await self.client.get_public_channel_names()
 
-                                await dm(
-                                    f"A Channel with the name {res} already exists."
-                                )
 
-                    else:
-                        if ins_ex is not None:
-                            await self.client.delete_channel(ins_ex)
+            # create and add a Course to the DB
+            course: CourseDB = CourseDB(
+                CourseName=courseName,
+                CourseLanguage=courseLan,
+                Channels=courseChannels.ChannelGroupId,
+                TutorsUserGroup=courseTutors.GroupId,
+                InstructorsUserGroup=(
+                    courseInstructors.GroupId if courseInstructors else None
+                ),
+                TutorChannel=courseTutorChannel,
+                InstructorChannel=courseInstructorChannel,
+                FeedbackChannel=courseFeedbackChannel,
+            )
 
-                instructor_ids = Usergroup.get_user_ids_for_group(
-                    session, courseInstructors
-                )
-                instructor_ids.append(sender.id)
-                instructor_ids.append(self.client.id)
-
-                exit_and_inform_on_error(
-                    await self.client.add_subscriptions(
-                        channels=[
-                            {
-                                "name": instructor_channel_name,
-                                "description": " ".join(instructor_channel_desc),
-                            }
-                        ],
-                        principals=instructor_ids,
-                        invite_only=True,
-                        history_public_to_subscribers=True,
-                    )
-                )
-
-                courseInstructorChannel = ZulipChannel(
-                    f"#**{instructor_channel_name}**"
-                )
-                await courseInstructorChannel
-
-                cleanup_opterations.append(
-                    lambda ID=courseInstructorChannel.id: self.client.delete_channel(ID)
-                )
-
-                courseFeedbackChannel: ZulipChannel | None = None
-                if resultF:
-                    courseFeedbackChannel = ZulipChannel(
-                        f"#**{courseName} - Feedback**"
-                    )
-                    await courseFeedbackChannel
-
-                # create and add a Course to the DB
-                course: CourseDB = CourseDB(
-                    CourseName=courseName,
-                    CourseLanguage=courseLan,
-                    Channels=courseChannels.ChannelGroupId,
-                    TutorsUserGroup=courseTutors.GroupId,
-                    InstructorsUserGroup=courseInstructors.GroupId,
-                    TutorChannel=courseTutorChannel,
-                    InstructorChannel=courseInstructorChannel,
-                    FeedbackChannel=courseFeedbackChannel,
-                )
-
-                session.add(course)
-                session.commit()
+            session.add(course)
+            session.commit()
 
         except Exception as e:
             logging.exception(e)
@@ -1671,7 +1445,6 @@ class Course(PluginCommand, Plugin):
             ) from e
 
         yield DMResponse(f"Course `{courseName}` created :bothappy:")
-
 
     @command
     @privilege(Privilege.ADMIN)
@@ -1757,7 +1530,9 @@ class Course(PluginCommand, Plugin):
                 t=opts.t,
             )
 
-        yield DMResponse(f"Standard Channels added to Course `{course.CourseName}` :bothappy:")
+        yield DMResponse(
+            f"Standard Channels added to Course `{course.CourseName}` :bothappy:"
+        )
 
     @command
     @privilege(Privilege.ADMIN)
@@ -1782,35 +1557,33 @@ class Course(PluginCommand, Plugin):
         """
         Take a channel with the given name (or create it if it does not exist yet) and then add it to the Course's Channelgroup.
         """
-        course : CourseDB = args.course
-        chan_group : ChannelGroup = Course.get_channelgroup(course, session)
-        channel_name : str = args.channel
+        course: CourseDB = args.course
+        chan_group: ChannelGroup = Course.get_channelgroup(course, session)
+        channel_name: str = args.channel
 
-        ex: int | None = await  self.client.get_channel_id_by_name(
-                    channel_name
-        )
+        ex: int | None = await self.client.get_channel_id_by_name(channel_name)
 
         if ex is None:
             result_channel = await self.client.add_subscriptions(
-                    channels=[
-                        {
-                            "name": channel_name,
-                            "description": "",
-                        }
-                    ],
-                    principals=[sender.id, self.client.id],
+                channels=[
+                    {
+                        "name": channel_name,
+                        "description": "",
+                    }
+                ],
+                principals=[sender.id, self.client.id],
             )
 
             if result_channel["result"] != "success":
                 raise DMError(result_channel["msg"])
 
-
-        channel : ZulipChannel = ZulipChannel(f"#**{channel_name}**")
+        channel: ZulipChannel = ZulipChannel(f"#**{channel_name}**")
         await channel
 
         Channelgroup.add_zulip_channels(session, [channel], chan_group)
-        yield DMResponse(f"Added Channel {channel.mention} to the Course `{course.CourseName}` :bothappy:")
-
+        yield DMResponse(
+            f"Added Channel {channel.mention} to the Course `{course.CourseName}` :bothappy:"
+        )
 
     @command
     @privilege(Privilege.ADMIN)
@@ -1836,14 +1609,14 @@ class Course(PluginCommand, Plugin):
         """
         Add a list of Zulip-Users to the Course's Tutors.
         """
-        course : CourseDB = args.course
-        u_group : ChannelGroup = Course.get_tutorgroup(course, session)
-        tutors : list[ZulipUser] = await Usergroup.get_users_for_group(session, u_group)
-        t_chan : ZulipChannel = cast(ZulipChannel,course.TutorChannel)
+        course: CourseDB = args.course
+        u_group: ChannelGroup = Course.get_tutorgroup(course, session)
+        tutors: list[ZulipUser] = await Usergroup.get_users_for_group(session, u_group)
+        t_chan: ZulipChannel = cast(ZulipChannel, course.TutorChannel)
         await t_chan
 
-        new_tutors : list[ZulipUser] = args.tutors
-        to_add : list[int] = []
+        new_tutors: list[ZulipUser] = args.tutors
+        to_add: list[int] = []
 
         for tutor in new_tutors:
             if tutor not in tutors:
@@ -1858,7 +1631,9 @@ class Course(PluginCommand, Plugin):
         if resp["result"] != "success":
             raise DMError("Could not add Tutors to the Tutor-Channel.")
 
-        yield DMResponse(f"Added {', '.join([t.mention_silent for t in new_tutors])} to the Tutors of the Course `{course.CourseName}` :bothappy:")
+        yield DMResponse(
+            f"Added {', '.join([t.mention_silent for t in new_tutors])} to the Tutors of the Course `{course.CourseName}` :bothappy:"
+        )
 
     @command
     @privilege(Privilege.ADMIN)
@@ -1884,20 +1659,20 @@ class Course(PluginCommand, Plugin):
         """
         Add a list of Zulip-Users to the Course's Instructors.
         """
-        course : CourseDB = args.course
-        u_group : ChannelGroup = Course.get_instructorgroup(course, session)
-        insts : list[ZulipUser] = await Usergroup.get_users_for_group(session, u_group)
+        course: CourseDB = args.course
+        u_group: ChannelGroup = Course.get_instructorgroup(course, session)
+        insts: list[ZulipUser] = await Usergroup.get_users_for_group(session, u_group)
 
-        new_insts : list[ZulipUser] = args.instructors
-        to_add : list[int] = []
+        new_insts: list[ZulipUser] = args.instructors
+        to_add: list[int] = []
 
         for ins in new_insts:
             if ins not in insts:
                 Usergroup.add_user_to_group(session, ins, u_group)
                 to_add.append(ins.id)
-        
+
         if course.InstructorChannel is not None:
-            ins_chan : ZulipChannel = cast(ZulipChannel, course.InstructorChannel)
+            ins_chan: ZulipChannel = cast(ZulipChannel, course.InstructorChannel)
             await ins_chan
 
             resp = await self.client.add_subscriptions(
@@ -1908,7 +1683,9 @@ class Course(PluginCommand, Plugin):
             if resp["result"] != "success":
                 raise DMError("Could not add Instructors to the Instructor-Channel")
 
-        yield DMResponse(f"Added {', '.join([i.mention_silent for i in new_insts])} to the Instructors of the Course `{course.CourseName}` :bothappy:")
+        yield DMResponse(
+            f"Added {', '.join([i.mention_silent for i in new_insts])} to the Instructors of the Course `{course.CourseName}` :bothappy:"
+        )
 
     @command
     @privilege(Privilege.ADMIN)
@@ -1981,8 +1758,16 @@ class Course(PluginCommand, Plugin):
         ty=CourseDB.CourseName,
         description="The name of the Course to delete.",
     )
-    @opt("c", long_opt="channels", description="Remove the Channels from the Course, but keep the Channelgroup.")
-    @opt("t", long_opt="tutors", description="Remove the Tutors from the Course but keep the UserGroup.")
+    @opt(
+        "c",
+        long_opt="channels",
+        description="Remove the Channels from the Course, but keep the Channelgroup.",
+    )
+    @opt(
+        "t",
+        long_opt="tutors",
+        description="Remove the Tutors from the Course but keep the UserGroup.",
+    )
     async def clear(
         self,
         _sender: ZulipUser,
@@ -2003,7 +1788,9 @@ class Course(PluginCommand, Plugin):
                 .first()
             )
             if sg is not None:
-                channels: list[ZulipChannel] = await Channelgroup.get_channels(session, sg)
+                channels: list[ZulipChannel] = await Channelgroup.get_channels(
+                    session, sg
+                )
                 await Channelgroup.remove_zulip_channels(session, channels, sg)
 
                 for s in channels:
@@ -2016,7 +1803,9 @@ class Course(PluginCommand, Plugin):
                 .first()
             )
             if tutors is not None:
-                users: list[ZulipUser] = await Usergroup.get_users_for_group(session, tutors)
+                users: list[ZulipUser] = await Usergroup.get_users_for_group(
+                    session, tutors
+                )
                 for user in users:
                     Usergroup.remove_user_from_group(session, user, tutors)
 
@@ -2104,7 +1893,7 @@ class Course(PluginCommand, Plugin):
 
                 Channelgroup.delete_group_h(session, sg)
 
-                failed : list[str] = []
+                failed: list[str] = []
                 for s in strm:
                     resp = await self.client.delete_channel(s.id)
                     if resp["result"] != "success":
@@ -2155,7 +1944,9 @@ class Course(PluginCommand, Plugin):
         Mute all the channels of a Course, for example during the time of an exam. Thus only moderators can send messages to the Channels.
         """
         course: CourseDB = args.course
-        channels: list[ZulipChannel] = await Course.get_channels(course=course, session=session)
+        channels: list[ZulipChannel] = await Course.get_channels(
+            course=course, session=session
+        )
         failed_channels: list[str] = []
 
         for channel in channels:
@@ -2169,9 +1960,13 @@ class Course(PluginCommand, Plugin):
                 failed_channels.append(channel.name)
 
         if failed_channels:
-            raise DMError(f"Failed to mute the following Channels: {', '.join(failed_channels)}")
+            raise DMError(
+                f"Failed to mute the following Channels: {', '.join(failed_channels)}"
+            )
 
-        yield DMResponse(f"The Channels of your Course `{course.CourseName}` are now muted :bothappy:")
+        yield DMResponse(
+            f"The Channels of your Course `{course.CourseName}` are now muted :bothappy:"
+        )
 
     @command
     @privilege(Privilege.ADMIN)
@@ -2192,7 +1987,9 @@ class Course(PluginCommand, Plugin):
         Unmute all the Channels of a Course, for example during the time of an exam. Thus all users can send messages to the Channels.
         """
         course: CourseDB = args.course
-        channels: list[ZulipChannel] = await Course.get_channels(course=course, session=session)
+        channels: list[ZulipChannel] = await Course.get_channels(
+            course=course, session=session
+        )
         failed_channels: list[str] = []
 
         for channel in channels:
@@ -2206,9 +2003,13 @@ class Course(PluginCommand, Plugin):
                 failed_channels.append(channel.name)
 
         if failed_channels:
-            raise DMError(f"Failed to unmute the following Channels: {', '.join(failed_channels)}")
+            raise DMError(
+                f"Failed to unmute the following Channels: {', '.join(failed_channels)}"
+            )
 
-        yield DMResponse(f"The Channels of your Course `{course.CourseName}` are now unmuted :bothappy:")
+        yield DMResponse(
+            f"The Channels of your Course `{course.CourseName}` are now unmuted :bothappy:"
+        )
 
     # ========================================================================================================================
     #       CLASS METHODS
@@ -2424,9 +2225,7 @@ class Course(PluginCommand, Plugin):
         return res
 
     @staticmethod
-    async def get_channel_names(
-        session: Session, course: CourseDB
-    ) -> list[str]:
+    async def get_channel_names(session: Session, course: CourseDB) -> list[str]:
         """
         Get the Channel Names of a Course as list of strings.
         """
@@ -2546,14 +2345,16 @@ class Course(PluginCommand, Plugin):
         """
         Set the Instructor-Channel of a given Course.
         """
-        oldIS : ZulipChannel | None = None
+        oldIS: ZulipChannel | None = None
 
         if course.InstructorChannel is not None:
             oldIS = cast(ZulipChannel, course.InstructorChannel)
             await oldIS
 
             if oldIS == channel:
-                raise DMError("The given Channel is already set as Instructor-Channel for this course.")
+                raise DMError(
+                    "The given Channel is already set as Instructor-Channel for this course."
+                )
 
         stmt = (
             update(CourseDB)
@@ -2570,26 +2371,28 @@ class Course(PluginCommand, Plugin):
         if oldIS is not None:
             await client.delete_channel(oldIS.id)
 
-
     @staticmethod
     async def _build_info_message(
-        course: CourseDB, session: Session,
+        course: CourseDB,
+        session: Session,
     ) -> str:
         """
         Build a string with all the information about a course.
         """
         chan_group: ChannelGroup = Course.get_channelgroup(course, session)
         chan_group_name: str = str(chan_group.ChannelGroupId)
-        channels: list[ZulipChannel] =  await Course.get_channels(session=session, course=course)
+        channels: list[ZulipChannel] = await Course.get_channels(
+            session=session, course=course
+        )
         channel_names: list[str] = [c.mention for c in channels]
         emoji: str = Course.get_emoji(course, session)
 
-        tutors_ug : UserGroup = Course.get_tutorgroup(course, session)
+        tutors_ug: UserGroup = Course.get_tutorgroup(course, session)
         tutors: list[ZulipUser] = await Course.get_tutors(course, session)
         tutor_channel: ZulipChannel = cast(ZulipChannel, course.TutorChannel)
         await tutor_channel
 
-        instructors_ug : UserGroup = Course.get_instructorgroup(course, session)
+        instructors_ug: UserGroup = Course.get_instructorgroup(course, session)
         instructors: list[ZulipUser] = await Course.get_instructors(course, session)
 
         instructor_channel_name = "-"
@@ -2604,7 +2407,7 @@ class Course(PluginCommand, Plugin):
             await feedback_chan
             feedback_channel_name = feedback_chan.mention
 
-        lan : str = ":flag_germany:"
+        lan: str = ":flag_germany:"
         if course.CourseLanguage == "en":
             lan = ":flag_united_kingdom:"
 
