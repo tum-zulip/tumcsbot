@@ -652,18 +652,13 @@ class Course(PluginCommand, Plugin):
                 
                 channelgroup_emoji = respem1
 
-                if (
-                    session.query(ChannelGroup)
-                    .filter(ChannelGroup.ChannelGroupEmote == channelgroup_emoji)
-                    .first()
-                    is not None
-                ): # emoji already in use
-                    existing_group : ChannelGroup = (
+                existing_group : ChannelGroup | None = (
                         session.query(ChannelGroup)
                         .filter(ChannelGroup.ChannelGroupEmote == channelgroup_emoji)
                         .first()
-                    )
-                    
+                )
+
+                if existing_group is not None: # emoji already in use 
                     result2 = await self.client.send_response(
                         Response.build_message(
                             message,
@@ -958,6 +953,8 @@ class Course(PluginCommand, Plugin):
                 cleanup_opterations.append(
                     lambda: self.client.delete_channel(feedback_channel.id)
                 )
+            
+            channels = cast(ChannelGroup, channels)
 
             # create and add a Course to the DB
             course: CourseDB = CourseDB(
@@ -2302,11 +2299,11 @@ class Course(PluginCommand, Plugin):
             channels.append({"name": full_name, "description": desc})
 
         try:
-            result: dict[str, Any] = await client.add_subscriptions(
+            result2: dict[str, Any] = await client.add_subscriptions(
                 channels=channels, principals=principals
             )
 
-            if result["result"] != "success":
+            if result2["result"] != "success":
                 raise DMError("Could not add standard channels to the course.")
 
             to_add = [ZulipChannel(f"#**{s['name']}**") for s in channels]
@@ -2553,13 +2550,11 @@ class Course(PluginCommand, Plugin):
         oldIS : ZulipChannel | None = None
 
         if course.InstructorChannel is not None:
-            oldIS: ZulipChannel = cast(ZulipChannel, course.InstructorChannel)
+            oldIS = cast(ZulipChannel, course.InstructorChannel)
             await oldIS
 
-        if oldIS == channel:
-            raise DMError(
-                "The given Channel is already set as Instructor-Channel for this course."
-            )
+            if oldIS == channel:
+                raise DMError("The given Channel is already set as Instructor-Channel for this course.")
 
         stmt = (
             update(CourseDB)
@@ -2579,7 +2574,7 @@ class Course(PluginCommand, Plugin):
 
     @staticmethod
     async def _build_info_message(
-        course: CourseDB, session, 
+        course: CourseDB, session: Session, 
     ) -> str:
         """
         Build a string with all the information about a course.
@@ -2610,14 +2605,15 @@ class Course(PluginCommand, Plugin):
             await feedback_chan
             feedback_channel_name = feedback_chan.mention
 
-
-
+        lan : str = ":flag_germany:"
+        if course.CourseLanguage == "en":
+            lan = ":flag_united_kingdom:"
 
         return cleandoc(
             f"""
             # **Course Information**
             **Name**: {str(course.CourseName)}
-            **Language**: {str(course.CourseLanguage)}
+            **Language**: {lan}
 
             ## **Channels**:
 

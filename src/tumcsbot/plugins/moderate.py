@@ -421,7 +421,7 @@ class Moderate(PluginCommand, Plugin):
                 )
             )
             session.commit()
-            members = Usergroup.get_users_for_group(session, group)
+            members = await Usergroup.get_users_for_group(session, group)
             for member in members:
                 yield DMMessage(
                     member,
