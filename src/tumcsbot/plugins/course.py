@@ -1275,8 +1275,8 @@ class Course(PluginCommand, Plugin):
                 )
 
             async def wizard_create_usergroup(
-                group_type: str, group_type_de: str
-            ) -> UserGroup:
+                group_type: str, group_type_de: str, create_channel: bool
+            ) -> tuple[UserGroup, ZulipChannel | None]:
                 usergroup_name: str = f"{group_type}_{courseName}"
 
                 ug = (
@@ -1290,7 +1290,7 @@ class Course(PluginCommand, Plugin):
 
                 ugdb = Usergroup.create_and_get_group(session, usergroup_name)
                 cleanup_opterations.append(
-                    lambda ug=ugdb: Usergroup.delete_group(session, ugdb)
+                    lambda ug=ugdb: Usergroup.delete_group(session, ug)
                 )
 
                 if await confirm_input(
@@ -1322,6 +1322,9 @@ class Course(PluginCommand, Plugin):
                         break
 
                 Usergroup.add_user_to_group(session, sender, ugdb)
+
+                if not create_channel:
+                    return ugdb, None
 
                 # get a corresponding Channel
                 if courseLan == "en":
@@ -1380,17 +1383,15 @@ class Course(PluginCommand, Plugin):
                         lambda chan=chan: self.client.delete_channel(chan.id)
                     )
 
-                return ugdb
+                return ugdb, chan
 
-            courseTutors = await wizard_create_usergroup("tutors", "tutoren")
+            courseTutors, courseTutorChannel = await wizard_create_usergroup("tutors", "tutoren", True)
 
             resultis = await confirm_input(
                 "Do you want a Instructor-Channel for your Course?"
             )
-            if resultis is not None:
-                courseInstructors = await wizard_create_usergroup(
-                    "instructors", "übungsleiter"
-                )
+
+            courseInstructors, courseInstructorChannel = await wizard_create_usergroup("instructors", "übungsleiter", resultis)
 
             courseFeedbackChannel: ZulipChannel | None = None
             if resultF:
@@ -1407,9 +1408,7 @@ class Course(PluginCommand, Plugin):
                 CourseLanguage=courseLan,
                 Channels=courseChannels.ChannelGroupId,
                 TutorsUserGroup=courseTutors.GroupId,
-                InstructorsUserGroup=(
-                    courseInstructors.GroupId if courseInstructors else None
-                ),
+                InstructorsUserGroup=courseInstructors.GroupId,
                 TutorChannel=courseTutorChannel,
                 InstructorChannel=courseInstructorChannel,
                 FeedbackChannel=courseFeedbackChannel,
