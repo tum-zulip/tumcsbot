@@ -270,7 +270,7 @@ class Course(PluginCommand, Plugin):
         try:
             # get a corresponding (empty) Channelgroup
             if not channels:
-                channelgroup_name: str = "channels_" + name
+                channelgroup_name: str = name
 
                 c_g_same_name: ChannelGroup | None = (
                     session.query(ChannelGroup)
@@ -696,7 +696,7 @@ class Course(PluginCommand, Plugin):
                         Channelgroup.delete_group_h(session, existing_group)
 
                 if channels is None:
-                    channelgroup_name: str = "channels_" + name
+                    channelgroup_name: str = name
 
                     c_g_same_name: ChannelGroup | None = (
                         session.query(ChannelGroup)
@@ -1258,7 +1258,7 @@ class Course(PluginCommand, Plugin):
                 )
 
             # create empty Channelgroup
-            channelgroup_name = "channels_" + courseName
+            channelgroup_name = courseName
             courseChannels = Channelgroup.create_and_get_group(
                 session, channelgroup_name, courseEmoji
             )

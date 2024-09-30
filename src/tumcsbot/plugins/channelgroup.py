@@ -1515,7 +1515,16 @@ class Channelgroup(PluginCommand, Plugin):
         """
         Creates the comtent of an announcement message.
         """
-        _announcement_msg_table_row_fmt: str = "%s | :%s:"
+
+        table_names: str = ""
+        table_sep: str = "---- "
+        table_emojis: str = ""
+        
+        for group in session.query(ChannelGroup).all():
+            table_names += f"| {group.ChannelGroupId} "
+            table_sep += "| ----- "
+            table_emojis += f"| :{group.ChannelGroupEmote}:"
+
         _announcement_msg: str = cleandoc(
             """
                 Hi! :bothappypad:
@@ -1527,9 +1536,9 @@ class Channelgroup(PluginCommand, Plugin):
                 you like to subscribe to. Remove your emoji to unsubscribe \
                 from this group. (1)
 
-                channel group | emoji
-                ------------ | -----
+                | channel group {}
                 {}
+                | emoji {}
 
 
                 *to be continued*
@@ -1548,13 +1557,8 @@ class Channelgroup(PluginCommand, Plugin):
                 - `group unsubscribe -k <group_id>`
                 """
         )
-        table: str = "\n".join(
-            _announcement_msg_table_row_fmt
-            % (group.ChannelGroupId, group.ChannelGroupEmote)
-            for group in session.query(ChannelGroup).all()
-        )
-        # Send own message.
-        return _announcement_msg.format(table)
+
+        return _announcement_msg.format(table_names, table_sep, table_emojis)
 
     @staticmethod
     async def unannounce_h(
