@@ -1219,7 +1219,15 @@ class Course(PluginCommand, Plugin):
                         )
 
             await dm(
-                "Great, so let's create a new Channelgroup by choosing an emoji for the Course :bothappy:"
+                cleandoc(
+                    """Great, so let's create a new Channelgroup by choosing an emoji for the Course :bothappy:
+                    ```spoiler What is a Channelgroup?
+                    A Channelgroup is a collection of Channels that belong to a Course. They enable a better organization of the Channels and an easy way to (un)subscribe to all of them.
+                    Every Channelgroup is represented by an emoji. Students can react with this emoji to special "claimed" messages to subscribe to all of the Channels in the Channelgroup instantly.
+                    Use ````help channelgroup```` to find out more.
+                    ```
+                    """
+                )
             )
 
             while True:
@@ -1275,7 +1283,7 @@ class Course(PluginCommand, Plugin):
                 cleandoc(
                     """Do you want the Feedback-Channel of your Course to allow anonymous Feedback?
                 ```spoiler What is anonymous Feedback?
-                Anonymous Feedback allows students to send messages to the Feedback-Channel via the bot, so thier name is not shown in the message.
+                Anonymous Feedback allows students to send messages to the Feedback-Channel via the bot, so their name is not shown in the message.
                 Students will be informed, that the message is anonymous for fellow students and the instructors, but is still visible to the bot and the administrators if the message is inappropriate or harmful.
                 This feature is intended to allow students to give feedback without the fear of being judged by their peers but prohibits the use of this feature for harmful or inappropriate messages.
                 ```
@@ -1322,7 +1330,7 @@ class Course(PluginCommand, Plugin):
                     .all()
                 )
                 if ug:
-                    # todo: delete existing Usergroup
+                    Usergroup.delete_group(session, ug[0])
                     pass
 
                 ugdb = Usergroup.create_and_get_group(session, usergroup_name)
@@ -1492,7 +1500,7 @@ class Course(PluginCommand, Plugin):
     @opt(
         "a",
         long_opt="all",
-        description="Add all standard steams to the Course (General, Organization, normal Feedback, Announcements, TechSupport, Memes).",
+        description="Add all standard Channels to the Course (General, Organization, normal Feedback, Announcements, TechSupport, Memes).",
     )
     @opt("g", long_opt="general", description="Add a general Channel.")
     @opt("o", long_opt="orga", description="Add a Channel for Organization.")
@@ -2100,8 +2108,8 @@ class Course(PluginCommand, Plugin):
                 fa,
                 "Feedback",
                 "Feedback",
-                f"Welcome to the anonymous Channel for Feedback to {name}",
-                f"Willkommen im anonymen Feedback Zulip Kanal von dem Kurs {name}",
+                f"Welcome to the Channel for Feedback to {name}, where you can send anonymous Feedback with the help of the TUM CS Bot.",
+                f"Willkommen im Feedback Zulip Kanal von dem Kurs {name}, in welchem du mit der Hilfe des TUM CS Bot anonymes Feedback senden kannst.",
             ),
             (
                 n,
