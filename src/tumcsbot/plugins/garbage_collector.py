@@ -7,6 +7,7 @@ import asyncio
 from inspect import cleandoc
 import logging
 import time
+from datetime import timedelta
 from typing import Any, Iterable
 
 from sqlalchemy import Column
@@ -249,7 +250,7 @@ class GarbageCollector(Plugin):
                 ]
             ),
             ", ".join([channel.mention for channel in channels]),
-            time.strftime("%D %H:%M:%S", time.gmtime(time_to_responde)),
+            format_time(time_to_responde),
             bot_owner.mention,
         )
         response = await self.client.send_response(
@@ -321,3 +322,24 @@ class GarbageCollector(Plugin):
                     logging.error("could not send message to channel %s", channel.name)
 
         await self.client.delete_message(m_id)
+
+def format_time(seconds:int) -> str:
+    days, seconds = divmod(seconds, 86400) 
+    hours, seconds = divmod(seconds, 3600)
+    minutes, seconds = divmod(seconds, 60)
+    
+    formatted_time = []
+    if days >= 7:
+        weeks = days // 7
+        formatted_time.append(f"{int(weeks)} week{'s' if weeks > 1 else ''}")
+        days %= 7
+    if days > 0:
+        formatted_time.append(f"{int(days)} day{'s' if days > 1 else ''}")
+    if hours > 0:
+        formatted_time.append(f"{int(hours)} hour{'s' if hours > 1 else ''}")
+    if minutes > 0:
+        formatted_time.append(f"{int(minutes)} minute{'s' if minutes > 1 else ''}")
+    if seconds > 0 or len(formatted_time) == 0:
+        formatted_time.append(f"{int(seconds)} second{'s' if seconds > 1 else ''}")
+
+    return ", ".join(formatted_time)
