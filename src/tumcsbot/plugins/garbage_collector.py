@@ -7,7 +7,6 @@ import asyncio
 from inspect import cleandoc
 import logging
 import time
-from datetime import timedelta
 from typing import Any, Iterable
 
 from sqlalchemy import Column
@@ -324,10 +323,10 @@ class GarbageCollector(Plugin):
         await self.client.delete_message(m_id)
 
 def format_time(seconds:int) -> str:
-    days, seconds = divmod(seconds, 86400) 
+    days, seconds = divmod(seconds, 86400)
     hours, seconds = divmod(seconds, 3600)
     minutes, seconds = divmod(seconds, 60)
-    
+
     formatted_time = []
     if days >= 7:
         weeks = days // 7
