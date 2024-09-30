@@ -1223,8 +1223,8 @@ class Course(PluginCommand, Plugin):
                     """Great, so let's create a new Channelgroup by choosing an emoji for the Course :bothappy:
                     ```spoiler What is a Channelgroup?
                     A Channelgroup is a collection of Channels that belong to a Course. They enable a better organization of the Channels and an easy way to (un)subscribe to all of them.
-                    Every Channelgroup is represented by an emoji. Students can react with this emoji to special "claimed" messages to subscribe to all of the Channels in the Channelgroup instantly.
-                    Use ````help channelgroup```` to find out more.
+                    Every Channelgroup is represented by a unique emoji. Students can react with this emoji to special "claimed" messages to subscribe to all of the Channels in the Channelgroup instantly.
+                    Use `help channelgroup` to find out more.
                     ```
                     """
                 )
