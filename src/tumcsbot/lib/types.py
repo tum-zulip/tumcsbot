@@ -298,11 +298,14 @@ class ZulipChannel(
     Inferface for Zulip channels that dynamically fetches the user ID and name and can be used as a type in the database.
     """
 
-    def __init__(self, identifier: str | int | None = None) -> None:
+    def __init__(self,
+        identifier: str | int | None = None,
+        name: str | None = None,
+        ID: int | None = None) -> None:
         super().__init__()
 
-        self._id: int | None = None
-        self._name: str | None = None
+        self._id: int | None = ID
+        self._name: str | None = name
 
         if isinstance(identifier, int):
             self._id = identifier

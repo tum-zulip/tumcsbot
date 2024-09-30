@@ -66,7 +66,7 @@ class CourseDB(TableBase):  # type: ignore
         Integer, ForeignKey("UserGroups.GroupId", ondelete="CASCADE"), nullable=False
     )
 
-    TutorChannel = Column(ZulipChannel, nullable=True)  # type: ignore
+    TutorChannel = Column(ZulipChannel, nullable=False)  # type: ignore
     InstructorChannel = Column(ZulipChannel, nullable=True)  # type: ignore
     FeedbackChannel = Column(ZulipChannel, nullable=True)  # type: ignore # not Null if anonymous feedback enabled
 
@@ -1147,29 +1147,6 @@ class Course(PluginCommand, Plugin):
                         f"A Course with the name `{result}` already exists. Please choose another name."
                     )
 
-            # find any channels that contain the course name but are not part of the course, so they can be deleted
-            chans = await self.client.get_public_channel_names()
-            similar_chans = [
-                chan for chan in chans if courseName.lower() in chan.lower()
-            ]
-
-            if not confirm_input(
-                "I found the following channels that containing the course name. I am going to delete them, so please make sure that these channels are no longer needed. We will later create the neccecary channels for the course.\n"
-                + "\n".join(" - " + c for c in similar_chans)
-                + "\n\nAre you sure these channels can be deleted?"
-            ):
-                raise DMError("I cannot create the course without deleting the channels. Please contact an administrator to help you, if it is absolutely necessary to keep one of the channels.")
-            
-            for similar_chan in similar_chans:
-                chan_id = await self.client.get_channel_id_by_name(similar_chan)
-                if chan_id is None:
-                    raise DMError(f"Could not find channel {similar_chan}")
-                    
-                await self.client.delete_channel(chan_id)
-                
-                
-            
-
             promptLan = await dm(
                 "Amazing :bothappypad:\nIs your course held in English or German?"
             )
@@ -1178,6 +1155,39 @@ class Course(PluginCommand, Plugin):
                     self.client, promptLan["id"], timeout=60
                 )
             )
+
+            # find any channels that contain the course name but are not part of the course, so they can be deleted
+            response_channels = await self.client.get_channels()
+
+            def is_similar_channel(c: dict[str, Any]) -> bool:
+                name: str = c["name"].lower()
+                uel = "übungsleitung" if courseLan == "de" else "instructors"
+                tut = "tutoren" if courseLan == "de" else "tutors"
+                return (
+                    name.startswith(courseName.lower())
+                    and not name.endswith(uel)
+                    and not name.endswith(tut)
+                )
+
+            similar_chans: list[ZulipChannel] = [
+                ZulipChannel(ID=c["stream_id"], name=c["name"])
+                for c in response_channels["streams"]
+                if is_similar_channel(c)
+            ]
+
+            if similar_chans:
+
+                if not await confirm_input(
+                    "I found the following channels that containing the course name. I am going to delete them, so please make sure that these channels are no longer needed. We will later create the neccecary channels for the course.\n"
+                    + "\n".join(" - " + c.mention for c in similar_chans)
+                    + "\n\nAre you sure these channels can be deleted?"
+                ):
+                    raise DMError(
+                        "I cannot create the course without deleting the channels. Please contact an administrator to help you, if it is absolutely necessary to keep one of the channels."
+                    )
+
+                for c in similar_chans:
+                    await self.client.delete_channel(c.id)
 
             chgs: list[str] = [
                 str(cg_id) for cg_id in session.query(ChannelGroup.ChannelGroupId).all()
@@ -1388,37 +1398,41 @@ class Course(PluginCommand, Plugin):
 
                     chan_ex = await self.client.get_channel_id_by_name(channel_name)
 
-                    user_ids = Usergroup.get_user_ids_for_group(session, ugdb)
+                user_ids = Usergroup.get_user_ids_for_group(session, ugdb)
 
-                    exit_and_inform_on_error(
-                        await self.client.add_subscriptions(
-                            channels=[
-                                {
-                                    "name": channel_name,
-                                    "description": channel_desc,
-                                }
-                            ],
-                            principals=user_ids,
-                            invite_only=True,
-                            history_public_to_subscribers=True,
-                        )
+                exit_and_inform_on_error(
+                    await self.client.add_subscriptions(
+                        channels=[
+                            {
+                                "name": channel_name,
+                                "description": channel_desc,
+                            }
+                        ],
+                        principals=user_ids,
+                        invite_only=True,
+                        history_public_to_subscribers=True,
                     )
+                )
 
-                    chan = ZulipChannel(f"#**{channel_name}**")
-                    await chan
-                    cleanup_opterations.append(
-                        lambda chan=chan: self.client.delete_channel(chan.id)
-                    )
+                chan = ZulipChannel(f"#**{channel_name}**")
+                await chan
+                cleanup_opterations.append(
+                    lambda chan=chan: self.client.delete_channel(chan.id)
+                )
 
                 return ugdb, chan
 
-            courseTutors, courseTutorChannel = await wizard_create_usergroup("tutors", "tutoren", True)
+            courseTutors, courseTutorChannel = await wizard_create_usergroup(
+                "tutors", "tutoren", True
+            )
 
             resultis = await confirm_input(
                 "Do you want a Instructor-Channel for your Course?"
             )
 
-            courseInstructors, courseInstructorChannel = await wizard_create_usergroup("instructors", "übungsleiter", resultis)
+            courseInstructors, courseInstructorChannel = await wizard_create_usergroup(
+                "instructors", "übungsleiter", resultis
+            )
 
             courseFeedbackChannel: ZulipChannel | None = None
             if resultF:
