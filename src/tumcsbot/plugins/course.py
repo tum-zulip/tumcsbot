@@ -1112,7 +1112,9 @@ class Course(PluginCommand, Plugin):
                         courseName = result
                         cg = (
                             session.query(ChannelGroup)
-                            .filter(ChannelGroup.ChannelGroupId.like("%" + courseName + "%"))
+                            .filter(
+                                ChannelGroup.ChannelGroupId.like("%" + courseName + "%")
+                            )
                             .all()
                         )
                         if cg:
@@ -1145,6 +1147,29 @@ class Course(PluginCommand, Plugin):
                         f"A Course with the name `{result}` already exists. Please choose another name."
                     )
 
+            # find any channels that contain the course name but are not part of the course, so they can be deleted
+            chans = await self.client.get_public_channel_names()
+            similar_chans = [
+                chan for chan in chans if courseName.lower() in chan.lower()
+            ]
+
+            if not confirm_input(
+                "I found the following channels that containing the course name. I am going to delete them, so please make sure that these channels are no longer needed. We will later create the neccecary channels for the course.\n"
+                + "\n".join(" - " + c for c in similar_chans)
+                + "\n\nAre you sure these channels can be deleted?"
+            ):
+                raise DMError("I cannot create the course without deleting the channels. Please contact an administrator to help you, if it is absolutely necessary to keep one of the channels.")
+            
+            for similar_chan in similar_chans:
+                chan_id = await self.client.get_channel_id_by_name(similar_chan)
+                if chan_id is None:
+                    raise DMError(f"Could not find channel {similar_chan}")
+                    
+                await self.client.delete_channel(chan_id)
+                
+                
+            
+
             promptLan = await dm(
                 "Amazing :bothappypad:\nIs your course held in English or German?"
             )
@@ -1176,7 +1201,9 @@ class Course(PluginCommand, Plugin):
                             session,
                             session.query(ChannelGroup)
                             .filter(
-                                ChannelGroup.ChannelGroupId.like(existing_channelgroup_name)
+                                ChannelGroup.ChannelGroupId.like(
+                                    existing_channelgroup_name
+                                )
                             )
                             .one(),
                         )
@@ -1397,10 +1424,6 @@ class Course(PluginCommand, Plugin):
             if resultF:
                 courseFeedbackChannel = ZulipChannel(f"#**{courseName} - Feedback**")
                 await courseFeedbackChannel
-
-            # find any channels that contain the course name but are not part of the course, so they can be deleted
-            chans = await self.client.get_public_channel_names()
-
 
             # create and add a Course to the DB
             course: CourseDB = CourseDB(
