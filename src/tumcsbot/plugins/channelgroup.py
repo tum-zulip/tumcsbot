@@ -6,7 +6,7 @@
 from inspect import cleandoc
 
 from typing import Any, Iterable, AsyncGenerator, cast
-from sqlalchemy import Column, String, Integer, ForeignKey
+from sqlalchemy import Column, String, Integer, ForeignKey, Boolean
 import sqlalchemy
 from sqlalchemy.orm import relationship, Mapped
 from sqlalchemy.ext.hybrid import hybrid_property
@@ -104,6 +104,7 @@ class GroupClaimAll(TableBase):  # type: ignore
     __tablename__ = "GroupClaimsAll"
 
     MessageId = Column(Integer, primary_key=True)
+    IsAnnouncement = Column(Boolean, default=False)
 
     # Define the constraint to ensure MessageId is unique across all GroupClaims tables
     # UniqueConstraint('MessageId', name='uq_group_claims_all_message_id')
@@ -349,7 +350,7 @@ class Channelgroup(PluginCommand, Plugin):
         if not emoji_name:
             raise DMError(f"{emoji_name} is not a valid emote.")
 
-        Channelgroup.create_group(session, Id, emoji_name)
+        await Channelgroup.create_group(session, Id, emoji_name, self.client)
         yield DMResponse(f"Channelgroup `{Id}` created.")
 
     @command
@@ -372,7 +373,7 @@ class Channelgroup(PluginCommand, Plugin):
         """
         group: ChannelGroup = args.group_id
 
-        Channelgroup.delete_group_h(session, group)
+        await Channelgroup.delete_group_h(session, group, self.client)
         yield DMResponse(f"Channelgroup `{group.ChannelGroupId}` deleted")
 
     @command
@@ -1020,7 +1021,7 @@ class Channelgroup(PluginCommand, Plugin):
     # ========================================================================================================================
 
     @staticmethod
-    def create_group(session: Session, ID: str, emote: str) -> None:
+    async def create_group(session: Session, ID: str, emote: str, client: AsyncClient) -> None:
         """
         Create a new ChannelGroup.
 
@@ -1054,8 +1055,10 @@ class Channelgroup(PluginCommand, Plugin):
             session.rollback()
             raise DMError(f"Could not create Channelgroup `{ID}`.") from e
 
+        await Channelgroup.update_announcement_messages(session, client)
+
     @staticmethod
-    def create_and_get_group(session: Session, ID: str, emote: str) -> ChannelGroup:
+    async def create_and_get_group(session: Session, ID: str, emote: str, client: AsyncClient) -> ChannelGroup:
         """
         Create a new ChannelGroup.
 
@@ -1089,6 +1092,7 @@ class Channelgroup(PluginCommand, Plugin):
             session.rollback()
             raise DMError(f"Could not create Channelgroup `{ID}`.") from e
 
+        await Channelgroup.update_announcement_messages(session, client)
         return group
 
     @staticmethod
@@ -1119,7 +1123,7 @@ class Channelgroup(PluginCommand, Plugin):
         return group
 
     @staticmethod
-    def delete_group_h(session: Session, group: ChannelGroup) -> None:
+    async def delete_group_h(session: Session, group: ChannelGroup, client: AsyncClient) -> None:
         """
         Delete a ChannelGroup.
 
@@ -1145,6 +1149,8 @@ class Channelgroup(PluginCommand, Plugin):
             raise DMError(
                 f"Could not delete Channelgroup `{group.ChannelGroupId}`."
             ) from e
+
+        await Channelgroup.update_announcement_messages(session, client)
 
     @staticmethod
     async def remove_zulip_channels(
@@ -1367,7 +1373,7 @@ class Channelgroup(PluginCommand, Plugin):
             ):
                 raise DMError("Message already claimed by all Channelgroups.")
             try:
-                session.add(GroupClaimAll(MessageId=message_id))
+                session.add(GroupClaimAll(MessageId=message_id, IsAnnouncement=False))
                 session.commit()
             except sqlalchemy.exc.IntegrityError as e:
                 session.rollback()
@@ -1492,7 +1498,7 @@ class Channelgroup(PluginCommand, Plugin):
         # Insert the id of the bots message into the database.
         Id = botMessage["id"]
         try:
-            session.add(GroupClaimAll(MessageId=Id))
+            session.add(GroupClaimAll(MessageId=Id, IsAnnouncement=True))
             session.commit()
         except sqlalchemy.exc.IntegrityError as e:
             session.rollback()
@@ -1519,7 +1525,7 @@ class Channelgroup(PluginCommand, Plugin):
         table_names: str = ""
         table_sep: str = "---- "
         table_emojis: str = ""
-        
+
         for group in session.query(ChannelGroup).all():
             table_names += f"| {group.ChannelGroupId} "
             table_sep += "| ----- "
@@ -1836,3 +1842,23 @@ class Channelgroup(PluginCommand, Plugin):
                 result.append(s)
 
         return result
+
+    @staticmethod
+    async def update_announcement_messages(
+        session: Session, client: AsyncClient,
+    ) -> None:
+        """
+        Updates the content of an announcement message.
+        """
+        new_content: str = Channelgroup._build_announcement_message(session)
+
+        msg_ids: list[int] = [
+            int(claim.MessageId)
+            for claim in session.query(GroupClaimAll).all() if bool(claim.IsAnnouncement)
+        ]
+
+        for msg_id in msg_ids:
+            response = await client.edit_message(msg_id, new_content)
+
+            if response["result"] != "success":
+                raise DMError("Could not update message.")

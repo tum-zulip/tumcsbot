@@ -189,7 +189,7 @@ class Course(PluginCommand, Plugin):
         channels: ChannelGroup | None = None
 
         cleanup_opterations: list[
-            Callable[[], None] | Callable[[], Coroutine[Any, Any, dict[str, Any]]]
+            Callable[[], None] | Callable[[], Coroutine[Any, Any, dict[str, Any]]] | Callable[[], Coroutine[Any, Any, None]]
         ] = []
 
         if (
@@ -256,7 +256,7 @@ class Course(PluginCommand, Plugin):
                     .first()
                 )
                 if sg is not None:
-                    Channelgroup.delete_group_h(session, sg)
+                    await Channelgroup.delete_group_h(session, sg, self.client)
 
         resLan = await self.client.send_response(
             Response.build_message(
@@ -278,13 +278,13 @@ class Course(PluginCommand, Plugin):
                     .first()
                 )
                 if c_g_same_name is not None:
-                    Channelgroup.delete_group_h(session, c_g_same_name)
+                    await Channelgroup.delete_group_h(session, c_g_same_name, self.client)
 
-                channels = Channelgroup.create_and_get_group(
-                    session, channelgroup_name, channelgroup_emoji
+                channels = await Channelgroup.create_and_get_group(
+                    session, channelgroup_name, channelgroup_emoji, self.client
                 )
                 cleanup_opterations.append(
-                    lambda: Channelgroup.delete_group_h(session, channels)
+                    lambda: Channelgroup.delete_group_h(session, channels, self.client)
                 )
 
             # get a corresponding (empty) Usergroup
@@ -595,7 +595,7 @@ class Course(PluginCommand, Plugin):
         name: str = args.name
 
         cleanup_opterations: list[
-            Callable[[], None] | Callable[[], Coroutine[Any, Any, dict[str, Any]]]
+            Callable[[], None] | Callable[[], Coroutine[Any, Any, dict[str, Any]]] | Callable[[], Coroutine[Any, Any, None]]
         ] = []
 
         if (
@@ -693,7 +693,7 @@ class Course(PluginCommand, Plugin):
 
                         channels = existing_group
                     else:  # replace existing channelgroup
-                        Channelgroup.delete_group_h(session, existing_group)
+                        await Channelgroup.delete_group_h(session, existing_group, self.client)
 
                 if channels is None:
                     channelgroup_name: str = name
@@ -704,15 +704,15 @@ class Course(PluginCommand, Plugin):
                         .first()
                     )
                     if c_g_same_name is not None:
-                        Channelgroup.delete_group_h(session, c_g_same_name)
+                        await Channelgroup.delete_group_h(session, c_g_same_name, self.client)
 
-                    channels = Channelgroup.create_and_get_group(
-                        session, channelgroup_name, channelgroup_emoji
+                    channels = await Channelgroup.create_and_get_group(
+                        session, channelgroup_name, channelgroup_emoji, self.client
                     )
                     if channels is None:
                         raise DMError("Could not create channelgroup")
                     cleanup_opterations.append(
-                        lambda: Channelgroup.delete_group_h(session, channels)
+                        lambda: Channelgroup.delete_group_h(session, channels, self.client)
                     )
 
             # get corresponding Usergroup
@@ -1015,7 +1015,7 @@ class Course(PluginCommand, Plugin):
         courseInstructorChannel: ZulipChannel | None = None
 
         cleanup_opterations: list[
-            Callable[[], None] | Callable[[], Coroutine[Any, Any, dict[str, Any]]]
+            Callable[[], None] | Callable[[], Coroutine[Any, Any, dict[str, Any]]] | Callable[[], Coroutine[Any, Any, None]]
         ] = []
 
         async def or_exit(coro: Coroutine[None, None, T]) -> T:
@@ -1130,15 +1130,16 @@ class Course(PluginCommand, Plugin):
                                 )
                             ):
                                 for existing_channelgroup in cg:
-                                    Channelgroup.delete_group_h(
-                                        session,
-                                        session.query(ChannelGroup)
-                                        .filter(
-                                            ChannelGroup.ChannelGroupId
-                                            == existing_channelgroup.ChannelGroupId
+                                    await Channelgroup.delete_group_h(
+                                            session,
+                                            session.query(ChannelGroup)
+                                            .filter(
+                                                ChannelGroup.ChannelGroupId
+                                                == existing_channelgroup.ChannelGroupId
+                                            )
+                                            .one(),
+                                            self.client,
                                         )
-                                        .one(),
-                                    )
                             else:
                                 continue
                         break
@@ -1207,16 +1208,17 @@ class Course(PluginCommand, Plugin):
                 )
                 if user_response == "trashcan":
                     for existing_channelgroup_name in closest:
-                        Channelgroup.delete_group_h(
-                            session,
-                            session.query(ChannelGroup)
-                            .filter(
-                                ChannelGroup.ChannelGroupId.like(
-                                    existing_channelgroup_name
+                        await Channelgroup.delete_group_h(
+                                session,
+                                session.query(ChannelGroup)
+                                .filter(
+                                    ChannelGroup.ChannelGroupId.like(
+                                        existing_channelgroup_name
+                                    )
                                 )
+                                .one(),
+                                self.client
                             )
-                            .one(),
-                        )
 
             await dm(
                 cleandoc(
@@ -1259,11 +1261,11 @@ class Course(PluginCommand, Plugin):
 
             # create empty Channelgroup
             channelgroup_name = courseName
-            courseChannels = Channelgroup.create_and_get_group(
-                session, channelgroup_name, courseEmoji
+            courseChannels = await Channelgroup.create_and_get_group(
+                session, channelgroup_name, courseEmoji, self.client
             )
             cleanup_opterations.append(
-                lambda s=courseChannels: Channelgroup.delete_group_h(session, s)
+                lambda s=courseChannels: Channelgroup.delete_group_h(session, s, self.client)
             )
 
             # add default Channels
@@ -1331,7 +1333,6 @@ class Course(PluginCommand, Plugin):
                 )
                 if ug:
                     Usergroup.delete_group(session, ug[0])
-                    pass
 
                 ugdb = Usergroup.create_and_get_group(session, usergroup_name)
                 cleanup_opterations.append(
@@ -1372,11 +1373,10 @@ class Course(PluginCommand, Plugin):
                     return ugdb, None
 
                 # get a corresponding Channel
-                if courseLan == "en":
-                    channel_name = f"{courseName} - {group_type.capitalize()}"
-                    channel_desc = (
-                        f"Internal Channel for {courseName}-{group_type.capitalize()}"
-                    )
+                channel_name = f"{courseName} - {group_type.capitalize()}"
+                channel_desc = (
+                    f"Internal Channel for {courseName}-{group_type.capitalize()}"
+                )
                 if courseLan == "de":
                     channel_name = f"{courseName} - {group_type_de.capitalize()}"
                     channel_desc = (
@@ -1465,8 +1465,8 @@ class Course(PluginCommand, Plugin):
         except Exception as e:
             logging.exception(e)
             session.rollback()
-            cleanup_result: None | Coroutine[Any, Any, dict[str, Any]]
-            op: Callable[[], None] | Callable[[], Coroutine[Any, Any, dict[str, Any]]]
+            cleanup_result: None | Coroutine[Any, Any, dict[str, Any]] |  Coroutine[Any, Any, None]
+            op: Callable[[], None] | Callable[[], Coroutine[Any, Any, dict[str, Any]]] | Callable[[], Coroutine[Any, Any, None]]
             for op in cleanup_opterations:
                 # TODO: too few arguments
                 cleanup_result = op()
@@ -1935,7 +1935,7 @@ class Course(PluginCommand, Plugin):
                 strm: list[ZulipChannel] = await Channelgroup.get_channels(session, sg)
                 await Channelgroup.remove_zulip_channels(session, strm, sg)
 
-                Channelgroup.delete_group_h(session, sg)
+                await Channelgroup.delete_group_h(session, sg, self.client)
 
                 failed: list[str] = []
                 for s in strm:
