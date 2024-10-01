@@ -1,6 +1,6 @@
 from __future__ import annotations
 from abc import ABC, abstractmethod
-from typing import Any, AsyncGenerator, Callable, Coroutine, cast, Generator
+from typing import Any, AsyncGenerator, Callable, cast, Generator
 
 from dataclasses import dataclass, field
 from enum import Enum

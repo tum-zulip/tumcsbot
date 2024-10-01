@@ -62,8 +62,6 @@ class ZulipLogHandler(logging.Handler):
                 None, content=msg, to=self.channel_id, subject="Log", msg_type="channel"
             ).response
         )
-        if response["result"] != "success":
-            return
 
 
 class LogChannel(PluginCommand, Plugin):
@@ -150,6 +148,6 @@ class LogChannel(PluginCommand, Plugin):
 
         if response["result"] != "success":
             raise DMError("Could not add subscribers to " + args.channel + ": " + response["msg"])
-        
+
         Conf.set("logchannel", args.channel)
         yield DMResponse("Log channel set to `" + args.channel + "`. Restart the bot to apply changes.")

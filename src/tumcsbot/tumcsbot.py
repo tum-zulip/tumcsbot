@@ -257,7 +257,7 @@ class TumCSBot:
 
                 elif event.type not in [EventType.RESTART, EventType.STOP]:
                     logging.warn("unknown event type %s", event.type)
-                
+
         except asyncio.exceptions.CancelledError:
             pass
 

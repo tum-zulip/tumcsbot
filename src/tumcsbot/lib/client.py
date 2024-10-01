@@ -328,6 +328,16 @@ class AsyncClient:
             url="messages", method="GET", request=message_filters
         )
 
+    async def edit_message(self, message_id: int, new_content: str) -> dict[str, Any]:
+        return await self.call_endpoint(
+            url=f"messages/{message_id}",
+            method="PATCH",
+            request={
+                "message_id": message_id,
+                "content": new_content,
+            }
+        )
+
     async def get_public_channel_names(self, use_db: bool = True) -> list[str]:
         """Get the names of all public channels.
 
