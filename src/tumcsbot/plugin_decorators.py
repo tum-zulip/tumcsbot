@@ -7,7 +7,7 @@ import sqlalchemy
 
 from tumcsbot.lib.db import Session
 from tumcsbot.lib.response import Response
-from tumcsbot.plugin import PluginCommand
+from tumcsbot.plugin import PluginCommand, Plugin
 from tumcsbot.lib.command_parser import CommandParser
 from tumcsbot.lib.types import (
     ZulipChannelNotFound,
@@ -466,7 +466,7 @@ class command:
                 )
             return responses
 
-        async def invoke(sender: ZulipUser, session: Session, message: dict[str, Any], **kwargs: Any) -> AsyncGenerator[response_type, None]:
+        async def invoke(plugin: Plugin, sender: ZulipUser, session: Session, message: dict[str, Any], **kwargs: Any) -> AsyncGenerator[response_type, None]:
             args_ns = CommandParser.Args(
                 **{arg.name: kwargs.get(arg.name) for arg in self.meta.args}
             )
@@ -479,7 +479,7 @@ class command:
             opts_ns = CommandParser.Opts(**opts_dict)
 
             async for response in fn(
-                self, sender, session, args_ns, opts_ns, message
+                plugin, sender, session, args_ns, opts_ns, message
             ):
                 yield response
 

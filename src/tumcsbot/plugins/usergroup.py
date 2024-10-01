@@ -42,7 +42,7 @@ class UserGroup(TableBase):  # type: ignore
     __tablename__ = "UserGroups"
 
     GroupId = Column(Integer, primary_key=True, autoincrement=True)
-    GroupName = Column(String, unique=True)
+    GroupName = Column(String, unique=True, nullable=False)
 
     _members = relationship(
         "UserGroupMember", back_populates="groups", cascade="all, delete-orphan"

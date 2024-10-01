@@ -109,7 +109,12 @@ class Plugin(threading.Thread, ABC):
         if invoker is None:
             raise AttributeError(f"{_fn} has no attribute 'invoke'")
 
-        async for result in invoker(sender, session, message, **kwargs):
+        async for result in invoker(
+            self,
+            sender,
+            session,
+            message,
+            **kwargs):
             yield result
 
     async def is_responsible(self, event: Event) -> bool:

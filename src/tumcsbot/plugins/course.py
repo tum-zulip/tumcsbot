@@ -270,18 +270,17 @@ class Course(PluginCommand, Plugin):
         try:
             # get a corresponding (empty) Channelgroup
             if not channels:
-                channelgroup_name: str = name
 
                 c_g_same_name: ChannelGroup | None = (
                     session.query(ChannelGroup)
-                    .filter(ChannelGroup.ChannelGroupId == channelgroup_name)
+                    .filter(ChannelGroup.ChannelGroupId == name)
                     .first()
                 )
                 if c_g_same_name is not None:
                     await Channelgroup.delete_group_h(session, c_g_same_name, self.client)
 
                 channels = await Channelgroup.create_and_get_group(
-                    session, channelgroup_name, channelgroup_emoji, self.client
+                    session, name, channelgroup_emoji, self.client
                 )
                 cleanup_opterations.append(
                     lambda: Channelgroup.delete_group_h(session, channels, self.client)
@@ -696,18 +695,17 @@ class Course(PluginCommand, Plugin):
                         await Channelgroup.delete_group_h(session, existing_group, self.client)
 
                 if channels is None:
-                    channelgroup_name: str = name
 
                     c_g_same_name: ChannelGroup | None = (
                         session.query(ChannelGroup)
-                        .filter(ChannelGroup.ChannelGroupId == channelgroup_name)
+                        .filter(ChannelGroup.ChannelGroupId == name)
                         .first()
                     )
                     if c_g_same_name is not None:
                         await Channelgroup.delete_group_h(session, c_g_same_name, self.client)
 
                     channels = await Channelgroup.create_and_get_group(
-                        session, channelgroup_name, channelgroup_emoji, self.client
+                        session, name, channelgroup_emoji, self.client
                     )
                     if channels is None:
                         raise DMError("Could not create channelgroup")
@@ -1125,7 +1123,7 @@ class Course(PluginCommand, Plugin):
                                     Existing channel groups are:
                                     {'\n'.join([' - ' + str(c.ChannelGroupId) for c in cg])}
                                     
-                                    Should I delete them?
+                                    Should I delete them? (This is safe to to, if this channel group belongs to an old course)s
                                     """
                                 )
                             ):
@@ -1260,9 +1258,8 @@ class Course(PluginCommand, Plugin):
                 )
 
             # create empty Channelgroup
-            channelgroup_name = courseName
             courseChannels = await Channelgroup.create_and_get_group(
-                session, channelgroup_name, courseEmoji, self.client
+                session, courseName, courseEmoji, self.client
             )
             cleanup_opterations.append(
                 lambda s=courseChannels: Channelgroup.delete_group_h(session, s, self.client)
@@ -1340,7 +1337,7 @@ class Course(PluginCommand, Plugin):
                 )
 
                 if await confirm_input(
-                    f"Do you already have a list of {group_type.capitalize()} for your Course? If not, you can add them later with the command `course add_{group_type} {courseName} <{group_type.capitalize()}...>`."
+                    f"Do you already have a list of {group_type.capitalize()} (except from you) for your Course? If not, you can add them later with the command `course add_{group_type} {courseName} <{group_type.capitalize()}...>`. Note, that you do not have to add yourself to the {group_type.capitalize()} group."
                 ):
                     # enter list of names
                     while True:
@@ -1407,6 +1404,7 @@ class Course(PluginCommand, Plugin):
                     chan_ex = await self.client.get_channel_id_by_name(channel_name)
 
                 user_ids = Usergroup.get_user_ids_for_group(session, ugdb)
+                user_ids.append(self.client.id)
 
                 exit_and_inform_on_error(
                     await self.client.add_subscriptions(
@@ -1438,6 +1436,9 @@ class Course(PluginCommand, Plugin):
                 "Do you want a Instructor-Channel for your Course?"
             )
 
+            if not resultis:
+                await dm("Ok, however, it is still necessary to add the Instructors to the Course, even if there is no Channel for them.")
+
             courseInstructors, courseInstructorChannel = await wizard_create_usergroup(
                 "instructors", "übungsleiter", resultis
             )
@@ -1461,6 +1462,44 @@ class Course(PluginCommand, Plugin):
 
             session.add(course)
             session.commit()
+
+            if courseLan == "en":
+                welcome_message = f"Welcome to the Course {courseName}.\n\nPlease subscribe to the Channel-Group of this course to stay up to date with all the Channels of this Course. You can do this by reacting to this message with the emoji :{courseEmoji}: if you have not subscribed already via the #**Kanal-Gruppen** Channel."
+            else:
+                welcome_message = f"Willkommen im Kurs {courseName}.\n\nBitte abonniere die Kanal-Gruppe dieses Kurses, um über alle Kanäle dieses Kurses auf dem Laufenden zu bleiben. Du kannst dies tun, indem du auf diese Nachricht mit dem Emoji :{courseEmoji}: reagierst, wenn du nicht bereits über den #**Kanal-Gruppen**-Kanal abonniert hast."
+
+            rspns = Response.build_message(
+                None,
+                content=welcome_message,
+                msg_type="channel",
+                subject="Welcome to the Course" if courseLan == "en" else "Willkommen im Kurs",
+                to=stand_chan_ids[0],
+            )
+
+            response = await self.client.send_response(rspns)
+
+            if response["result"] != "success":
+                raise DMError("Could not send welcome message to the Course Channel.")
+
+            cleanup_opterations.append(
+                lambda: self.client.delete_message(response["id"])
+            )
+
+            responseEmote = await self.client.send_response(
+                Response.build_reaction_from_id(response["id"], courseEmoji)
+            )
+
+            if responseEmote["result"] != "success":
+                raise DMError("Could not add reaction to the welcome message.")
+
+            async for m in self.invoke_other_cmd(
+                Channelgroup.claim_message, # type: ignore
+                sender,
+                session,
+                message_id=response["id"],
+                group_id=courseChannels.ChannelGroupId,
+            ):
+                yield m
 
         except Exception as e:
             logging.exception(e)
@@ -2066,11 +2105,11 @@ class Course(PluginCommand, Plugin):
         sg: ChannelGroup,
         lan: Literal["en", "de"],
         principals: list[int] | None,
+        n: bool = True,
         g: bool = True,
         o: bool = True,
         fn: bool = True,
         fa: bool = True,
-        n: bool = True,
         m: bool = True,
         t: bool = True,
     ) -> list[int]:
@@ -2083,6 +2122,13 @@ class Course(PluginCommand, Plugin):
 
         channels = []
         for opt_abr, suffix_en, suffix_de, desc_en, desc_de in [
+            (
+                n,
+                "Announcements",
+                "Ankündigungen",
+                f"Welcome to the Channel for Announcements for {name}",
+                f"Willkommen im Zulip Kanal für Ankündigungen von {name}",
+            ),
             (
                 g,
                 "General",
@@ -2110,13 +2156,6 @@ class Course(PluginCommand, Plugin):
                 "Feedback",
                 f"Welcome to the Channel for Feedback to {name}, where you can send anonymous Feedback with the help of the TUM CS Bot.",
                 f"Willkommen im Feedback Zulip Kanal von dem Kurs {name}, in welchem du mit der Hilfe des TUM CS Bot anonymes Feedback senden kannst.",
-            ),
-            (
-                n,
-                "Announcements",
-                "Ankündigungen",
-                f"Welcome to the Channel for Announcements for {name}",
-                f"Willkommen im Zulip Kanal für Ankündigungen von {name}",
             ),
             (
                 t,
