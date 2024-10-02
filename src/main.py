@@ -38,6 +38,7 @@ def main() -> None:
     )
     args: argparse.Namespace = argument_parser.parse_args()
 
+
     bot: TumCSBot = TumCSBot(
         zuliprc=args.zuliprc[0],
         db_path=args.db_path[0],

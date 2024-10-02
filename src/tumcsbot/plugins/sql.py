@@ -3,47 +3,35 @@
 # See LICENSE file for copyright and license details.
 # TUM CS Bot - https://github.com/ro-i/tumcsbot
 
-from inspect import cleandoc
-from typing import Any, Iterable
+from typing import Any, AsyncGenerator
 
-from tumcsbot.lib import DB, Response
-from tumcsbot.plugin import PluginCommandMixin, PluginThread
+from sqlalchemy import text
+
+from tumcsbot.lib.db import DB
+from tumcsbot.lib.types import DMResponse, Privilege, response_type
+from tumcsbot.plugin import PluginCommand, Plugin
+from tumcsbot.plugin_decorators import arg, command, privilege
 
 
-class Source(PluginCommandMixin, PluginThread):
-    syntax = cleandoc(
+class Source(PluginCommand, Plugin):
+    """
+    Execute SQL commands in the bot's database.
+    """
+
+    @command
+    @privilege(Privilege.ADMIN)
+    @arg("sql", str, description="The SQL command to execute.", greedy=True)
+    async def select(
+        self,
+        _sender: Any,
+        session: DB,
+        args: Any,
+        _opts: Any,
+        _message: dict[str, Any],
+    ) -> AsyncGenerator[response_type, None]:
         """
-        sql <sql_script>
-          or sql list
+        Execute a SELECT SQL command in the bot's database.
         """
-    )
-    description = cleandoc(
-        """
-        Access the internal database of the bot read-only.
-        The `list` command is a shortcut to list all tables.
-        [administrator/moderator rights needed]
-        """
-    )
-    _list_sql: str = 'select * from sqlite_master where type = "table"'
-
-    def _init_plugin(self) -> None:
-        # Get own read-only (!!!) database connection.
-        self._db: DB = DB(read_only=True)
-
-    def handle_message(self, message: dict[str, Any]) -> Response | Iterable[Response]:
-        result_sql: list[tuple[Any, ...]]
-
-        if not self.client.user_is_privileged(message["sender_id"]):
-            return Response.privilege_err(message)
-
-        try:
-            if message["command"] == "list":
-                result_sql = self._db.execute(self._list_sql)
-            else:
-                result_sql = self._db.execute(message["command"])
-        except Exception as e:
-            return Response.build_message(message, str(e))
-
-        result: str = "```text\n" + "\n".join(map(str, result_sql)) + "\n```"
-
-        return Response.build_message(message, result)
+        sql = args.sql
+        result = session.execute(text("SELECT " + " ".join(sql))).fetchall() # type: ignore
+        yield DMResponse("```" + "\n".join(str(row) for row in result) + "```")

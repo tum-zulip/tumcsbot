@@ -12,22 +12,97 @@ change the alert words and specify the emojis to use for the reactions.
 
 from random import randint
 import re
-from inspect import cleandoc
-from typing import Any, Iterable
+from typing import Any, AsyncGenerator, Iterable, cast
+from sqlalchemy import Column, String
 
-from tumcsbot.lib import CommandParser, DB, Regex, Response
-from tumcsbot.plugin import Event, PluginCommandMixin, PluginProcess
+from tumcsbot.lib.response import Response
+from tumcsbot.lib.regex import Regex
+from tumcsbot.lib.command_parser import CommandParser
+from tumcsbot.lib.db import DB, Session, TableBase
+from tumcsbot.lib.types import Privilege, ZulipUser, DMResponse, response_type
+from tumcsbot.plugin import PluginCommand, Plugin
+from tumcsbot.plugin_decorators import command, privilege, arg
+from tumcsbot.lib.client import Event
 
 
-class AlertWord(PluginCommandMixin, PluginProcess):
-    syntax = cleandoc(
+class Alert(TableBase):  # type: ignore
+    __tablename__ = "Alerts"
+
+    Phrase = Column(String, primary_key=True)
+    Emoji = Column(String, nullable=False)
+
+
+class AlertWord(PluginCommand, Plugin):
+    """Manage reactions on certain words or phrases with emojis."""
+
+    def _init_plugin(self) -> None:
+        # Initialize the plugin's daemon part.
+        # Get pattern and the alert_phrase - emoji bindings.
+        self._bindings: list[tuple[re.Pattern[str], str]] = self._get_bindings()
+        # Replace markdown links by their textual representation.
+        self._markdown_links: re.Pattern[str] = re.compile(r"\[([^\]]*)\]\([^\)]+\)")
+
+    async def is_responsible(self, event: Event) -> bool:
+        # First check whether the command mixin part is responsible.
+        if (
+            await super().is_responsible(event)
+            and event.data["message"].get("command_name", None) == "alert_word"
+        ):
+            return True
+
+        return cast(bool,
+            event.data["type"] == "message"
+            and event.data["message"]["sender_id"] != self.client.id
+            and event.data["message"]["type"] == "stream"
+        )
+
+    def _get_bindings(self) -> list[tuple[re.Pattern[str], str]]:
+        """Compile the regexes and bind them to their emojis."""
+        bindings: list[tuple[re.Pattern[str], str]] = []
+
+        # Verify every regex and only use the valid ones.
+        with DB.session() as session:
+            for alert in session.query(Alert).all():
+                try:
+                    pattern: re.Pattern[str] = re.compile(cast(str, alert.Phrase))
+                except re.error:
+                    continue
+                bindings.append((pattern, cast(str, alert.Emoji)))
+
+        return bindings
+
+    @command(name="list")
+    @privilege(Privilege.ADMIN)
+    async def _list(
+        self,
+        _sender: ZulipUser,
+        session: Session,
+        _args: CommandParser.Args,
+        _opts: CommandParser.Opts,
+        message: dict[str, Any],
+    ) -> AsyncGenerator[response_type, None]:
         """
-        alert_word add '<alert phrase>' <emoji>
-          or alert_word remove '<alert phrase>'
-          or alert_word list
+        List all alert phrases and the corresponding emojis.
         """
+        response: str = "Alert word or phrase | Emoji\n---- | ----"
+        for alert in session.query(Alert).all():
+            response += f"\n`{alert.Phrase}` | {alert.Emoji} :{alert.Emoji}:"
+        yield Response.build_message(message, response)
+
+    @command
+    @privilege(Privilege.ADMIN)
+    @arg("alert_phrase", str, description="The alert phrase regex to add.")
+    @arg(
+        "emoji", Regex.get_emoji_name, description="The emoji to use for the reaction."
     )
-    description = cleandoc(
+    async def add(
+        self,
+        _sender: ZulipUser,
+        session: Session,
+        args: CommandParser.Args,
+        _opts: CommandParser.Opts,
+        _message: dict[str, Any],
+    ) -> AsyncGenerator[response_type, None]:
         """
         Add an alert word / phrase together with the emoji the bot \
         should use to react on messages containing the corresponding \
@@ -36,87 +111,38 @@ class AlertWord(PluginCommandMixin, PluginProcess):
         bot.
         Note that an alert phrase may be any regular expression.
         Hint: `\\b` represents word boundaries.
-        [administrator/moderator rights needed]
         """
-    )
-    _list_sql: str = "select * from Alerts"
-    _remove_sql: str = "delete from Alerts where Phrase = ?"
-    _select_sql: str = "select Phrase, Emoji from Alerts"
-    _update_sql: str = "replace into Alerts values (?,?)"
-
-    def _init_plugin(self) -> None:
-        # Get own database connection.
-        self._db: DB = DB()
-        # Check for database table.
-        self._db.checkout_table(
-            table="Alerts", schema="(Phrase text primary key, Emoji text not null)"
+        session.merge(Alert(Phrase=args.alert_phrase.lower(), Emoji=args.emoji))
+        session.commit()
+        yield DMResponse(
+            f"Alert word `{args.alert_phrase}` added with emoji `{args.emoji}`."
         )
 
-        # Initialize the plugin's command part.
-        self.command_parser: CommandParser = CommandParser()
-        self.command_parser.add_subcommand(
-            "add", args={"alert_phrase": str, "emoji": Regex.get_emoji_name}
-        )
-        self.command_parser.add_subcommand("remove", args={"alert_phrase": str})
-        self.command_parser.add_subcommand("list")
-
-        # Initialize the plugin's daemon part.
-        # Get pattern and the alert_phrase - emoji bindings.
-        self._bindings: list[tuple[re.Pattern[str], str]] = self._get_bindings()
-        # Replace markdown links by their textual representation.
-        self._markdown_links: re.Pattern[str] = re.compile(r"\[([^\]]*)\]\([^\)]+\)")
-
-        self._received_command: bool = False
-
-    def _get_bindings(self) -> list[tuple[re.Pattern[str], str]]:
-        """Compile the regexes and bind them to their emojis."""
-        bindings: list[tuple[re.Pattern[str], str]] = []
-
-        # Verify every regex and only use the valid ones.
-        for regex, emoji in self._db.execute(self._select_sql):
-            try:
-                pattern: re.Pattern[str] = re.compile(regex)
-            except re.error:
-                continue
-            bindings.append((pattern, emoji))
-
-        return bindings
-
-    def handle_message(self, message: dict[str, Any]) -> Response | Iterable[Response]:
-        result: tuple[str, CommandParser.Opts, CommandParser.Args] | None
-        result_sql: list[tuple[Any, ...]]
-
-        if not self.client.user_is_privileged(message["sender_id"]):
-            return Response.privilege_err(message)
-
-        # Get command and parameters.
-        result = self.command_parser.parse(message["command"])
-        if result is None:
-            return Response.command_not_found(message)
-        command, _, args = result
-
-        if command == "list":
-            result_sql = self._db.execute(self._list_sql)
-            response: str = "Alert word or phrase | Emoji\n---- | ----"
-            for phrase, emoji in result_sql:
-                response += f"\n`{phrase}` | {emoji} :{emoji}:"
-            return Response.build_message(message, response)
-
-        # Use lowercase -> no need for case insensitivity.
+    @command
+    @privilege(Privilege.ADMIN)
+    @arg("alert_phrase", str, description="The alert phrase regex to remove.")
+    async def remove(
+        self,
+        _sender: ZulipUser,
+        session: Session,
+        args: CommandParser.Args,
+        _opts: CommandParser.Opts,
+        _message: dict[str, Any],
+    ) -> AsyncGenerator[response_type, None]:
+        """
+        Remove an alert word / phrase.
+        """
         alert_phrase: str = args.alert_phrase.lower()
+        session.query(Alert).filter(Alert.Phrase == alert_phrase).delete()
+        session.commit()
+        yield DMResponse(f"Alert word `{alert_phrase}` removed.")
 
-        if command == "add":
-            # Add binding to database or update it.
-            self._db.execute(self._update_sql, alert_phrase, args.emoji, commit=True)
-        elif command == "remove":
-            self._db.execute(self._remove_sql, alert_phrase, commit=True)
-
-        return Response.ok(message)
-
-    def handle_zulip_event(self, event: Event) -> Response | Iterable[Response]:
-        if self._received_command:
-            self._received_command = False
-            return self.handle_message(event.data["message"])
+    async def handle_event(self, event: Event) -> Response | Iterable[Response]:
+        if (
+            event.data["type"] == "message"
+            and event.data["message"].get("command_name", None) == "alert_word"
+        ):
+            return await self.handle_message(event.data["message"])
 
         if not self._bindings:
             return Response.none()
@@ -133,24 +159,3 @@ class AlertWord(PluginCommandMixin, PluginProcess):
             for pattern, emoji in self._bindings
             if randint(1, 6) == 3 and pattern.search(content) is not None
         ]
-
-    def is_responsible(self, event: Event) -> bool:
-        # First check whether the command mixin part is responsible.
-        if super().is_responsible(event):
-            self._received_command = True
-            return True
-
-        # Do not react on own messages or on private messages where we
-        # are not the only recipient.
-        return (
-            event.data["type"] == "message"
-            and event.data["message"]["sender_id"] != self.client.id
-            and (
-                event.data["message"]["type"] == "stream"
-                or self.client.is_only_pm_recipient(event.data["message"])
-            )
-        )
-
-    def reload(self) -> None:
-        self._bindings = self._get_bindings()
-        return super().reload()

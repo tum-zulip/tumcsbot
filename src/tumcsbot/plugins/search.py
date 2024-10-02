@@ -4,19 +4,35 @@
 # TUM CS Bot - https://github.com/ro-i/tumcsbot
 
 import urllib.parse
-from typing import Any, Iterable
+from typing import Any, AsyncGenerator
+from tumcsbot.lib.db import Session
 
-from tumcsbot.lib import Response
-from tumcsbot.plugin import PluginCommandMixin, PluginThread
+from tumcsbot.lib.command_parser import CommandParser
+from tumcsbot.plugin import PluginCommand, Plugin
+from tumcsbot.plugin_decorators import command, arg
+from tumcsbot.lib.types import response_type, ZulipUser, DMResponse
 
 
-class Search(PluginCommandMixin, PluginThread):
+class Search(PluginCommand, Plugin):
+
     syntax = "search <string>"
-    description = 'Get a url to a search for "string" in all public streams.'
     msg_template: str = "Hi, I hope that these search results may help you: {}"
     path: str = "#narrow/streams/public/search/"
 
-    def handle_message(self, message: dict[str, Any]) -> Response | Iterable[Response]:
+    @command
+    @arg("search_string", str, description="The string to search for.", greedy=True)
+    async def search(
+        self,
+        _sender: ZulipUser,
+        _session: Session,
+        _args: CommandParser.Args,
+        _opts: CommandParser.Opts,
+        message: dict[str, Any],
+    ) -> AsyncGenerator[response_type, None]:
+        """
+        Get a url to a search for "string" in all public channels.
+        """
+        # todo: use argument instead of urrlib.parse.quote
         # Get search string and quote it.
         search: str = urllib.parse.quote(message["command"], safe="")
         # Fix strange behavior of Zulip which does not accept literal periods.
@@ -26,5 +42,5 @@ class Search(PluginCommandMixin, PluginThread):
         # Build the full url.
         url: str = base_url + self.path + search
         # Remove requesting message.
-        self.client.delete_message(message["id"])
-        return Response.build_message(message, self.msg_template.format(url))
+        await self.client.delete_message(message["id"])
+        yield DMResponse(self.msg_template.format(url))

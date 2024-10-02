@@ -3,84 +3,124 @@
 # See LICENSE file for copyright and license details.
 # TUM CS Bot - https://github.com/ro-i/tumcsbot
 
-from inspect import cleandoc
-from typing import Any, Iterable
+from typing import Any, AsyncGenerator
+from sqlalchemy import Column, String
+import sqlalchemy
 
-from tumcsbot.lib import CommandParser, DB, Response
-from tumcsbot.plugin import PluginCommandMixin, PluginThread
+from tumcsbot.lib.command_parser import CommandParser
+from tumcsbot.lib.db import Session, TableBase
+from tumcsbot.plugin import PluginCommand, Plugin
+from tumcsbot.plugin_decorators import (
+    command,
+    privilege,
+    arg,
+)
+from tumcsbot.lib.types import Privilege, response_type, ZulipUser, DMResponse, DMError
 
 
-class Msg(PluginCommandMixin, PluginThread):
-    syntax = cleandoc(
-        """
-        msg add <identifier> <text>
-          or msg send|remove <identifier>
-          or msg list
-        """
+class Messages(TableBase):  # type: ignore
+    __tablename__ = "Messages"
+
+    MsgId = Column(String, primary_key=True)
+    MsgText = Column(String, nullable=False)
+
+
+class Msg(PluginCommand, Plugin):
+    """
+    Store a message for later use, send or delete a stored message \
+    or list all stored messages. The text must be quoted but may
+    contain line breaks.
+    The identifiers are handled case insensitively.
+    """
+
+    @command
+    @privilege(Privilege.ADMIN)
+    @arg("id", str, description="Identifier of the message")
+    @arg(
+        "text",
+        str,
+        greedy=True,
+        description="The formated message that should be stored. Must be quoted but may contain line breaks",
     )
-    description = cleandoc(
+    async def add(
+        self,
+        _sender: ZulipUser,
+        session: Session,
+        args: CommandParser.Args,
+        _opts: CommandParser.Opts,
+        _message: dict[str, Any],
+    ) -> AsyncGenerator[response_type, None]:
         """
-        Store a message for later use, send or delete a stored message \
-        or list all stored messages. The text must be quoted but may
-        contain line breaks.
-        The identifiers are handled case insensitively.
-        [administrator/moderator rights needed]
+        Add a message to the database.
         """
-    )
-    _delete_sql: str = "delete from Messages where MsgId = ?"
-    _list_sql: str = "select * from Messages"
-    _search_sql: str = "select MsgText from Messages where MsgId = ?"
-    _update_sql: str = "replace into Messages values (?,?)"
+        ident = args.id.lower()
+        try:
+            session.add(Messages(MsgId=ident, MsgText=args.text))
+            session.commit()
+        except sqlalchemy.exc.IntegrityError as e:
+            raise DMError(f"Identifier {ident} already exists.") from e
+        yield DMResponse(f"Message with identifier {ident} added.")
 
-    def _init_plugin(self) -> None:
-        # Get own database connection.
-        self._db: DB = DB()
-        # Check for database table.
-        self._db.checkout_table(
-            table="Messages", schema="(MsgId text primary key, MsgText text not null)"
-        )
-        self.command_parser: CommandParser = CommandParser()
-        self.command_parser.add_subcommand("add", args={"id": str, "text": str})
-        self.command_parser.add_subcommand("send", args={"id": str})
-        self.command_parser.add_subcommand("remove", args={"id": str})
-        self.command_parser.add_subcommand("list")
+    @command
+    @privilege(Privilege.ADMIN)
+    @arg("id", str, description="Identifier of the message")
+    async def remove(
+        self,
+        _sender: ZulipUser,
+        session: Session,
+        args: CommandParser.Args,
+        _opts: CommandParser.Opts,
+        _message: dict[str, Any],
+    ) -> AsyncGenerator[response_type, None]:
+        """
+        Remove a message from the database.
+        """
+        ident = args.id.lower()
+        try:
+            session.query(Messages).filter(Messages.MsgId == ident).delete()
+            session.commit()
+        except sqlalchemy.exc.IntegrityError as e:
+            raise DMError(f"No message with identifier {ident} found.") from e
 
-    def handle_message(self, message: dict[str, Any]) -> Response | Iterable[Response]:
-        result: tuple[str, CommandParser.Opts, CommandParser.Args] | None
-        result_sql: list[tuple[Any, ...]]
+        yield DMResponse(f"Message with identifier {ident} removed.")
 
-        if not self.client.user_is_privileged(message["sender_id"]):
-            return Response.privilege_err(message)
+    @command(name="list")
+    @privilege(Privilege.ADMIN)
+    async def _list(
+        self,
+        _sender: ZulipUser,
+        session: Session,
+        _args: CommandParser.Args,
+        _opts: CommandParser.Opts,
+        _message: dict[str, Any],
+    ) -> AsyncGenerator[response_type, None]:
+        """ "
+        List all stored messages.
+        """
+        response: str = "***List of Identifiers and Messages***\n"
+        for msg in session.query(Messages).all():
+            response += f"\n--------\nTitle: **{msg.MsgId}**\n{msg.MsgText}"
+        yield DMResponse(response)
 
-        # Get command and parameters.
-        result = self.command_parser.parse(message["command"])
-        if result is None:
-            return Response.command_not_found(message)
-        command, _, args = result
-
-        if command == "list":
-            response: str = "***List of Identifiers and Messages***\n"
-            for ident, text in self._db.execute(self._list_sql):
-                response += f"\n--------\nTitle: **{ident}**\n{text}"
-            return Response.build_message(message, response)
-
-        # Use lowercase -> no need for case insensitivity.
+    @command
+    @privilege(Privilege.ADMIN)
+    @arg("id", str, description="Identifier of the message")
+    async def send(
+        self,
+        _sender: ZulipUser,
+        session: Session,
+        args: CommandParser.Args,
+        _opts: CommandParser.Opts,
+        message: dict[str, Any],
+    ) -> AsyncGenerator[response_type, None]:
+        """
+        Delete the command message and send the stored message.
+        """
         ident = args.id.lower()
 
-        if command == "send":
-            result_sql = self._db.execute(self._search_sql, ident)
-            if not result_sql:
-                return Response.command_not_found(message)
-            # Remove requesting message.
-            self.client.delete_message(message["id"])
-            return Response.build_message(message, result_sql[0][0])
+        msg = session.query(Messages).filter(Messages.MsgId == ident).first()
+        if msg is None:
+            raise DMError(f"No message with identifier {ident} found.")
 
-        if command == "add":
-            self._db.execute(self._update_sql, ident, args.text, commit=True)
-            return Response.ok(message)
-
-        if command == "remove":
-            self._db.execute(self._delete_sql, ident, commit=True)
-            return Response.ok(message)
-
-        return Response.command_not_found(message)
+        await self.client.delete_message(message["id"])
+        yield DMResponse(str(msg.MsgText))

@@ -3,4 +3,7 @@ pylint
 pytest
 regex
 types-regex
+sqlalchemy
+openai
 zulip
+pyaml

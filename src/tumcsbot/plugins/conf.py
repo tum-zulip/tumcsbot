@@ -3,62 +3,83 @@
 # See LICENSE file for copyright and license details.
 # TUM CS Bot - https://github.com/ro-i/tumcsbot
 
-from inspect import cleandoc
-from typing import Any, Iterable
+from typing import Any, AsyncGenerator
 
-from tumcsbot.lib import CommandParser, Conf, Response, is_bot_owner
-from tumcsbot.plugin import PluginCommandMixin, PluginThread
+from tumcsbot.lib.db import Session
+from tumcsbot.lib.conf import Conf
+from tumcsbot.plugin import PluginCommand, Plugin
+from tumcsbot.lib.command_parser import CommandParser
+from tumcsbot.lib.types import (
+    response_type,
+    ZulipUser,
+    DMResponse,
+    Privilege,
+    UserNotPrivilegedException,
+)
+from tumcsbot.plugin_decorators import (
+    command,
+    privilege,
+    arg,
+)
 
+class ConfPlugin(PluginCommand, Plugin):
+    """
+    Manage configuration variables.
+    """
 
-class ConfPlugin(PluginCommandMixin, PluginThread):
-    syntax = cleandoc(
+    @command(name="list")
+    @privilege(Privilege.ADMIN)
+    async def _list(
+        self,
+        _sender: ZulipUser,
+        _session: Session,
+        _args: CommandParser.Args,
+        _opts: CommandParser.Opts,
+        _message: dict[str, Any],
+    ) -> AsyncGenerator[response_type, None]:
         """
-        conf set <key> <value>
-          or conf remove <key>
-          or conf list
+        List all configuration variables.
         """
-    )
-    description = cleandoc(
+        response: str = "Key | Value\n ---- | ----"
+        for key, value in Conf.list():
+            response += f"\n{key} | {value}"
+        yield DMResponse(response)
+
+    @command
+    @privilege(Privilege.ADMIN)
+    @arg("key", str, description="The key of the configuration variable")
+    @arg("value", str, description="The value of the configuration variable.")
+    async def set(
+        self,
+        sender: ZulipUser,
+        _session: Session,
+        args: CommandParser.Args,
+        _opts: CommandParser.Opts,
+        _message: dict[str, Any],
+    ) -> AsyncGenerator[response_type, None]:
         """
-        Set/get/remove bot configuration variables.
-        [administrator/moderator rights needed]
+        Set a configuration variable.
         """
-    )
+        if not Conf.is_bot_owner(sender.id):
+            raise UserNotPrivilegedException(
+                "You must be the bot owner to set configuration variables."
+            )
+        Conf.set(args.key, args.value)
+        yield DMResponse(f"Configuration variable '{args.key}' set to '{args.value}'.")
 
-    def _init_plugin(self) -> None:
-        self._conf: Conf = Conf()
-        self.command_parser: CommandParser = CommandParser()
-        self.command_parser.add_subcommand("list")
-        self.command_parser.add_subcommand("set", args={"key": str, "value": str})
-        self.command_parser.add_subcommand("remove", args={"key": str})
-
-    def handle_message(self, message: dict[str, Any]) -> Response | Iterable[Response]:
-        result: tuple[str, CommandParser.Opts, CommandParser.Args] | None
-
-        if not is_bot_owner(message["sender_id"]):
-            return Response.privilege_err(message)
-
-        result = self.command_parser.parse(message["command"])
-        if result is None:
-            return Response.command_not_found(message)
-        command, _, args = result
-
-        if command == "list":
-            response: str = "Key | Value\n ---- | ----"
-            for key, value in self._conf.list():
-                response += f"\n{key} | {value}"
-            return Response.build_message(message, response)
-
-        if command == "remove":
-            self._conf.remove(args.key)
-            return Response.ok(message)
-
-        if command == "set":
-            try:
-                self._conf.set(args.key, args.value)
-            except Exception as exc:
-                self.logger.exception(exc)
-                return Response.build_message(message, f"Failed: {exc}")
-            return Response.ok(message)
-
-        return Response.command_not_found(message)
+    @command
+    @privilege(Privilege.ADMIN)
+    @arg("key", str, description="The key of the configuration variable")
+    async def remove(
+        self,
+        _sender: ZulipUser,
+        _session: Session,
+        args: CommandParser.Args,
+        _opts: CommandParser.Opts,
+        _message: dict[str, Any],
+    ) -> AsyncGenerator[response_type, None]:
+        """
+        Remove a configuration variable.
+        """
+        Conf.remove(args.key)
+        yield DMResponse(f"Configuration variable '{args.key}' removed.")
