@@ -5,9 +5,9 @@
 
 import unittest
 
-from typing import cast, Any
+from typing import Any
 
-from tumcsbot.lib import CommandParser
+from tumcsbot.lib.command_parser import CommandParser
 
 
 class CommandParserTest(unittest.TestCase):
@@ -17,7 +17,11 @@ class CommandParserTest(unittest.TestCase):
         """Discard the subcommand_name, only return the arguments dict."""
         result: tuple[str, CommandParser.Opts, CommandParser.Args] | None
 
-        result = self.parser.parse(command)
+        try:
+            result = self.parser.parse(command)
+        except CommandParser.IllegalCommandParserState:
+            return None
+
         if result is None:
             return result
         _, opts, args = result
@@ -86,20 +90,16 @@ class CommandParserTestArgs(CommandParserTest):
         result: tuple[str, CommandParser.Opts, CommandParser.Args]
         self.parser.add_subcommand("test1", args={"arg1": int})
         self.parser.add_subcommand("test2", args={"arg1": str, "arg2": str})
-        result = cast(
-            tuple[str, CommandParser.Opts, CommandParser.Args],
-            self.parser.parse("test1 1"),
-        )
+        result = self.parser.parse("test1 1")
         self.assertEqual(result[0], "test1")
-        result = cast(
-            tuple[str, CommandParser.Opts, CommandParser.Args],
-            self.parser.parse("test2 a b"),
-        )
+        result = self.parser.parse("test2 a b")
         self.assertEqual(result[0], "test2")
 
     def test_invalid_subcommands(self) -> None:
         self.parser.add_subcommand("test1", args={"arg1": int})
-        self.assertIsNone(self.parser.parse("testN 1"))
+        self.assertRaises(
+            CommandParser.IllegalCommandParserState, self.parser.parse, "testN 1"
+        )
 
     def test_valid_greedy(self) -> None:
         self.parser.add_subcommand("test", greedy={"arg1": str})
@@ -275,7 +275,7 @@ class CommandParserTestOptsArgsCombined(CommandParserTest):
             ({"a": True, "b": "c"}, {"arg1": "d", "arg2": None}),
         )
         self.assertEqual(
-            self._do_parse("test -a -b c d"),
+            self._do_parse("test -a -b c d"), # Todo (ro-i): Should this not be parsed as {"a": True, "b": "c"}, {"arg1": "d", "arg2": None}?
             ({"a": True, "b": ""}, {"arg1": "c", "arg2": "d"}),
         )
         self.assertEqual(

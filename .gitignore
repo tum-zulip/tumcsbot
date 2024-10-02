@@ -11,3 +11,4 @@ lib/*
 lib64
 share/*
 pyvenv.cfg
+src/tumcsbot/plugins/c3po/*

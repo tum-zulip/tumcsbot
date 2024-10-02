@@ -10,15 +10,29 @@ Provide also an interactive command so administrators are able to
 change the alert words and specify the emojis to use for the reactions.
 """
 
+import urllib
 from typing import Any, Iterable, Callable
 
-from tumcsbot.lib import DB, Response
-from tumcsbot.plugin import Event, PluginThread
+from tumcsbot.lib.response import Response
+from tumcsbot.lib.types import ZulipChannel, ZulipUser
+from tumcsbot.plugin import Plugin
+from tumcsbot.lib.db import DB
+from tumcsbot.lib.client import Event
 
-import urllib
+
+from tumcsbot.plugins.moderate import (
+    ReactionAction,
+    ReactionConfig,
+    ModerationConfig,
+    ChannelAuthorization,
+    GroupAuthorization,
+)
+
+from tumcsbot.plugins.usergroup import UserGroup, UserGroupMember
+from tumcsbot.lib.types import AsyncClientMixin
 
 
-class ModerationReactionHandler(PluginThread):
+class ModerationReactionHandler(Plugin):
     # pylint: disable=line-too-long
     _replace_dict: dict[
         str, tuple[Callable[[dict[str, Any], dict[str, Any]], str], str]
@@ -31,9 +45,9 @@ class ModerationReactionHandler(PluginThread):
             lambda event_data, _: f"@**{event_data['user']['full_name']}|{event_data['user_id']}**",
             "the sender of the reaction",
         ),
-        "stream": (
+        "channel": (
             lambda _, message: f"#**{message['display_recipient']}**",
-            "the stream in which the reaction occurred",
+            "the channel in which the reaction occurred",
         ),
         "topic": (
             lambda _, message: f"#**{message['display_recipient']}>{message['subject']}**",
@@ -54,126 +68,96 @@ class ModerationReactionHandler(PluginThread):
     }
     # pylint: enable=line-too-long
 
-    _get_streams_sql = "select a.StreamId from GroupAuthorization where "
-    _get_actions_sql = (
-        "select Emote, Action, Message from ReactionConfig where UserId = ?"
-    )
-
-    description = None
-
-    def _init_plugin(self) -> None:
-        # Get own database connection.
-        self._db: DB = DB()
-        # Check for database table.
-        self._db.checkout_table(
-            "ReactionConfig",
-            "(UserId integer not null, Emote text not null, Action text, Message text)",
-        )
-
-        self._db.checkout_table(
-            "GroupAuthorization",
-            "(GroupId integer not null, StreamId integer not null, primary key(GroupId, StreamId))",
-        )
-        self._db.checkout_table(
-            "UserGroups",
-            "(GroupId integer primary key autoincrement, UGroup text unique)",
-        )
-        self._db.checkout_table(
-            "UserGroupMembers",
-            "(GroupId integer not null, UserId integer not null, primary key (GroupId, UserId))",
-        )
-
-        self.client_id: int = self.client.id
-
-    def is_responsible(self, event: Event) -> bool:
-        return super().is_responsible(event) or (
+    async def is_responsible(self, event: Event) -> bool:
+        return await super().is_responsible(event) or (
             event.data["type"] == "reaction"
             and event.data["op"] == "add"
-            and event.data["user_id"] != self.client_id
+            and event.data["user_id"] != self.client.id
         )
 
-    def handle_zulip_event(self, event: Event) -> Response | Iterable[Response]:
-        uid: int = event.data["user_id"]
+    async def handle_event(self, event: Event) -> Response | Iterable[Response]:
+        AsyncClientMixin.set_client(self.client)
+
+        reaction_sender = ZulipUser(event.data["user_id"])
+        await reaction_sender
+
         mid: int = event.data["message_id"]
 
-        message = self.client.call_endpoint(
+        response = await self.client.call_endpoint(
             url=f"/messages/{mid}?apply_markdown=false", method="GET"
         )
-        if message["result"] != "success":
+
+        if response["result"] != "success":
             return Response.none()
 
-        message = message["message"]
+        message = response["message"]
 
         if message["type"] != "stream":
             return Response.none()
 
-        sid: int = message["stream_id"]
+        channel = ZulipChannel(message["stream_id"])
+        await channel
 
-        authorized_streams = [
-            t[0]
-            for t in self._db.execute(
-                "select a.StreamId from GroupAuthorization a, UserGroupMembers m where a.GroupId = m.GroupId and m.UserId = ?",
-                uid,
+        emote = event.data["emoji_name"]
+
+        with DB.session() as session:
+            actions = (
+                session.query(ReactionAction)
+                .join(ReactionConfig)
+                .join(ModerationConfig)
+                .join(GroupAuthorization)
+                .join(UserGroup)
+                .join(UserGroupMember)
+                .join(ChannelAuthorization)
+                .filter(ChannelAuthorization.Channel == channel)  # type: ignore
+                .filter(UserGroupMember.User == reaction_sender)  # type: ignore
+                .filter(ReactionConfig.emote == emote)
+                .all()
             )
-        ]
-        if sid not in authorized_streams:
-            return Response.none()
 
-        actions = [
-            (action, msg)
-            for (reaction, action, msg) in self._db.execute(self._get_actions_sql, uid)
-            if reaction == f":{event.data['emoji_name']}:"
-        ]
-        responses = []
-        for action, msg in actions:
-            if action == "delete":
-                self.client.delete_message(mid)
-            elif action == "respond":
-                responses.append(
-                    Response.build_message(
-                        message,
-                        content=ModerationReactionHandler._replace_placeholder(
-                            msg, event.data, message
-                        ),
-                    )
-                )
-            elif action == "dm":
-                responses.append(
-                    Response.build_message(
-                        message=None,
-                        to=[message["sender_id"]],
-                        msg_type="private",
-                        content=ModerationReactionHandler._replace_placeholder(
-                            msg, event.data, message
-                        ),
-                    )
-                )
+            responses = []
+            for action in actions:
+                ty = action.Action
+                data = action.Data
+                if ty == "delete":
+                    await self.client.delete_message(mid)
 
-        if len(responses) == 0:
-            return Response.none()
-        return responses
+                elif ty == "respond":
+                    responses.append(
+                        Response.build_message(
+                            message,
+                            content=ModerationReactionHandler._replace_placeholder(
+                                str(data), event.data, message
+                            ),
+                        )
+                    )
+
+                elif ty == "dm":
+                    responses.append(
+                        Response.build_message(
+                            message=None,
+                            to=[message["sender_id"]],
+                            msg_type="private",
+                            content=ModerationReactionHandler._replace_placeholder(
+                                str(data), event.data, message
+                            ),
+                        )
+                    )
+
+            if len(responses) == 0:
+                return Response.none()
+            return responses
 
     @staticmethod
     def _replace_placeholder(
         content: str, event_data: dict[str, Any], message: dict[str, Any]
     ) -> str:
-        for k, (replacement, _) in ModerationReactionHandler._replace_dict.items():
-            content = content.replace("$" + k, replacement(event_data, message))
-
-        return content
-
-    # TODO: replacement for zulip usergroups. Rreplace as soon as api allows bot requests for usergroups
-    def user_id_by_identifier(self, identifier: int | str) -> int | None:
-        if isinstance(identifier, int):
-            return int(identifier)
-        return self.client.get_user_id_by_name(str(identifier))
-
-    def get_groups_for_user(self, user_identifier: int | str) -> list[int]:
-        uid = self.user_id_by_identifier(user_identifier)
-        res = self._db.execute(
-            "select g.GroupId from UserGroups g, UserGroupMembers m where m.GroupId = g.GroupId and m.UserId = ?",
-            uid,
+        return content.format(
+            **{
+                k: replacement(event_data, message)
+                for k, (
+                    replacement,
+                    _,
+                ) in ModerationReactionHandler._replace_dict.items()
+            }
         )
-        if not res or len(res) == 0:
-            return []
-        return [i[0] for i in res]

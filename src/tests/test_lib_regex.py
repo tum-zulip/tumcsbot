@@ -5,30 +5,31 @@
 
 import unittest
 
-from tumcsbot.lib import Regex
+from tumcsbot.lib.regex import Regex
 
 
 class RegexTest(unittest.TestCase):
     emoji_names: list[tuple[str, str | None]] = [
-        ("test", "test"),
+        # emoji names like this are no longer supported: ("test", "test"),
         (":test:", "test"),
         (":tes:t:", None),
         ("test:", None),
         (":test", None),
     ]
-    stream_names: list[tuple[str, str | None]] = [
-        ("test", "test"),
-        ("abc def", "abc def"),
-        ('!/"§$& - ("!~EÜ', '!/"§$& - ("!~EÜ'),
+    channel_names: list[tuple[str, str | None]] = [
+        # channel names like this are no longer supported:  ("test", "test"),
+        # channel names like this are no longer supported:  ("abc def", "abc def"),
+        ('#**!/"§$& - ("!~EÜ**', '!/"§$& - ("!~EÜ'),
+        ('!/"§$& - ("!~EÜ', None),
         ("#**test**", "test"),
-        ("#*test*", "#*test*"),
-        ("#**test*", "#**test*"),
-        ("#*test**", "#*test**"),
+        ("#*test*", None),
+        ("#**test*", None),
+        ("#*test**", None),
     ]
     user_names: list[tuple[str, str | None]] = [
-        ("John Doe", "John Doe"),
-        ("John", "John"),
-        ("John Multiple Doe", "John Multiple Doe"),
+        # usernames like this are no longer supported: ("John Doe", "John Doe"),
+        # usernames like this are no longer supported: ("John", "John"),
+        # usernames like this are no longer supported: ("John Multiple Doe", "John Multiple Doe"),
         ("@**John**", "John"),
         ("@_**John Doe**", "John Doe"),
         ("@*John*", None),
@@ -50,27 +51,27 @@ class RegexTest(unittest.TestCase):
 
     def test_emoji_names(self) -> None:
         for string, emoji in self.emoji_names:
-            self.assertEqual(Regex.get_emoji_name(string), emoji)
+            self.assertEqual(Regex.get_emoji_name(string), emoji, msg=f"String '{string}' was parsed as '{Regex.get_emoji_name(string)}' but should be '{emoji}'.")
 
-    def test_stream_names(self) -> None:
-        for string, stream_name in self.stream_names:
-            self.assertEqual(Regex.get_stream_name(string), stream_name)
+    def test_channel_names(self) -> None:
+        for string, channel_name in self.channel_names:
+            self.assertEqual(Regex.get_channel_name(string), channel_name)
 
-    def test_stream_and_topic_names(self) -> None:
-        self.assertIsNone(Regex.get_stream_and_topic_name(""))
-        self.assertEqual(Regex.get_stream_and_topic_name("abc"), ("abc", None))
-        self.assertEqual(Regex.get_stream_and_topic_name("#**abc**"), ("abc", None))
+    def test_channel_and_topic_names(self) -> None:
+        self.assertIsNone(Regex.get_channel_and_topic_name(""))
+        self.assertEqual(Regex.get_channel_and_topic_name("abc"), ("abc", None))
+        self.assertEqual(Regex.get_channel_and_topic_name("#**abc**"), ("abc", None))
         self.assertEqual(
-            Regex.get_stream_and_topic_name("#**abc>def**"), ("abc", "def")
+            Regex.get_channel_and_topic_name("#**abc>def**"), ("abc", "def")
         )
         self.assertEqual(
-            Regex.get_stream_and_topic_name("#**abc>def>ghi**"), ("abc", "def>ghi")
+            Regex.get_channel_and_topic_name("#**abc>def>ghi**"), ("abc", "def>ghi")
         )
         self.assertEqual(
-            Regex.get_stream_and_topic_name("#**>**"), (">", None)
+            Regex.get_channel_and_topic_name("#**>**"), (">", None)
         )  # sadly, those are possible...
-        self.assertEqual(Regex.get_stream_and_topic_name("#**>a**"), (">a", None))
-        self.assertEqual(Regex.get_stream_and_topic_name("#**a>**"), ("a>", None))
+        self.assertEqual(Regex.get_channel_and_topic_name("#**>a**"), (">a", None))
+        self.assertEqual(Regex.get_channel_and_topic_name("#**a>**"), ("a>", None))
 
     def test_user_names(self) -> None:
         for string, user_name in self.user_names:

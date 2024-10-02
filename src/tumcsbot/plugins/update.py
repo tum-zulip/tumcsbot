@@ -9,11 +9,11 @@ from inspect import cleandoc
 from pathlib import Path
 from typing import Any, Iterable
 
-from tumcsbot.lib import Response, is_bot_owner
-from tumcsbot.plugin import PluginCommandMixin, PluginThread
+from tumcsbot.lib.response import Response
+from tumcsbot.plugin import PluginCommand,Plugin
+from tumcsbot.lib.conf import Conf
 
-
-class Update(PluginCommandMixin, PluginThread):
+class Update(PluginCommand, Plugin):
     syntax = "update"
     description = cleandoc(
         """
@@ -24,8 +24,8 @@ class Update(PluginCommandMixin, PluginThread):
     _git_pull_cmd: list[str] = ["git", "pull"]
     _timeout: int = 15
 
-    def handle_message(self, message: dict[str, Any]) -> Response | Iterable[Response]:
-        if not is_bot_owner(message["sender_id"]):
+    async def handle_message(self, message: dict[str, Any]) -> Response | Iterable[Response]:
+        if not Conf.is_bot_owner(message["sender_id"]):
             return Response.privilege_err(message)
 
         # Get the dirname of this file (which is located in the git repo).
@@ -48,6 +48,7 @@ class Update(PluginCommandMixin, PluginThread):
                 stderr=sp.STDOUT,
                 text=True,
                 timeout=self._timeout,
+                check=False,
             )
         except sp.TimeoutExpired:
             return Response.build_message(
