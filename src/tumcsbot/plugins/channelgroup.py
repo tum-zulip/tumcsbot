@@ -1857,8 +1857,14 @@ class Channelgroup(PluginCommand, Plugin):
             for claim in session.query(GroupClaimAll).all() if bool(claim.IsAnnouncement)
         ]
 
+        failed: list[str] = []
+        message_link: str = "[{0}](" + client.base_url[:-4] + "#narrow/id/{0})"
+
         for msg_id in msg_ids:
             response = await client.edit_message(msg_id, new_content)
 
             if response["result"] != "success":
-                raise DMError("Could not update message.")
+                failed.append(message_link.format(msg_id))
+
+        if failed:
+            raise DMError(f"Could not update announcement message(s) {", ".join(failed)} :botsad:")
