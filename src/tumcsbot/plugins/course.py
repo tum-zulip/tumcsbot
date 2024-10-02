@@ -1663,7 +1663,7 @@ class Course(PluginCommand, Plugin):
         ty=str,
         description="The name of the new Channel.",
     )
-    async def create_channels(
+    async def create_channel(
         self,
         sender: ZulipUser,
         session: Session,
@@ -1672,11 +1672,11 @@ class Course(PluginCommand, Plugin):
         _message: dict[str, Any],
     ) -> AsyncGenerator[response_type, None]:
         """
-        Take a channel with the given name (or create it if it does not exist yet) and then add it to the Course's Channelgroup.
+        Take a channel with the given name with an additional course prefix (or create it if it does not exist yet) and then add it to the Course's Channelgroup.
         """
         course: CourseDB = args.course
         chan_group: ChannelGroup = Course.get_channelgroup(course, session)
-        channel_name: str = args.channel
+        channel_name: str = str(course.CourseName) + " - " + args.channel
 
         ex: int | None = await self.client.get_channel_id_by_name(channel_name)
 
