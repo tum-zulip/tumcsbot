@@ -4,6 +4,7 @@
 # TUM CS Bot - https://github.com/ro-i/tumcsbot
 
 from inspect import cleandoc
+import asyncio
 
 from typing import Any, Iterable, AsyncGenerator, cast
 from sqlalchemy import Column, String, Integer, ForeignKey, Boolean
@@ -303,11 +304,9 @@ class Channelgroup(PluginCommand, Plugin):
         for group in groups:
             group_id = group.ChannelGroupId
             emoji = group.ChannelGroupEmote
-            channels: list[str] = await Channelgroup.get_channel_names(
-                session, [group]
-            )
+            
+            num_channels = len(group.channels)
 
-            channels_concat: str = ", ".join(f"`{s}`" for s in channels)
             claims: str = ", ".join(
                 [
                     message_link.format(claim.MessageId)
@@ -317,7 +316,7 @@ class Channelgroup(PluginCommand, Plugin):
                 ]
             )
             response += (
-                f"\n{group_id} | {emoji} :{emoji}: | {channels_concat} | {claims}"
+                f"\n{group_id} | {emoji} :{emoji}: | {num_channels} Channels | {claims}"
             )
 
         response += "\n\nMessages claimed for all groups: \n" + ", ".join(

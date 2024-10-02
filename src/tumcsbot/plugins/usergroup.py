@@ -125,9 +125,15 @@ class Usergroup(PluginCommand, Plugin):
 
             for group in groups:
                 members = []
-                for m in group.members:
-                    await m
-                    members.append(m.mention_silent)
+                if len(group.members) == 0:
+                    members.append("No members")
+                
+                elif len(group.members) < 30:
+                    for m in group.members:
+                        await m
+                        members.append(m.mention_silent)
+                else:
+                    members.append(f"{len(group.members)} members")
 
                 members = members or ["No members"]
 
