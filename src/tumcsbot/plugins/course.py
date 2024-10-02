@@ -54,17 +54,17 @@ class CourseDB(TableBase):  # type: ignore
 
     Channels = Column(
         String,
-        ForeignKey("ChannelGroups.ChannelGroupId", ondelete="CASCADE"),
+        ForeignKey("ChannelGroups.ChannelGroupId"),
         nullable=False,
     )
 
     # todo: fix schema ondelete
     TutorsUserGroup = Column(
-        Integer, ForeignKey("UserGroups.GroupId", ondelete="CASCADE"), nullable=False
+        Integer, ForeignKey("UserGroups.GroupId"), nullable=False
     )
 
     InstructorsUserGroup = Column(
-        Integer, ForeignKey("UserGroups.GroupId", ondelete="CASCADE"), nullable=False
+        Integer, ForeignKey("UserGroups.GroupId"), nullable=False
     )
 
     TutorChannel = Column(ZulipChannel, nullable=False)  # type: ignore
