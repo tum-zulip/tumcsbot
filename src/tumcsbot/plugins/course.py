@@ -2241,7 +2241,7 @@ class Course(PluginCommand, Plugin):
 
             if m:
                 me = next(s for s in to_add if f"{name} - Memes" in s.name)
-                mcg: ChannelGroup = session.query(ChannelGroup).filter(ChannelGroup.ChannelGroupId == "Memes").one_or_none()
+                mcg: ChannelGroup | None = session.query(ChannelGroup).filter(ChannelGroup.ChannelGroupId == "Memes").one_or_none()
                 if mcg is not None:
                     Channelgroup.add_zulip_channels(session, [me], mcg)
 
@@ -2349,12 +2349,12 @@ class Course(PluginCommand, Plugin):
         return res
 
     @staticmethod
-    async def get_channel_names(session: Session, course: CourseDB) -> list[str]:
+    async def get_channel_names(session: Session, client: AsyncClient, course: CourseDB) -> list[str]:
         """
         Get the Channel Names of a Course as list of strings.
         """
         sg: ChannelGroup = Course.get_channelgroup(course, session)
-        return await Channelgroup.get_channel_names(session, [sg])
+        return await Channelgroup.get_channel_names(session, client, [sg])
 
     @staticmethod
     def _update_channelgroup(
