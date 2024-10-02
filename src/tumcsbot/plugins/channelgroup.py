@@ -1524,7 +1524,7 @@ class Channelgroup(PluginCommand, Plugin):
 
         _announcement_msg: str = cleandoc(
             """
-                Hi! :bothappypad:
+                Hi! :bothappy:
                 I have the pleasure to announce some channel groups here.
                 You may subscribe to a channel group in order to be automatically \
                 subscribed to all channels belonging to that group. Also, you \
@@ -1540,7 +1540,7 @@ class Channelgroup(PluginCommand, Plugin):
                 - `group unsubscribe <course_short_name>`
 
                 
-                Have a nice day! :sunglasses:
+                Have a nice day! :bothappypad:
 
                 (1) Note that this will also unsubscribe you from the existing \
                 channels of this group. If you only want to cancel the \
