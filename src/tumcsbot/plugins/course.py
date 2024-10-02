@@ -2504,9 +2504,11 @@ class Course(PluginCommand, Plugin):
 
             ## **Channels**:
 
-            | Id Channelgroup | Emoji | Channels |
-            | ---- | ---- | ---- |
-            | {chan_group_name} | :{emoji}: | {", ".join(channel_names)} |
+            | Id Channelgroup | Emoji |
+            | ---- | ---- |
+            | {chan_group_name} | :{emoji}: | 
+            
+            - {"\n - ".join(channel_names)} |
 
             ## **Tutors**: 
 
