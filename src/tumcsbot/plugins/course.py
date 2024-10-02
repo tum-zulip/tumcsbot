@@ -2212,8 +2212,6 @@ class Course(PluginCommand, Plugin):
                 mcg: ChannelGroup = session.query(ChannelGroup).filter(ChannelGroup.ChannelGroupId == "Memes").one_or_none()
                 if mcg is not None:
                     Channelgroup.add_zulip_channels(session, [me], mcg)
-                session.commit()
-
 
             return result
 
