@@ -1531,7 +1531,7 @@ class Channelgroup(PluginCommand, Plugin):
                 will be kept updated when new channels are added to the group.
                 Just react to this message with the emoji of the channel group \
                 you like to subscribe to. Remove your emoji to unsubscribe \
-                from this group. (1)
+                from this group. (1, 2)
 
                 {}
 
@@ -1547,6 +1547,10 @@ class Channelgroup(PluginCommand, Plugin):
                 subscription without being unsubscribed from existing channels, \
                 just write me a PM:
                 - `group unsubscribe -k <course_short_name>`
+
+                (2) If your course has changed its emote, remove your reaction \
+                of the old emote and react with the new one. Then, you can remove the new reaction \
+                again to unsubscribe from the group and its channels.
                 """
         )
 
