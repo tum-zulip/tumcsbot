@@ -38,7 +38,7 @@ class DB:
         if not isabs(path):
             raise ValueError("path to database is not absolute")
         DB._path = path
-        DB._engine = create_engine("sqlite:///" + path)
+        DB._engine = create_engine("sqlite:///" + path, max_overflow=100, max_timeout=3600)
 
     @staticmethod
     def path() -> str:
