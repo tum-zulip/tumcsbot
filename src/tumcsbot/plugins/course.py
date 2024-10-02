@@ -143,7 +143,7 @@ class Course(PluginCommand, Plugin):
         ty=CourseDB.CourseName,
         description="The name of the Course.",
     )
-    async def show(
+    async def overview(
         self,
         _sender: ZulipUser,
         session: Session,
