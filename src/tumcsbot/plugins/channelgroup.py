@@ -1798,7 +1798,8 @@ class Channelgroup(PluginCommand, Plugin):
         Get a list of the names of all channels that are members only in a given ChannelGroup and not in any other ChannelGroup.
         """
         groups: list[ChannelGroup] = Channelgroup.get_groups_for_user(session, user)
-        groups.remove(group)
+        if group in groups:
+            groups.remove(group)
 
         channelsToKeep: list[str] = await Channelgroup.get_channel_names(
             session, groups
