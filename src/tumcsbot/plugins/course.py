@@ -2507,8 +2507,10 @@ class Course(PluginCommand, Plugin):
             | Id Channelgroup | Emoji |
             | ---- | ---- |
             | {chan_group_name} | :{emoji}: | 
-            
-            {"\n".join(" - "+c for c in channel_names)}
+
+
+            {", ".join(channel_names)}
+
 
             ## **Tutors**: 
 
