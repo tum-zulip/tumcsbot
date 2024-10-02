@@ -1522,15 +1522,6 @@ class Channelgroup(PluginCommand, Plugin):
         Creates the comtent of an announcement message.
         """
 
-        table_names: str = ""
-        table_sep: str = "---- "
-        table_emojis: str = ""
-
-        for group in session.query(ChannelGroup).all():
-            table_names += f"| {group.ChannelGroupId} "
-            table_sep += "| ----- "
-            table_emojis += f"| :{group.ChannelGroupEmote}:"
-
         _announcement_msg: str = cleandoc(
             """
                 Hi! :bothappypad:
@@ -1542,12 +1533,7 @@ class Channelgroup(PluginCommand, Plugin):
                 you like to subscribe to. Remove your emoji to unsubscribe \
                 from this group. (1)
 
-                | channel group {}
                 {}
-                | emoji {}
-
-
-                *to be continued*
 
                 In case the emojis do not work for you, you may write me a PM:
                 - `group subscribe <group_id>`
@@ -1564,7 +1550,40 @@ class Channelgroup(PluginCommand, Plugin):
                 """
         )
 
-        return _announcement_msg.format(table_names, table_sep, table_emojis)
+        def format_pairs_to_markdown(pairs):
+            if not pairs:
+                return ""
+
+            # Prepare the markdown rows
+            header_row = "| " + " | ".join([str(pair[0]) for pair in pairs]) + " |\n"
+            value_row = "| " + " | ".join([str(pair[1]) for pair in pairs]) + " |\n"
+            
+            # Prepare the markdown separator
+            separator_row = "| " + " | ".join(["---" for _ in pairs]) + " |\n"
+            
+            # Combine everything
+            table = header_row + separator_row + value_row
+            return table
+
+
+        items = [
+            (str(group.ChannelGroupId), f":{group.ChannelGroupEmote}:")
+            for group in session.query(ChannelGroup).all()
+        ]
+
+        items = sorted(items, key=lambda x: x[0])
+
+        table = "|Course|Emoji|`      `|Course|Emoji|`      `|Course|Emoji\n|---|---|---|---|---|---|---|---|\n"
+        for a, b, c in zip(items[::3], items[1::3], items[2::3]):
+            if c is None:
+                c = ("", "")
+            if b is None:
+                b = ("", "")
+            
+            table += f"|{a[0]}|{a[1]}||{b[0]}|{b[1]}||{c[0]}|{c[1]}\n"
+        
+
+        return _announcement_msg.format(table)
 
     @staticmethod
     async def unannounce_h(

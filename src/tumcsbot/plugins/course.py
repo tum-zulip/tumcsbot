@@ -708,6 +708,7 @@ class Course(PluginCommand, Plugin):
                     channels = await Channelgroup.create_and_get_group(
                         session, name, channelgroup_emoji, self.client
                     )
+
                     if channels is None:
                         raise DMError("Could not create channelgroup")
                     cleanup_opterations.append(
@@ -1124,7 +1125,7 @@ class Course(PluginCommand, Plugin):
                                     Existing channel groups are:
                                     {'\n'.join([' - ' + str(c.ChannelGroupId) for c in cg])}
                                     
-                                    Should I delete them? (This is safe to to, if this channel group belongs to an old course)s
+                                    Should I delete them? (This is safe to to, if this channel group belongs to an old course)
                                     """
                                 )
                             ):
