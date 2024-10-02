@@ -1267,8 +1267,8 @@ class Channelgroup(PluginCommand, Plugin):
                 .one()
             )
             members: UserGroup = Channelgroup.get_usergroup(session, group)
-            sender: ZulipUser = ZulipUser(user_id)
             ZulipUser.set_client(client)
+            sender: ZulipUser = ZulipUser(user_id)
             await sender
             channel_names: list[str] = await Channelgroup.get_channel_names(
                 session, [group]
@@ -1277,7 +1277,7 @@ class Channelgroup(PluginCommand, Plugin):
             channels: list[tuple[str, str | None]] = [
                 (channel_name, None) for channel_name in channel_names
             ]
-
+            logging.info("Subscribing user %s to channels %s", sender.mention_silent, channel_names)
             await client.subscribe_users_multiple_channels([user_id], channels)
 
             Usergroup.add_user_to_group(session, sender, members)
@@ -1302,13 +1302,14 @@ class Channelgroup(PluginCommand, Plugin):
                 .one()
             )
             members: UserGroup = Channelgroup.get_usergroup(session, group)
+            ZulipUser.set_client(client)
             sender: ZulipUser = ZulipUser(user_id)
-            sender.set_client(client)
             await sender
             channel_names: list[str] = await Channelgroup.get_unique_channel_names(
                 session, sender, group
             )
 
+            logging.info("Unsubscribing user %s from channels %s", sender.mention_silent, channel_names)
             Usergroup.remove_user_from_group(session, sender, members)
 
             await client.remove_subscriptions(user_id, channel_names)
@@ -1771,6 +1772,7 @@ class Channelgroup(PluginCommand, Plugin):
                 chan : ZulipChannel = cast(ZulipChannel,s.Channel)
                 await chan
                 channels.add(chan.name)
+                await asyncio.sleep(0.1) # avoid rate limit
         return list(channels)
 
     @staticmethod
