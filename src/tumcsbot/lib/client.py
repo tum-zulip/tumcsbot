@@ -177,7 +177,7 @@ class AsyncClient:
         self.ping_len: int = len(self.ping)
         self.register_params: dict[str, Any] = {}
         kwargs["config_file"] = kwargs.get("config_file", plugin_context.zuliprc)
-        kwargs["insecure"] = True # todo: remove insecure=True
+        
         self._client: ZulipClient = ZulipClient(*args, **kwargs)
         self._executor = ThreadPoolExecutor()
         self.verbose: bool = plugin_context.logging_level <= logging.DEBUG

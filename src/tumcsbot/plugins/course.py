@@ -58,6 +58,7 @@ class CourseDB(TableBase):  # type: ignore
         nullable=False,
     )
 
+    # todo: fix schema ondelete
     TutorsUserGroup = Column(
         Integer, ForeignKey("UserGroups.GroupId", ondelete="CASCADE"), nullable=False
     )

@@ -90,7 +90,10 @@ class TumCSBot:
         self.event_queue: asyncio.Queue[Event] = asyncio.Queue()
 
         # get plugin context
-        client = ZulipClient(config_file=zuliprc, insecure=True)
+        client = ZulipClient(
+            config_file=zuliprc,
+            insecure=True, # Todo: Remove this line
+        )
         profile = client.get_profile()
         if profile["result"] != "success":
             raise Exception("Could not get profile of bot.") from Exception(profile)
@@ -105,7 +108,10 @@ class TumCSBot:
 
         # Init own Zulip client which also inits the global DB tables for all
         # Zulip client objects.
-        self.client = AsyncClient(self.plugin_context)
+        self.client = AsyncClient(
+            self.plugin_context,
+            insecure=True, # Todo: Remove this line
+        )
 
         asyncio.run(self.init_db())
 
