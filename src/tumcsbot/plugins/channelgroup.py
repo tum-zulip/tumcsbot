@@ -329,7 +329,7 @@ class Channelgroup(PluginCommand, Plugin):
 
     @command
     @privilege(Privilege.ADMIN)
-    @arg("group_id", str, description="The identifier of the Channelgroup to add.")
+    @arg("group_id", str, description="The identifier of the Channelgroup to add. Most likely the short name of a course.")
     @arg(
         "emoji", Regex.get_emoji_name, description="The emoji to use for the reaction."
     )
@@ -358,7 +358,7 @@ class Channelgroup(PluginCommand, Plugin):
     @arg(
         "group_id",
         ChannelGroup.ChannelGroupId,
-        description="The identifier of the Channelgroup to delete.",
+        description="The identifier of the Channelgroup to delete. Most likely the short name of a course.",
     )
     async def delete(
         self,
@@ -381,7 +381,7 @@ class Channelgroup(PluginCommand, Plugin):
     @arg(
         "group_id",
         ChannelGroup.ChannelGroupId,
-        description="The identifier of a Channelgroup to add channels to.",
+        description="The identifier of a Channelgroup to add channels to. Most likely the short name of a course.",
     )
     @arg("channels", ZulipChannel, description="The channel names to add.", greedy=True)
     async def add_channels(
@@ -405,7 +405,7 @@ class Channelgroup(PluginCommand, Plugin):
     @arg(
         "group_id",
         ChannelGroup.ChannelGroupId,
-        description="The identifier of a Channelgroup to remove channels from.",
+        description="The identifier of a Channelgroup to remove channels from. Most likely the short name of a course.",
     )
     @arg("channels", ZulipChannel, description="The channel names to remove.", greedy=True)
     async def remove_channels(
@@ -433,7 +433,7 @@ class Channelgroup(PluginCommand, Plugin):
     @arg(
         "group_id",
         ChannelGroup.ChannelGroupId,
-        description="The identifier of the Channelgroup to subscribe to.",
+        description="The identifier of the Channelgroup to subscribe to. Most likely the short name of a course.",
     )
     async def subscribe(
         self,
@@ -470,7 +470,7 @@ class Channelgroup(PluginCommand, Plugin):
     @arg(
         "group_id",
         ChannelGroup.ChannelGroupId,
-        description="The identifier of the Channelgroup the users should get subscribed to.",
+        description="The identifier of the Channelgroup the users should get subscribed to. Most likely the short name of a course.",
     )
     @arg(
         "user",
@@ -560,7 +560,7 @@ class Channelgroup(PluginCommand, Plugin):
     @arg(
         "group_id",
         ChannelGroup.ChannelGroupId,
-        description="The identifier of the Channelgroup to unsubscribe from.",
+        description="The identifier of the Channelgroup to unsubscribe from. Most likely the short name of a course.",
     )
     @opt(
         "t",
@@ -609,7 +609,7 @@ class Channelgroup(PluginCommand, Plugin):
     @arg(
         "group_id",
         ChannelGroup.ChannelGroupId,
-        description="The identifier of the Channelgroup the users should get unsubscribed from.",
+        description="The identifier of the Channelgroup the users should get unsubscribed from. Most likely the short name of a course.",
     )
     @arg(
         "user",
@@ -725,7 +725,7 @@ class Channelgroup(PluginCommand, Plugin):
     @arg(
         "group_id",
         ChannelGroup.ChannelGroupId,
-        description="The identifier of the Channelgroup to fix.",
+        description="The identifier of the Channelgroup to fix. Most likely the short name of a course.",
         optional=True,
     )
     @opt(
@@ -762,7 +762,7 @@ class Channelgroup(PluginCommand, Plugin):
     @arg(
         "group_id",
         ChannelGroup.ChannelGroupId,
-        description="The identifier of a Channelgroup for which to claim message.",
+        description="The identifier of a Channelgroup for which to claim message. Most likely the short name of a course.",
         optional=True,
     )
     @opt(
@@ -819,7 +819,7 @@ class Channelgroup(PluginCommand, Plugin):
     @arg(
         "group_id",
         str,
-        description="The id of a Channelgroup for which to claim message.",
+        description="The id of a Channelgroup for which to claim message. Most likely the short name of a course.",
         optional=True,
     )
     @opt(
@@ -894,7 +894,7 @@ class Channelgroup(PluginCommand, Plugin):
     @arg(
         "group_id",
         str,
-        description="The identifier of a Channelgroup for which to unclaim message.",
+        description="The identifier of a Channelgroup for which to unclaim message. Most likely the short name of a course.",
         optional=True,
     )
     @opt(
@@ -1536,8 +1536,8 @@ class Channelgroup(PluginCommand, Plugin):
                 {}
 
                 In case the emojis do not work for you, you may write me a PM:
-                - `group subscribe <group_id>`
-                - `group unsubscribe <group_id>`
+                - `group subscribe <course_short_name>`
+                - `group unsubscribe <course_short_name>`
 
                 
                 Have a nice day! :sunglasses:
@@ -1546,11 +1546,11 @@ class Channelgroup(PluginCommand, Plugin):
                 channels of this group. If you only want to cancel the \
                 subscription without being unsubscribed from existing channels, \
                 just write me a PM:
-                - `group unsubscribe -k <group_id>`
+                - `group unsubscribe -k <course_short_name>`
                 """
         )
 
-        def format_pairs_to_markdown(pairs):
+        def format_pairs_to_markdown(pairs: list[tuple[str, str]]) -> str:
             if not pairs:
                 return ""
 

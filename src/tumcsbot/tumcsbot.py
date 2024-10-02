@@ -92,7 +92,6 @@ class TumCSBot:
         # get plugin context
         client = ZulipClient(
             config_file=zuliprc,
-            insecure=True, # Todo: Remove this line
         )
         profile = client.get_profile()
         if profile["result"] != "success":
@@ -110,7 +109,6 @@ class TumCSBot:
         # Zulip client objects.
         self.client = AsyncClient(
             self.plugin_context,
-            insecure=True, # Todo: Remove this line
         )
 
         asyncio.run(self.init_db())
