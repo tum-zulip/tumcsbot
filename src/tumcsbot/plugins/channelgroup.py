@@ -1808,24 +1808,23 @@ class Channelgroup(PluginCommand, Plugin):
         groups: list[ChannelGroup] = Channelgroup.get_groups_for_user(session, user)
         if group in groups:
             groups.remove(group)
+        
+        # select all channelgroupmembers
+        channels_only_in_group: set[ChannelGroupMember] = set()
 
-        channelsToKeep: list[str] = await Channelgroup.get_channel_names(
-            session, 
-            client,
-            groups
-        )
+        for c in group.channels:
+            if all(c not in g.channels for g in groups):
+                channels_only_in_group.add(c)
+        
 
-        channels: list[str] = []
-        for s in (
-            session.query(ChannelGroupMember)
-            .filter(ChannelGroupMember.ChannelGroupId == group.ChannelGroupId)
-            .all()
-        ):
+        channel_names: list[str] = []
+        for s in channels_only_in_group:
             result = cast(ZulipChannel,s.Channel)
             await result
             name: str = result.name
-            channels.append(name)
-        return [channel for channel in channels if channel not in channelsToKeep]
+            channel_names.append(name)
+        
+        return [name for name in channel_names]
 
     @staticmethod
     def get_usergroup(session: Session, group: ChannelGroup) -> UserGroup:
