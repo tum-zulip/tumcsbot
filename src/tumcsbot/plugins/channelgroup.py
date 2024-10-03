@@ -1778,8 +1778,12 @@ class Channelgroup(PluginCommand, Plugin):
                 .filter(ChannelGroupMember.ChannelGroupId == group.ChannelGroupId)
                 .all())
         
-        channels = map(lambda x: x["name"], filter(lambda x: x["stream_id"] in channels_ids, server_channels))
-        return list(channels)
+        to_keep = [
+            x["name"]
+            for x in server_channels
+            if x["stream_id"] in channels_ids
+        ]
+        return to_keep
 
     @staticmethod
     async def get_channels(session: Session, group: ChannelGroup) -> list[ZulipChannel]:
