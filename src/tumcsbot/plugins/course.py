@@ -2039,6 +2039,8 @@ class Course(PluginCommand, Plugin):
 
         if (opts.ins or opts.a) and ins_s is not None:
             await self.client.delete_channel(ins_s.id)
+        
+        Channelgroup.update_announcement_messages(session, self.client)
 
         yield DMResponse(f"Course `{c_name}` deleted :bothappy:")
 
