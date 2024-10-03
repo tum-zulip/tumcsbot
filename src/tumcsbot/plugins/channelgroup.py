@@ -1810,7 +1810,7 @@ class Channelgroup(PluginCommand, Plugin):
             groups.remove(group)
         
         # select all channelgroupmembers
-        channels_only_in_group: set[ChannelGroupMember] = set()
+        channels_only_in_group: set[ZulipChannel] = set()
 
         for c in group.channels:
             if all(c not in g.channels for g in groups):
@@ -1818,13 +1818,11 @@ class Channelgroup(PluginCommand, Plugin):
         
 
         channel_names: list[str] = []
-        for s in channels_only_in_group:
-            result = cast(ZulipChannel,s.Channel)
-            await result
-            name: str = result.name
-            channel_names.append(name)
+        for c in channels_only_in_group:
+            await c
+            channel_names.append(c.name)
         
-        return [name for name in channel_names]
+        return channel_names
 
     @staticmethod
     def get_usergroup(session: Session, group: ChannelGroup) -> UserGroup:
