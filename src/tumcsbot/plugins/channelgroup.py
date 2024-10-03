@@ -1577,13 +1577,10 @@ class Channelgroup(PluginCommand, Plugin):
         ]
 
         items = sorted(items, key=lambda x: x[0])
+        items += 2 * [("", "")]
 
         table = "|Course|Emoji|`      `|Course|Emoji|`      `|Course|Emoji\n|---|---|---|---|---|---|---|---|\n"
         for a, b, c in zip(items[::3], items[1::3], items[2::3]):
-            if c is None:
-                c = ("", "")
-            if b is None:
-                b = ("", "")
             
             table += f"|{a[0]}|{a[1]}||{b[0]}|{b[1]}||{c[0]}|{c[1]}\n"
         
@@ -1774,7 +1771,7 @@ class Channelgroup(PluginCommand, Plugin):
         server_channels = server_channels_response["streams"]
 
         for group in groups:
-            channels_ids.update(session.query(ChannelGroupMember)
+            channels_ids.update(m.Channel.id for m in session.query(ChannelGroupMember)
                 .filter(ChannelGroupMember.ChannelGroupId == group.ChannelGroupId)
                 .all())
         
