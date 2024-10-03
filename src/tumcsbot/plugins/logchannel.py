@@ -4,6 +4,7 @@
 # TUM CS Bot - https://github.com/ro-i/tumcsbot
 from typing import Any, AsyncGenerator
 import logging
+import re
 
 from tumcsbot.lib.types import ZulipChannel, ZulipUser, response_type, DMResponse, DMError, Privilege
 from tumcsbot.lib.client import AsyncClient
