@@ -38,8 +38,8 @@ class ZulipLogHandler(logging.Handler):
         """
         msg = self.format(record)
 
-        m = re.match(self.API_RATE_LIMIT_PATTERN, msg)
-        if m and float(m.group(1)) < 1:
+        match = re.match(self.API_RATE_LIMIT_PATTERN, msg)
+        if match and float(match.group(1)) < 1:
             return
 
         response = self.client.as_sync().get_messages(
@@ -58,7 +58,7 @@ class ZulipLogHandler(logging.Handler):
             msgs = [m for m in response["messages"] if m["sender_id"] == self.client.id]
             msgs = msgs[: len(msgs) - 100]
             for m in msgs:
-                self.client.as_sync().delete_message(m["id"])
+                self.client.as_sync().delete_message(m["id"]) # type: ignore
 
         if "Traceback" in msg:
             msg = "```python\n" + msg + "\n```\n"

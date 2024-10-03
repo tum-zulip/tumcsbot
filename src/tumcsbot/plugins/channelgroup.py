@@ -1764,19 +1764,21 @@ class Channelgroup(PluginCommand, Plugin):
         """
         Get a list of the names of all channels that are members at least one of the Channelgroups in a list of ChannelGroups.
         """
-        channels: set[str] = set()
+        channels_ids: set[int] = set()
+        server_channels_response = await client.get_channels()
+
+        if server_channels_response["result"] != "success":
+            logging.error("Could not get channels from server.")
+            return []
+        
+        server_channels = server_channels_response["streams"]
 
         for group in groups:
-            for s in (
-                session.query(ChannelGroupMember)
+            channels_ids.update(session.query(ChannelGroupMember)
                 .filter(ChannelGroupMember.ChannelGroupId == group.ChannelGroupId)
-                .all()
-            ):
-                ZulipChannel.set_client(client)
-                chan : ZulipChannel = cast(ZulipChannel,s.Channel)
-                await chan
-                channels.add(chan.name)
-                await asyncio.sleep(0.1) # avoid rate limit
+                .all())
+        
+        channels = map(lambda x: x["name"], filter(lambda x: x["stream_id"] in channels_ids, server_channels))
         return list(channels)
 
     @staticmethod
