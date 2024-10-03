@@ -1811,6 +1811,7 @@ class Channelgroup(PluginCommand, Plugin):
         
         # select all channelgroupmembers
         channels_only_in_group: set[ZulipChannel] = set()
+        ZulipChannel.set_client(client)
 
         for c in group.channels:
             if all(c not in g.channels for g in groups):
