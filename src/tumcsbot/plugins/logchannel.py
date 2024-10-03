@@ -21,6 +21,7 @@ class ZulipLogHandler(logging.Handler):
     A handler class which sends
     log records to a Zulip channel.
     """
+    API_RATE_LIMIT_PATTERN = re.compile(r"hit API rate limit, waiting for (\d+\.\d+) seconds")
 
     def __init__(
         self, channel_id: int, client: AsyncClient, log_level: int = logging.INFO
@@ -35,6 +36,10 @@ class ZulipLogHandler(logging.Handler):
         Emit a record.
         """
         msg = self.format(record)
+
+        m = re.match(self.API_RATE_LIMIT_PATTERN, msg)
+        if m and float(m.group(1)) < 1:
+            return
 
         response = self.client.as_sync().get_messages(
             {
@@ -56,7 +61,7 @@ class ZulipLogHandler(logging.Handler):
 
         if "Traceback" in msg:
             msg = "```python\n" + msg + "\n```\n"
-
+        
         response = self.client.as_sync().send_message(
             Response.build_message(
                 None, content=msg, to=self.channel_id, subject="Log", msg_type="channel"
