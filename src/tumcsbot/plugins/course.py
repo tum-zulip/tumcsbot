@@ -1129,7 +1129,7 @@ class Course(PluginCommand, Plugin):
                         cg = (
                             session.query(ChannelGroup)
                             .filter(
-                                ChannelGroup.ChannelGroupId.like("%" + courseName + "%")
+                                ChannelGroup.ChannelGroupId.like(courseName)
                             )
                             .all()
                         )
