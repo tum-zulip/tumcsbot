@@ -58,7 +58,6 @@ class CourseDB(TableBase):  # type: ignore
         nullable=False,
     )
 
-    # todo: fix schema ondelete
     TutorsUserGroup = Column(Integer, ForeignKey("UserGroups.GroupId"), nullable=False)
 
     InstructorsUserGroup = Column(
@@ -1659,7 +1658,7 @@ class Course(PluginCommand, Plugin):
         description="The name of the Course to add the Channel to.",
     )
     @arg(
-        "channels",
+        "channel",
         ty=str,
         description="The name of the new Channel.",
     )
@@ -1672,7 +1671,7 @@ class Course(PluginCommand, Plugin):
         _message: dict[str, Any],
     ) -> AsyncGenerator[response_type, None]:
         """
-        Take a channel with the given name with an additional course prefix (or create it if it does not exist yet) and then add it to the Course's Channelgroup.
+        Take a channel with the given name and add the corresponding course prefix (or create it if it does not exist yet) and then add it to the Course's Channelgroup.
         """
         course: CourseDB = args.course
         chan_group: ChannelGroup = Course.get_channelgroup(course, session)
@@ -1849,7 +1848,7 @@ class Course(PluginCommand, Plugin):
         course: CourseDB = args.course
 
         if opts.c:
-            channels: ChannelGroup = opts.s
+            channels: ChannelGroup = opts.c
             Course._update_channelgroup(course, session, channels)
 
         if opts.t:
@@ -1971,7 +1970,7 @@ class Course(PluginCommand, Plugin):
         session: Session,
         args: CommandParser.Args,
         opts: CommandParser.Opts,
-        _message: dict[str, Any],
+        message: dict[str, Any],
     ) -> AsyncGenerator[response_type, None]:
 
         course: CourseDB = args.course
@@ -1987,6 +1986,22 @@ class Course(PluginCommand, Plugin):
         if course.InstructorChannel is not None:
             ins_s = cast(ZulipChannel, course.InstructorChannel)
             await ins_s
+
+        if not opts.a and not opts.c and not opts.t and not opts.i and not opts.tuts and not opts.ins:
+            cask = await self.client.send_response(
+                Response.build_message(
+                    message,
+                    content=f"Do you really want to only delete the underlying Course structure? Other components might be difficult to delete afterwards. Did you mean `course delete -a {c_name}`? botsceptical:",
+                )
+            )
+            if cask["result"] != "success":
+                raise DMError("Could not send message to user")
+            conf, _ = await UserInput.confirm(self.client, cask["id"], timeout=60)
+            if not conf:
+                yield DMResponse(
+                    "I will not delete the Course without your confirmation. See `help course` for further information."
+                )
+                return
 
         try:
             session.query(CourseDB).filter(
@@ -2039,8 +2054,8 @@ class Course(PluginCommand, Plugin):
 
         if (opts.ins or opts.a) and ins_s is not None:
             await self.client.delete_channel(ins_s.id)
-        
-        Channelgroup.update_announcement_messages(session, self.client)
+
+        await Channelgroup.update_announcement_messages(session, self.client)
 
         yield DMResponse(f"Course `{c_name}` deleted :bothappy:")
 
@@ -2547,7 +2562,7 @@ class Course(PluginCommand, Plugin):
 
             | Id Channelgroup | Emoji |
             | ---- | ---- |
-            | {chan_group_name} | :{emoji}: | 
+            | {chan_group_name} | :{emoji}: |
 
 
             {", ".join(channel_names)}
