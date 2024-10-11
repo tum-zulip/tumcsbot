@@ -62,11 +62,11 @@ class GarbageCollector(Plugin):
         threshhold = Conf.get("garbage_collector_no_activity_threshold_seconds")
         time_to_responde = Conf.get("garbage_collector_time_to_responde_seconds")
         if threshhold is None:
-            logging.error("garbage_collector_no_activity_threshold_seconds is not set")
+            # logging.error("garbage_collector_no_activity_threshold_seconds is not set")
             return True, 0, 0
 
         if time_to_responde is None:
-            logging.error("garbage_collector_time_to_responde_seconds is not set")
+            # logging.error("garbage_collector_time_to_responde_seconds is not set")
             return True, 0, 0
 
         return False, int(threshhold), int(time_to_responde)
