@@ -305,7 +305,7 @@ class Channelgroup(PluginCommand, Plugin):
         for group in groups:
             group_id = group.ChannelGroupId
             emoji = group.ChannelGroupEmote
-            
+
             num_channels = len(group.channels)
 
             claims: str = ", ".join(
@@ -1555,22 +1555,6 @@ class Channelgroup(PluginCommand, Plugin):
                 """
         )
 
-        def format_pairs_to_markdown(pairs: list[tuple[str, str]]) -> str:
-            if not pairs:
-                return ""
-
-            # Prepare the markdown rows
-            header_row = "| " + " | ".join([str(pair[0]) for pair in pairs]) + " |\n"
-            value_row = "| " + " | ".join([str(pair[1]) for pair in pairs]) + " |\n"
-            
-            # Prepare the markdown separator
-            separator_row = "| " + " | ".join(["---" for _ in pairs]) + " |\n"
-            
-            # Combine everything
-            table = header_row + separator_row + value_row
-            return table
-
-
         items = [
             (str(group.ChannelGroupId), f":{group.ChannelGroupEmote}:")
             for group in session.query(ChannelGroup).all()
@@ -1581,9 +1565,9 @@ class Channelgroup(PluginCommand, Plugin):
 
         table = "|Course|Emoji|`      `|Course|Emoji|`      `|Course|Emoji\n|---|---|---|---|---|---|---|---|\n"
         for a, b, c in zip(items[::3], items[1::3], items[2::3]):
-            
+
             table += f"|{a[0]}|{a[1]}||{b[0]}|{b[1]}||{c[0]}|{c[1]}\n"
-        
+
 
         return _announcement_msg.format(table)
 
@@ -1767,14 +1751,14 @@ class Channelgroup(PluginCommand, Plugin):
         if server_channels_response["result"] != "success":
             logging.error("Could not get channels from server.")
             return []
-        
+
         server_channels = server_channels_response["streams"]
 
         for group in groups:
             channels_ids.update(m.Channel.id for m in session.query(ChannelGroupMember)
                 .filter(ChannelGroupMember.ChannelGroupId == group.ChannelGroupId)
                 .all())
-        
+
         to_keep = [
             x["name"]
             for x in server_channels
@@ -1809,7 +1793,7 @@ class Channelgroup(PluginCommand, Plugin):
         groups: list[ChannelGroup] = Channelgroup.get_groups_for_user(session, user)
         if group in groups:
             groups.remove(group)
-        
+
         # select all channelgroupmembers
         channels_only_in_group: set[ZulipChannel] = set()
         ZulipChannel.set_client(client)
@@ -1817,13 +1801,13 @@ class Channelgroup(PluginCommand, Plugin):
         for c in group.channels:
             if all(c not in g.channels for g in groups):
                 channels_only_in_group.add(c)
-        
+
 
         channel_names: list[str] = []
         for c in channels_only_in_group:
             await c
             channel_names.append(c.name)
-        
+
         return channel_names
 
     @staticmethod
