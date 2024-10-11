@@ -63,7 +63,7 @@ class TumCSBot:
         self.stopped: bool = False
 
         # Init logging.
-        logging_level: int = logging.WARNING
+        logging_level: int = logging.INFO
         if debug:
             logging_level = logging.DEBUG
 
