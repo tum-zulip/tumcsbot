@@ -171,13 +171,15 @@ class AsyncClient:
                               channel.
     """
 
-    def __init__(self, plugin_context: PluginContext, *args: Any, **kwargs: Any) -> None:
+    def __init__(
+        self, plugin_context: PluginContext, *args: Any, **kwargs: Any
+    ) -> None:
         self.id: int = plugin_context.bot_id
         self.ping: str = plugin_context.bot_mention
         self.ping_len: int = len(self.ping)
         self.register_params: dict[str, Any] = {}
         kwargs["config_file"] = kwargs.get("config_file", plugin_context.zuliprc)
-        
+
         self._client: ZulipClient = ZulipClient(*args, **kwargs)
         self._executor = ThreadPoolExecutor()
         self.verbose: bool = plugin_context.logging_level <= logging.DEBUG
@@ -208,7 +210,16 @@ class AsyncClient:
 
         while True:
             try:
-                result = await loop.run_in_executor(self._executor, self._client.call_endpoint, url, method, request, longpolling, files, timeout)
+                result = await loop.run_in_executor(
+                    self._executor,
+                    self._client.call_endpoint,
+                    url,
+                    method,
+                    request,
+                    longpolling,
+                    files,
+                    timeout,
+                )
             except asyncio.CancelledError as e:
                 self._executor.shutdown(cancel_futures=True)
                 raise e
@@ -278,7 +289,7 @@ class AsyncClient:
                     res = await self.register(event_types, narrow, **kwargs)
                 if "error" in res["result"]:
                     if self.verbose:
-                        logging.error("Server returned error: %s", res['msg'])
+                        logging.error("Server returned error: %s", res["msg"])
                     await asyncio.sleep(1)
                 else:
                     return res["queue_id"], res["last_event_id"]
@@ -335,7 +346,7 @@ class AsyncClient:
             request={
                 "message_id": message_id,
                 "content": new_content,
-            }
+            },
         )
 
     async def get_public_channel_names(self, use_db: bool = True) -> list[str]:

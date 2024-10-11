@@ -4,7 +4,6 @@
 # TUM CS Bot - https://github.com/ro-i/tumcsbot
 
 from inspect import cleandoc
-import asyncio
 import logging
 from typing import Any, Iterable, AsyncGenerator, cast
 
@@ -139,7 +138,9 @@ class Channelgroup(PluginCommand, Plugin):
                 op = "unknown operation (" + op + ")"
 
             self.logger.info(
-                "Channels %s %s", ', '.join([f'#**{s['name']}**' for s in data['streams']]), op
+                "Channels %s %s",
+                ", ".join([f"#**{s['name']}**" for s in data["streams"]]),
+                op,
             )
             self.logger.debug(data)
             return await self.handle_channel_event(data)
@@ -175,8 +176,14 @@ class Channelgroup(PluginCommand, Plugin):
                 await Channelgroup.subscribe_h(self.client, user_id, group_id)
             if event["op"] == "remove":
                 await Channelgroup.unsubscribe_h(self.client, user_id, group_id)
-        except DMError:
-            self.logger.info("Failed to (un)subscribe the user to Channelgroup")
+        except DMError as e:
+            self.logger.exception(e)
+            self.logger.info(
+                "Failed to (un)subscribe %s to Channelgroup %s via Emote-Reaction :%s:",
+                user_id,
+                group_id,
+                emj,
+            )
             Response.build_message(
                 message=None,
                 content=f"Failed to (un)subscribe to Channelgroup {group_id} via Emote-Reaction :{emj}:",
@@ -193,9 +200,7 @@ class Channelgroup(PluginCommand, Plugin):
             name_d: str = channel["name"]
             id_d: int = channel["stream_id"]
 
-            group_ids_d: list[str] = Channelgroup.get_group_ids_from_channel_id(
-                id_d
-            )
+            group_ids_d: list[str] = Channelgroup.get_group_ids_from_channel_id(id_d)
 
             if group_ids_d:
                 self.logger.info(
@@ -210,9 +215,7 @@ class Channelgroup(PluginCommand, Plugin):
                         .one()
                     )
                     if s is not None:
-                        await Channelgroup.remove_channels_by_id(
-                            session, s, [id_d]
-                        )
+                        await Channelgroup.remove_channels_by_id(session, s, [id_d])
 
             # messages
             with DB.session() as session:
@@ -253,9 +256,7 @@ class Channelgroup(PluginCommand, Plugin):
                     event.data["message_id"], event.data["emoji_name"]
                 )
             )
-            or (
-                event.data["type"] == "stream" and event.data["op"] == "delete"
-            )
+            or (event.data["type"] == "stream" and event.data["op"] == "delete")
             or (
                 event.data["type"] == "delete_message"
                 and event.data["message_type"] == "stream"
@@ -329,7 +330,11 @@ class Channelgroup(PluginCommand, Plugin):
 
     @command
     @privilege(Privilege.ADMIN)
-    @arg("group_id", str, description="The identifier of the Channelgroup to add. Most likely the short name of a course.")
+    @arg(
+        "group_id",
+        str,
+        description="The identifier of the Channelgroup to add. Most likely the short name of a course.",
+    )
     @arg(
         "emoji", Regex.get_emoji_name, description="The emoji to use for the reaction."
     )
@@ -407,7 +412,12 @@ class Channelgroup(PluginCommand, Plugin):
         ChannelGroup.ChannelGroupId,
         description="The identifier of a Channelgroup to remove channels from. Most likely the short name of a course.",
     )
-    @arg("channels", ZulipChannel, description="The channel names to remove.", greedy=True)
+    @arg(
+        "channels",
+        ZulipChannel,
+        description="The channel names to remove.",
+        greedy=True,
+    )
     async def remove_channels(
         self,
         _sender: ZulipUser,
@@ -421,9 +431,7 @@ class Channelgroup(PluginCommand, Plugin):
         """
         group: ChannelGroup = args.group_id
 
-        await Channelgroup.remove_zulip_channels(
-            session, args.channels, group
-        )
+        await Channelgroup.remove_zulip_channels(session, args.channels, group)
         yield DMResponse(
             f"Removed channels from Channelgroup `{group.ChannelGroupId}`."
         )
@@ -450,7 +458,7 @@ class Channelgroup(PluginCommand, Plugin):
         members: UserGroup = Channelgroup.get_usergroup(session, group)
         user_id: list[int] = [sender.id]
         channel_names: list[str] = await Channelgroup.get_channel_names(
-            session,self.client, [group]
+            session, self.client, [group]
         )
 
         channels: list[tuple[str, str | None]] = [
@@ -494,7 +502,7 @@ class Channelgroup(PluginCommand, Plugin):
         users: list[ZulipUser] = args.user
         user_ids: list[int] = [user.id for user in users]
         channel_names: list[str] = await Channelgroup.get_channel_names(
-            session,self.client, [group]
+            session, self.client, [group]
         )
 
         channels: list[tuple[str, str | None]] = [
@@ -539,7 +547,7 @@ class Channelgroup(PluginCommand, Plugin):
         users: list[ZulipUser] = await Usergroup.get_users_for_group(session, ugroup)
         user_ids: list[int] = Usergroup.get_user_ids_for_group(session, ugroup)
         channel_names: list[str] = await Channelgroup.get_channel_names(
-            session, self.client,[group]
+            session, self.client, [group]
         )
 
         channels: list[tuple[str, str | None]] = [
@@ -803,7 +811,11 @@ class Channelgroup(PluginCommand, Plugin):
         name = channel["name"]
 
         await Channelgroup.claim_h(
-            group=group, session=session, client=self.client, message=message, All=opts.a
+            group=group,
+            session=session,
+            client=self.client,
+            message=message,
+            All=opts.a,
         )
 
         if not opts.a:
@@ -1021,7 +1033,9 @@ class Channelgroup(PluginCommand, Plugin):
     # ========================================================================================================================
 
     @staticmethod
-    async def create_group(session: Session, ID: str, emote: str, client: AsyncClient) -> None:
+    async def create_group(
+        session: Session, ID: str, emote: str, client: AsyncClient
+    ) -> None:
         """
         Create a new ChannelGroup.
 
@@ -1058,7 +1072,9 @@ class Channelgroup(PluginCommand, Plugin):
         await Channelgroup.update_announcement_messages(session, client)
 
     @staticmethod
-    async def create_and_get_group(session: Session, ID: str, emote: str, client: AsyncClient) -> ChannelGroup:
+    async def create_and_get_group(
+        session: Session, ID: str, emote: str, client: AsyncClient
+    ) -> ChannelGroup:
         """
         Create a new ChannelGroup.
 
@@ -1123,7 +1139,9 @@ class Channelgroup(PluginCommand, Plugin):
         return group
 
     @staticmethod
-    async def delete_group_h(session: Session, group: ChannelGroup, client: AsyncClient) -> None:
+    async def delete_group_h(
+        session: Session, group: ChannelGroup, client: AsyncClient
+    ) -> None:
         """
         Delete a ChannelGroup.
 
@@ -1272,13 +1290,17 @@ class Channelgroup(PluginCommand, Plugin):
             sender: ZulipUser = ZulipUser(user_id)
             await sender
             channel_names: list[str] = await Channelgroup.get_channel_names(
-                session, client,[group]
+                session, client, [group]
             )
 
             channels: list[tuple[str, str | None]] = [
                 (channel_name, None) for channel_name in channel_names
             ]
-            logging.info("Subscribing user %s to channels %s", sender.mention_silent, channel_names)
+            logging.info(
+                "Subscribing user %s to channel group %s",
+                sender.mention_silent,
+                group_id,
+            )
             await client.subscribe_users_multiple_channels([user_id], channels)
 
             Usergroup.add_user_to_group(session, sender, members)
@@ -1310,14 +1332,22 @@ class Channelgroup(PluginCommand, Plugin):
                 session, client, sender, group
             )
 
-            logging.info("Unsubscribing user %s from channels %s", sender.mention_silent, channel_names)
+            logging.info(
+                "Unsubscribing user %s from channel group %s",
+                sender.mention_silent,
+                group_id,
+            )
             Usergroup.remove_user_from_group(session, sender, members)
 
             await client.remove_subscriptions(user_id, channel_names)
 
     @staticmethod
     async def claim_h(
-        group: ChannelGroup | None, session: Session, client: AsyncClient,  message: dict[str, Any], All: bool = False
+        group: ChannelGroup | None,
+        session: Session,
+        client: AsyncClient,
+        message: dict[str, Any],
+        All: bool = False,
     ) -> None:
         """
         Make a message "special" for a given group or for all ChannelGroups.
@@ -1334,7 +1364,7 @@ class Channelgroup(PluginCommand, Plugin):
         Returns:
             None
         """
-        message_id : int = message["id"]
+        message_id: int = message["id"]
 
         if not All:
             if group is None:
@@ -1365,7 +1395,6 @@ class Channelgroup(PluginCommand, Plugin):
 
             await client.send_response(Response.build_reaction(message, emoji=emoji))
 
-
         else:
             if (
                 session.query(GroupClaimAll)
@@ -1382,11 +1411,14 @@ class Channelgroup(PluginCommand, Plugin):
 
             # React with all the emojis on the claimed message
             all_emojis: list[str] = [
-            str(group.ChannelGroupEmote) for group in session.query(ChannelGroup).all()
+                str(group.ChannelGroupEmote)
+                for group in session.query(ChannelGroup).all()
             ]
 
             for emoji in all_emojis:
-                await client.send_response(Response.build_reaction(message, emoji=emoji))
+                await client.send_response(
+                    Response.build_reaction(message, emoji=emoji)
+                )
 
     @staticmethod
     async def unclaim_h(
@@ -1564,7 +1596,8 @@ class Channelgroup(PluginCommand, Plugin):
         items += 2 * [("", "")]
 
         table = "|Course|Emoji|`      `|Course|Emoji|`      `|Course|Emoji\n|---|---|---|---|---|---|---|---|\n"
-        for a, b, c in zip(items[::3], items[1::3], items[2::3]):
+        third = len(items) // 3
+        for a, b, c in zip(items[:third], items[third : 2 * third], items[2 * third : 3 * third]):
 
             table += f"|{a[0]}|{a[1]}||{b[0]}|{b[1]}||{c[0]}|{c[1]}\n"
 
@@ -1627,7 +1660,7 @@ class Channelgroup(PluginCommand, Plugin):
         ugroup: UserGroup = Channelgroup.get_usergroup(session, group)
         user_ids: list[int] = Usergroup.get_user_ids_for_group(session, ugroup)
         channel_names: list[str] = await Channelgroup.get_channel_names(
-            session, client,[group]
+            session, client, [group]
         )
 
         channels: list[tuple[str, str | None]] = [
@@ -1738,9 +1771,7 @@ class Channelgroup(PluginCommand, Plugin):
 
     @staticmethod
     async def get_channel_names(
-        session: Session,
-        client: AsyncClient,
-        groups: list[ChannelGroup]
+        session: Session, client: AsyncClient, groups: list[ChannelGroup]
     ) -> list[str]:
         """
         Get a list of the names of all channels that are members at least one of the Channelgroups in a list of ChannelGroups.
@@ -1755,7 +1786,9 @@ class Channelgroup(PluginCommand, Plugin):
         server_channels = server_channels_response["streams"]
 
         for group in groups:
-            channels_ids.update(m.Channel.id for m in session.query(ChannelGroupMember)
+            channels_ids.update(
+                m.Channel.id
+                for m in session.query(ChannelGroupMember)
                 .filter(ChannelGroupMember.ChannelGroupId == group.ChannelGroupId)
                 .all())
 
@@ -1777,7 +1810,7 @@ class Channelgroup(PluginCommand, Plugin):
             .filter(ChannelGroupMember.ChannelGroupId == group.ChannelGroupId)
             .all()
         ):
-            chan : ZulipChannel = cast(ZulipChannel,s.Channel)
+            chan: ZulipChannel = cast(ZulipChannel, s.Channel)
             await chan
             channels.add(chan)
 
@@ -1861,7 +1894,8 @@ class Channelgroup(PluginCommand, Plugin):
 
     @staticmethod
     async def update_announcement_messages(
-        session: Session, client: AsyncClient,
+        session: Session,
+        client: AsyncClient,
     ) -> None:
         """
         Updates the content of an announcement message.
@@ -1870,7 +1904,8 @@ class Channelgroup(PluginCommand, Plugin):
 
         msg_ids: list[int] = [
             int(claim.MessageId)
-            for claim in session.query(GroupClaimAll).all() if bool(claim.IsAnnouncement)
+            for claim in session.query(GroupClaimAll).all()
+            if bool(claim.IsAnnouncement)
         ]
 
         failed: list[str] = []
@@ -1883,4 +1918,6 @@ class Channelgroup(PluginCommand, Plugin):
                 failed.append(message_link.format(msg_id))
 
         if failed:
-            raise DMError(f"Could not update announcement message(s) {", ".join(failed)} :botsad:")
+            raise DMError(
+                f"Could not update announcement message(s) {", ".join(failed)} :botsad:"
+            )
