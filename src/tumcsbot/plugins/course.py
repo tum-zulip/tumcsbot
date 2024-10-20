@@ -1086,13 +1086,13 @@ class Course(PluginCommand, Plugin):
             await dm(
                 cleandoc(
                     """
-                                                                 Let's start by choosing a name for your new Course :bothappy:
-                                                                 
-                                                                 ```spoiler What is a short name of a Course?
-                                                                 The short name is a unique identifier for the Course without spaces or special characters.
-                                                                 This name will be used to associate Channels with the course. For example, if the course is called "Introduction to Computer Science", the short name could be `ICS` and the Announcements Channel would have the name `ICS - Announcements`.
-                                                                 ```
-                                                                 """
+                    Let's start by choosing a name for your new Course :bothappy:
+
+                    ```spoiler What is a short name of a Course?
+                    The short name is a unique identifier for the Course without spaces or special characters.
+                    This name will be used to associate Channels with the course. For example, if the course is called "Introduction to Computer Science", the short name could be `ICS` and the Announcements Channel would have the name `ICS - Announcements`.
+                    ```
+                    """
                 )
             ),
         ]
@@ -1128,9 +1128,7 @@ class Course(PluginCommand, Plugin):
                         courseName = result
                         cg = (
                             session.query(ChannelGroup)
-                            .filter(
-                                ChannelGroup.ChannelGroupId.like(courseName)
-                            )
+                            .filter(ChannelGroup.ChannelGroupId == courseName)
                             .all()
                         )
                         if cg:
@@ -1576,14 +1574,10 @@ class Course(PluginCommand, Plugin):
     @opt("g", long_opt="general", description="Add a general Channel.")
     @opt("o", long_opt="orga", description="Add a Channel for Organization.")
     @opt(
-        "fn",
-        long_opt="feedbackbnorm",
-        description="Add a normal  Channel for Feedback.",
-    )
-    @opt(
-        "fa",
-        long_opt="feedbackanon",
-        description="Add an anonymous Channel for Feedback.",
+        "f",
+        long_opt="feedback",
+        ty=Literal["normal", "anonymous"],
+        description="Add a Channel for Feedback. If `anonymous` is chosen, the Feedback-Channel will allow anonymous Feedback. If `normal` is chosen, the Feedback-Channel will not allow anonymous Feedback.",
     )
     @opt("n", long_opt="announcements", description="Add a Channel for Announcements.")
     @opt("m", long_opt="memes", description="Add a Channel for Memes.")
@@ -1623,12 +1617,6 @@ class Course(PluginCommand, Plugin):
                 principals=[sender.id, self.client.id],
             )
 
-        else:
-            if opts.fn and opts.fa:
-                raise DMError(
-                    "You can only add one (normal OR anonymous) Feedback Channel at a time."
-                )
-
             await Course.add_standard_channels(
                 client=self.client,
                 session=session,
@@ -1638,8 +1626,8 @@ class Course(PluginCommand, Plugin):
                 principals=[sender.id, self.client.id],
                 g=opts.g,
                 o=opts.o,
-                fn=opts.fn,
-                fa=opts.fa,
+                fn=opts.f != "anonymous",
+                fa=opts.f == "anonymous",
                 n=opts.n,
                 m=opts.m,
                 t=opts.t,
@@ -1648,7 +1636,6 @@ class Course(PluginCommand, Plugin):
         yield DMResponse(
             f"Standard Channels added to Course `{course.CourseName}` :bothappy:"
         )
-
 
     @command
     @privilege(Privilege.ADMIN)
@@ -1726,7 +1713,7 @@ class Course(PluginCommand, Plugin):
         Add a list of Zulip-Users to the Course's Tutors.
         """
         course: CourseDB = args.course
-        u_group: ChannelGroup = Course.get_tutorgroup(course, session)
+        u_group: UserGroup = Course.get_tutorgroup(course, session)
         tutors: list[ZulipUser] = await Usergroup.get_users_for_group(session, u_group)
         t_chan: ZulipChannel = cast(ZulipChannel, course.TutorChannel)
         await t_chan
@@ -1749,6 +1736,51 @@ class Course(PluginCommand, Plugin):
 
         yield DMResponse(
             f"Added {', '.join([t.mention_silent for t in new_tutors])} to the Tutors of the Course `{course.CourseName}` :bothappy:"
+        )
+
+    @command
+    @privilege(Privilege.ADMIN)
+    @arg(
+        "course",
+        ty=CourseDB.CourseName,
+        description="The name of the Course to remove the tutor from.",
+    )
+    @arg(
+        "tutors",
+        ty=ZulipUser,
+        description="The name of the tutor to remove.",
+        greedy=True,
+    )
+    async def remove_tutors(
+        self,
+        _sender: ZulipUser,
+        session: Session,
+        args: CommandParser.Args,
+        _opts: CommandParser.Opts,
+        _message: dict[str, Any],
+    ) -> AsyncGenerator[response_type, None]:
+        """
+        Remove a tutor from the Course's Tutors.
+        """
+        course: CourseDB = args.course
+        u_group: UserGroup = Course.get_tutorgroup(course, session)
+        t_chan: ZulipChannel = cast(ZulipChannel, course.TutorChannel)
+        await t_chan
+
+        if not args.tutors:
+            raise DMError("Please provide at least one tutor to remove.")
+
+        for tutor in args.tutors:
+            await tutor
+
+            Usergroup.remove_user_from_group(session, tutor, u_group)
+            await self.client.remove_subscriptions(
+                ID=tutor.id,
+                channels=[t_chan.name],
+            )
+
+        yield DMResponse(
+            f"Removed {', '.join([t.mention_silent for t in args.tutors])} from the Tutors of the Course `{course.CourseName}` :bothappy:"
         )
 
     @command
@@ -1987,7 +2019,14 @@ class Course(PluginCommand, Plugin):
             ins_s = cast(ZulipChannel, course.InstructorChannel)
             await ins_s
 
-        if not opts.a and not opts.c and not opts.t and not opts.i and not opts.tuts and not opts.ins:
+        if (
+            not opts.a
+            and not opts.c
+            and not opts.t
+            and not opts.i
+            and not opts.tuts
+            and not opts.ins
+        ):
             cask = await self.client.send_response(
                 Response.build_message(
                     message,
@@ -2258,7 +2297,11 @@ class Course(PluginCommand, Plugin):
 
             if m:
                 me = next(s for s in to_add if f"{name} - Memes" in s.name)
-                mcg: ChannelGroup | None = session.query(ChannelGroup).filter(ChannelGroup.ChannelGroupId == "Memes").one_or_none()
+                mcg: ChannelGroup | None = (
+                    session.query(ChannelGroup)
+                    .filter(ChannelGroup.ChannelGroupId == "Memes")
+                    .one_or_none()
+                )
                 if mcg is not None:
                     Channelgroup.add_zulip_channels(session, [me], mcg)
 
@@ -2366,7 +2409,9 @@ class Course(PluginCommand, Plugin):
         return res
 
     @staticmethod
-    async def get_channel_names(session: Session, client: AsyncClient, course: CourseDB) -> list[str]:
+    async def get_channel_names(
+        session: Session, client: AsyncClient, course: CourseDB
+    ) -> list[str]:
         """
         Get the Channel Names of a Course as list of strings.
         """

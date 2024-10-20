@@ -13,6 +13,8 @@ a private message or a message starting with @mentioning the bot.
 import argparse
 import os
 import sys
+import logging
+from time import sleep
 
 from tumcsbot.tumcsbot import TumCSBot
 
@@ -38,18 +40,27 @@ def main() -> None:
     )
     args: argparse.Namespace = argument_parser.parse_args()
 
+    bot: TumCSBot | None = None
+    try:
+        bot = TumCSBot(
+            zuliprc=args.zuliprc[0],
+            db_path=args.db_path[0],
+            debug=args.debug,
+            logfile=args.logfile,
+        )
 
-    bot: TumCSBot = TumCSBot(
-        zuliprc=args.zuliprc[0],
-        db_path=args.db_path[0],
-        debug=args.debug,
-        logfile=args.logfile,
-    )
+        bot.run()
+    except KeyboardInterrupt:
+        pass
+    except Exception as e:
+        logging.exception(e)
+        bot = None
+        sleep(1)
 
-    bot.run()
-
-    if bot.restart:
+    if bot is None or bot.restart:
         print("Received termination request. Restarting: " + str(sys.argv))
+        if bot is not None:
+            bot.stop()
         os.execv(sys.argv[0], sys.argv)
     else:
         print("Terminated.")

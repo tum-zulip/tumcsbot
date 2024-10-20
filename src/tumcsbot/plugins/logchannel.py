@@ -6,7 +6,14 @@ from typing import Any, AsyncGenerator
 import logging
 import re
 
-from tumcsbot.lib.types import ZulipChannel, ZulipUser, response_type, DMResponse, DMError, Privilege
+from tumcsbot.lib.types import (
+    ZulipChannel,
+    ZulipUser,
+    response_type,
+    DMResponse,
+    DMError,
+    Privilege,
+)
 from tumcsbot.lib.client import AsyncClient
 from tumcsbot.lib.conf import Conf
 from tumcsbot.lib.db import DB, Session
@@ -22,7 +29,10 @@ class ZulipLogHandler(logging.Handler):
     A handler class which sends
     log records to a Zulip channel.
     """
-    API_RATE_LIMIT_PATTERN = re.compile(r"hit API rate limit, waiting for (\d+\.\d+) seconds")
+
+    API_RATE_LIMIT_PATTERN = re.compile(
+        r"hit API rate limit, waiting for (\d+\.\d+) seconds"
+    )
 
     def __init__(
         self, channel_id: int, client: AsyncClient, log_level: int = logging.INFO
@@ -58,11 +68,11 @@ class ZulipLogHandler(logging.Handler):
             msgs = [m for m in response["messages"] if m["sender_id"] == self.client.id]
             msgs = msgs[: len(msgs) - 100]
             for m in msgs:
-                self.client.as_sync().delete_message(m["id"]) # type: ignore
+                self.client.as_sync().delete_message(m["id"])  # type: ignore
 
         if "Traceback" in msg:
             msg = "```python\n" + msg + "\n```\n"
-        
+
         response = self.client.as_sync().send_message(
             Response.build_message(
                 None, content=msg, to=self.channel_id, subject="Log", msg_type="channel"
@@ -129,12 +139,11 @@ class LogChannel(PluginCommand, Plugin):
         else:
             logging.error("Channel %s not found", logstram)
 
-
-
     @command
     @arg("channel", str, description="The channel to send log messages to.")
     @privilege(Privilege.ADMIN)
-    async def set(self,
+    async def set(
+        self,
         sender: ZulipUser,
         _session: Session,
         args: CommandParser.Args,
@@ -146,14 +155,22 @@ class LogChannel(PluginCommand, Plugin):
         """
         # check if channel exists
         response = await self.client.add_subscriptions(
-            channels=[{"name": args.channel, "description": "Log channel of TUM CS Bot"}],
+            channels=[
+                {"name": args.channel, "description": "Log channel of TUM CS Bot"}
+            ],
             principals=[self.client.id, sender.id],
             invite_only=True,
             history_public_to_subscribers=True,
         )
 
         if response["result"] != "success":
-            raise DMError("Could not add subscribers to " + args.channel + ": " + response["msg"])
+            raise DMError(
+                "Could not add subscribers to " + args.channel + ": " + response["msg"]
+            )
 
         Conf.set("logchannel", args.channel)
-        yield DMResponse("Log channel set to `" + args.channel + "`. Restart the bot to apply changes.")
+        yield DMResponse(
+            "Log channel set to `"
+            + args.channel
+            + "`. Restart the bot to apply changes."
+        )

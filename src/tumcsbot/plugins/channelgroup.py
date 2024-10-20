@@ -184,11 +184,6 @@ class Channelgroup(PluginCommand, Plugin):
                 group_id,
                 emj,
             )
-            Response.build_message(
-                message=None,
-                content=f"Failed to (un)subscribe to Channelgroup {group_id} via Emote-Reaction :{emj}:",
-                to=user_id,
-            )
 
         return Response.none()
 
@@ -1288,7 +1283,7 @@ class Channelgroup(PluginCommand, Plugin):
             members: UserGroup = Channelgroup.get_usergroup(session, group)
             ZulipUser.set_client(client)
             sender: ZulipUser = ZulipUser(user_id)
-            await sender
+
             channel_names: list[str] = await Channelgroup.get_channel_names(
                 session, client, [group]
             )
@@ -1298,7 +1293,7 @@ class Channelgroup(PluginCommand, Plugin):
             ]
             logging.info(
                 "Subscribing user %s to channel group %s",
-                sender.mention_silent,
+                user_id,
                 group_id,
             )
             await client.subscribe_users_multiple_channels([user_id], channels)
@@ -1569,8 +1564,8 @@ class Channelgroup(PluginCommand, Plugin):
                 {}
 
                 In case the emojis do not work for you, you may write me a PM:
-                - `group subscribe <course_short_name>`
-                - `group unsubscribe <course_short_name>`
+                - `channelgroup subscribe <course_short_name>`
+                - `channelgroup unsubscribe <course_short_name>`
 
                 
                 Have a nice day! :bothappypad:
@@ -1579,7 +1574,7 @@ class Channelgroup(PluginCommand, Plugin):
                 channels of this group. If you only want to cancel the \
                 subscription without being unsubscribed from existing channels, \
                 just write me a PM:
-                - `group unsubscribe -k <course_short_name>`
+                - `channelgroup unsubscribe -k <course_short_name>`
 
                 (2) If your course has changed its emote, remove your reaction \
                 of the old emote and react with the new one. Then, you can remove the new reaction \
@@ -1597,10 +1592,11 @@ class Channelgroup(PluginCommand, Plugin):
 
         table = "|Course|Emoji|`      `|Course|Emoji|`      `|Course|Emoji\n|---|---|---|---|---|---|---|---|\n"
         third = len(items) // 3
-        for a, b, c in zip(items[:third], items[third : 2 * third], items[2 * third : 3 * third]):
+        for a, b, c in zip(
+            items[:third], items[third : 2 * third], items[2 * third : 3 * third]
+        ):
 
             table += f"|{a[0]}|{a[1]}||{b[0]}|{b[1]}||{c[0]}|{c[1]}\n"
-
 
         return _announcement_msg.format(table)
 
@@ -1790,13 +1786,10 @@ class Channelgroup(PluginCommand, Plugin):
                 m.Channel.id
                 for m in session.query(ChannelGroupMember)
                 .filter(ChannelGroupMember.ChannelGroupId == group.ChannelGroupId)
-                .all())
+                .all()
+            )
 
-        to_keep = [
-            x["name"]
-            for x in server_channels
-            if x["stream_id"] in channels_ids
-        ]
+        to_keep = [x["name"] for x in server_channels if x["stream_id"] in channels_ids]
         return to_keep
 
     @staticmethod
@@ -1834,7 +1827,6 @@ class Channelgroup(PluginCommand, Plugin):
         for c in group.channels:
             if all(c not in g.channels for g in groups):
                 channels_only_in_group.add(c)
-
 
         channel_names: list[str] = []
         for c in channels_only_in_group:

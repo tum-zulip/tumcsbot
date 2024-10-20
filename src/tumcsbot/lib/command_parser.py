@@ -1,5 +1,5 @@
 import difflib
-from typing import Any, Callable
+from typing import Any, Callable, Literal
 from argparse import Namespace
 
 import logging
@@ -136,13 +136,14 @@ class CommandParser:
         matches: regex.regex.Match[str] = matches_opt
         try:
             tokens: list[str] | None = [
-                bytes(e, "Latin-1").decode("unicode-escape")
+                e
                 for e in [
                     CommandParser.strip_quotes(e)
                     for e in matches.capturesdict()["args"]
                 ]
                 if e
             ]
+            print(tokens)
         except Exception as e:
             raise CommandParser.IllegalCommandParserState(
                 f"`{command}` is not a valid pattern"
@@ -157,7 +158,9 @@ class CommandParser:
         subcommand: str = tokens[0]
         if subcommand not in self.commands:
             # find the closest matching subcommand
-            close_matches = difflib.get_close_matches(subcommand, self.commands.keys(), n=2)
+            close_matches = difflib.get_close_matches(
+                subcommand, self.commands.keys(), n=2
+            )
             escaped = [f"`{m}`" for m in close_matches]
             if len(escaped) == 0:
                 raise CommandParser.IllegalCommandParserState(
@@ -309,7 +312,7 @@ class CommandParser:
                     f"Invalid option `{opt}` for subcommand."
                 )
             try:
-                converter: Callable[[Any], Any] | None = opts[opt]
+                converter: Callable[[Any], Any] | None = opts[opt]                
                 if converter is not None:
                     optarg: str | None
                     if token.startswith("-") and not token.startswith("--"):
