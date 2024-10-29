@@ -1684,6 +1684,13 @@ class Course(PluginCommand, Plugin):
         await channel
 
         Channelgroup.add_zulip_channels(session, [channel], chan_group)
+
+        u : UserGroup= Channelgroup.get_usergroup(session, chan_group)
+        uids : list[int] = Usergroup.get_user_ids_for_group(session, u)
+
+        await self.client.subscribe_users(uids, channel.name)
+
+
         yield DMResponse(
             f"Added Channel {channel.mention} to the Course `{course.CourseName}` :bothappy:"
         )
