@@ -1,5 +1,6 @@
 TUM CS Bot
 ==========
+> Initial work by ro-i ([github.com/ro-i/tumcsbot](https://github.com/ro-i/tumcsbot))
 
 An interactive bot for zulip.in.tum.de, the [Zulip Chat](https://zulip.com/)
 of the Department of Informatics of the Technical University of Munich.
