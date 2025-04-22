@@ -23,7 +23,13 @@ from typing import Any, Iterable, Type, TypeVar
 from zulip import Client as ZulipClient
 from tumcsbot.lib import response
 from tumcsbot.lib import utils
-from tumcsbot.lib.client import AsyncClient, PlublicChannels, PluginContext, Event, EventType
+from tumcsbot.lib.client import (
+    AsyncClient,
+    PlublicChannels,
+    PluginContext,
+    Event,
+    EventType,
+)
 from tumcsbot.lib.db import DB
 from tumcsbot.plugin import (
     Plugin,
@@ -74,7 +80,9 @@ class TumCSBot:
                 filename=logfile,
             )
         else:
-            logging.basicConfig(format=LOGGING_FORMAT, level=logging_level, stream=sys.stdout)
+            logging.basicConfig(
+                format=LOGGING_FORMAT, level=logging_level, stream=sys.stdout
+            )
 
         threading.current_thread().name = "Main"
 
@@ -166,18 +174,33 @@ class TumCSBot:
     async def init_db(self) -> None:
         """Initialize some tables of the database."""
 
-        channel_names = await self.client.get_public_channel_names(use_db=False)
+        channels = await self.client.get_public_channels(use_db=False)
+        names = [name for _, name in channels]
         with DB.session() as session:
             for entry in session.query(PlublicChannels).all():
-                if not str(entry.ChannelName) in channel_names:
+                if not str(entry.ChannelName) in names:
                     session.delete(entry)
-            for channel in channel_names:
+
+                expected_id = next(
+                    channel_id
+                    for channel_id, name in channels
+                    if name == entry.ChannelName
+                )
+
+                if entry.ChannelId != expected_id:
+                    session.delete(entry)
+
+            for channel_id, name in channels:
                 if (
                     not session.query(PlublicChannels)
-                    .filter_by(ChannelName=channel)
+                    .filter_by(ChannelId=channel_id)
                     .first()
                 ):
-                    session.add(PlublicChannels(ChannelName=channel, Subscribed=0))
+                    session.add(
+                        PlublicChannels(
+                            ChannelId=channel_id, ChannelName=name, Subscribed=False
+                        )
+                    )
             session.commit()
 
     def stop(self) -> None:

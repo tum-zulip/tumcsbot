@@ -152,6 +152,11 @@ class ModerationReactionHandler(Plugin):
     def _replace_placeholder(
         content: str, event_data: dict[str, Any], message: dict[str, Any]
     ) -> str:
+        # todo: replace $word with {word}
+
+        for key, _ in ModerationReactionHandler._replace_dict.items():
+            content = content.replace(f"${key}", f"{{{key}}}")
+
         return content.format(
             **{
                 k: replacement(event_data, message)

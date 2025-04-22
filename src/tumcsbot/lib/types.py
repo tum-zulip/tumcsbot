@@ -1,6 +1,6 @@
 from __future__ import annotations
 from abc import ABC, abstractmethod
-from typing import Any, AsyncGenerator, Callable, cast, Generator
+from typing import Any, AsyncGenerator, Callable, cast, Generator, _LiteralGenericAlias
 
 from dataclasses import dataclass, field
 from enum import Enum
@@ -389,6 +389,7 @@ arg_type = (
     Callable[[Any], Any]
     | sqlalchemy.Column[Any]
     | sqlalchemy.orm.InstrumentedAttribute[Any]
+    | _LiteralGenericAlias
 )
 
 command_func_type = Callable[

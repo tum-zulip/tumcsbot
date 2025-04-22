@@ -439,7 +439,7 @@ class Usergroup(PluginCommand, Plugin):
 
         if user.id in user_ids:
             raise DMError(
-                f"{user.mention_silent} is already in usergroup '{group.GroupName}'"
+                f"User is already in usergroup '{group.GroupName}'"
             )
 
         try:
@@ -448,7 +448,7 @@ class Usergroup(PluginCommand, Plugin):
         except sqlalchemy.exc.IntegrityError as e:
             session.rollback()
             raise DMError(
-                f"Could not add {user.mention_silent} to usergroup '{group.GroupName}'."
+                f"Could not add user to usergroup '{group.GroupName}'."
             ) from e
 
     @staticmethod

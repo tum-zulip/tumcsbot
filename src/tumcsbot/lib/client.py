@@ -20,7 +20,7 @@ from collections.abc import Iterable as IterableClass
 from typing import AsyncGenerator, Callable, cast, Any, IO, Iterable, final, Coroutine
 from urllib.parse import quote
 
-from sqlalchemy import Boolean, Column, String
+from sqlalchemy import Boolean, Column, String, Integer
 
 from zulip import Client as ZulipClient
 
@@ -129,7 +129,7 @@ class PluginContext:
 
 class PlublicChannels(TableBase):  # type: ignore
     __tablename__ = "PublicChannels"
-
+    ChannelId = Column(Integer, primary_key=True)   
     ChannelName = Column(String, primary_key=True)
     Subscribed = Column(Boolean, nullable=False)
 
@@ -149,7 +149,7 @@ class AsyncClient:
 
     Additional Methods:
     -------------------
-    get_public_channel_names   Get the names of all public channels.
+    get_public_channels       Get the names of all public channels.
     get_raw_message           Adapt original code and add apply_markdown.
     get_channels_from_regex    Get the names of all public channels
                               matching a regex.
@@ -349,7 +349,7 @@ class AsyncClient:
             },
         )
 
-    async def get_public_channel_names(self, use_db: bool = True) -> list[str]:
+    async def get_public_channels(self, use_db: bool = True) -> list[tuple[int, str]]:
         """Get the names of all public channels.
 
         Use the database in conjunction with the plugin "autosubscriber"
@@ -357,13 +357,13 @@ class AsyncClient:
         In case of an error, return an empty list.
         """
 
-        async def without_db() -> list[str]:
+        async def without_db() -> list[tuple[int, str]]:
             result: dict[str, Any] = await self.get_channels(
                 include_public=True, include_subscribed=False
             )
             if result["result"] != "success":
                 return []
-            return list(map(lambda d: cast(str, d["name"]), result["streams"]))
+            return list(map(lambda d: cast(tuple[int, str], (d["stream_id"], d["name"])), result["streams"]))
 
         if not use_db:
             return await without_db()
@@ -372,7 +372,7 @@ class AsyncClient:
             with DB.session() as session:
                 return list(
                     map(
-                        lambda t: cast(str, t[0]),
+                        lambda r: cast(tuple[int, str], (r.ChannelId, r.ChannelName)),
                         session.query(PlublicChannels.ChannelName).all(),
                     )
                 )
@@ -409,7 +409,7 @@ class AsyncClient:
 
         return [
             channel_name
-            for channel_name in await self.get_public_channel_names()
+            for _, channel_name in await self.get_public_channels()
             if pat.fullmatch(channel_name)
         ]
 

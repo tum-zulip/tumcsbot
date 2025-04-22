@@ -1,6 +1,6 @@
 from __future__ import annotations
 from functools import wraps
-from typing import AsyncGenerator, Callable, Any, Iterable, cast
+from typing import AsyncGenerator, Callable, Any, Iterable, cast, Literal, _LiteralGenericAlias
 from inspect import cleandoc
 
 import sqlalchemy
@@ -52,7 +52,14 @@ def to_python_type(ty: arg_type) -> Callable[[Any], Any]:
 
         column = columns[0]
         return cast(Callable[[Any], Any], column.type.python_type)
-
+    elif issubclass(type(ty), _LiteralGenericAlias):
+        def cast_literal(value: Any) -> Any:
+            values = getattr(ty, "__args__", [])
+            if value not in values:
+                raise ValueError(f"Expected one of {values}, got {value}")
+            return value
+        return cast_literal
+    
     return cast(Callable[[Any], Any], ty)
 
 
@@ -341,9 +348,10 @@ class command:
             message: dict[str, Any],
         ) -> list[Response] | Iterable[Response] | Response:
             self.logger.info(
-                "%s calls %s with %s and %s",
+                "%s calls %s::%s with %s and %s",
                 sender.mention_silent,
                 self.plugin_name(),
+                outer_self.name,
                 args,
                 opts,
             )

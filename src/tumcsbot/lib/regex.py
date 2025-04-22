@@ -18,7 +18,7 @@ class Regex:
     # todo: (jr) docuemnt why two different regex libraries are used
     ARGUMENT_PATTERN = regex.compile(
         r"(?P<args>@_?\*\*.*?\*\*\s*|@_\*.*?\*\s*|#\*\*.*?\*\*\s*|'(\\\\|\\.|.)*?'\s*"
-        + r"|```([\s\S]*?)```"
+        + r"(?<!`)```(?!`) ([\s\S]*?)```(?!`)"
         + r'|"(\\\\|\\.|.)*?"\s*'
         + r"|\S*\s*)*"
     )
