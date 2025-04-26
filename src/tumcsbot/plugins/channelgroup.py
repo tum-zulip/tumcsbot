@@ -1653,8 +1653,15 @@ class Channelgroup(PluginCommand, Plugin):
         Returns:
             None
         """
+
+        # get users who have reacted to any announced message with the corresponding emote
+        r_user_ids: list[int] = await Channelgroup.get_reacted_users(session, group, client)
+
         ugroup: UserGroup = Channelgroup.get_usergroup(session, group)
         user_ids: list[int] = Usergroup.get_user_ids_for_group(session, ugroup)
+
+        user_ids.extend(r_user_ids)
+
         channel_names: list[str] = await Channelgroup.get_channel_names(
             session, client, [group]
         )
@@ -1913,3 +1920,33 @@ class Channelgroup(PluginCommand, Plugin):
             raise DMError(
                 f"Could not update announcement message(s) {", ".join(failed)} :botsad:"
             )
+
+    @staticmethod
+    async def get_reacted_users(
+        session: Session,
+        c: ChannelGroup,
+        client: AsyncClient
+    ) -> list[int]:
+        """
+        Get all users that reacted with the corresponding emote of the channelgroup, but are not subscribed to the channelgroup
+        """
+        a_msg_ids: list[int] = [
+            int(claim.MessageId)
+            for claim in session.query(GroupClaimAll).all()
+            if bool(claim.IsAnnouncement)
+        ]
+
+        subcribers : list[int] = Usergroup.get_user_ids_for_group(session, Channelgroup.get_usergroup(session, c))
+
+        emote = c.ChannelGroupEmote
+
+        users : list[int] = []
+
+        for a_msg in a_msg_ids:
+            msg = await client.get_message_by_id(a_msg)
+            reactions = msg["reactions"]
+            for reaction in reactions:
+                if reaction["emoji_name"] == emote and reaction["user_id"] not in subcribers and reaction["user_id"] not in users:
+                    users.append(reaction["user_id"])
+
+        return users
