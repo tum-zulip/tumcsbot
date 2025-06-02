@@ -1847,7 +1847,7 @@ class Course(PluginCommand, Plugin):
     @arg(
         "course",
         ty=CourseDB.CourseName,
-        description="The name of the Course to delete.",
+        description="The name of the Course to update.",
     )
     @opt(
         "c",
@@ -1863,9 +1863,9 @@ class Course(PluginCommand, Plugin):
     )
     @opt(
         "tuts",
-        long_opt="tutorial_channel",
+        long_opt="tutor_channel",
         ty=ZulipChannel,
-        description="The name of an existing Channel for Instructors.",
+        description="The name of an existing Channel for Tutors.",
     )
     @opt(
         "ins",
